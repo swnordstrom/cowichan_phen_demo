@@ -4,6 +4,7 @@
 # (will likely expand beyond that in this script in the future)
 ######################################################################
 # SN - init 10 Oct 2023
+# (24 Oct 2023 - re-ran with 2020 data, added 'edited' col)
 
 library(dplyr)
 library(tidyr)
@@ -42,8 +43,7 @@ raw.demo = raw.demo.list %>%
 head(raw.demo)
 
 # Create a proc.demo data frame for storing processed demo
-proc.demo = raw.demo %>%
-  mutate(Note = NA)
+proc.demo = raw.demo %>% mutate(Note = NA, edited = FALSE)
 
 ######################################################################
 ##### Need unique identifiers for each plant
@@ -61,7 +61,15 @@ proc.demo %>% filter(Tag %in% 3044)
 # It's in other records as "D"
 # Just fix this manually
 proc.demo = proc.demo %>%
-  mutate(Ycoor = ifelse(Tag %in% 3044 & Plot %in% 7, 'D', Ycoor))
+  mutate(
+    Ycoor = ifelse(Tag %in% 3044 & Plot %in% 7, 'D', Ycoor),
+    edited = ifelse(Tag %in% 3044 & Plot %in% 7, TRUE, edited),
+    Note = ifelse(
+      Tag %in% 3044 & Plot %in% 7,
+      "one ycoor fixed (was NA)",
+      Note
+    )
+  )
 
 # Now - need to figure out ways to handle off-by-one coordinate changes
 
@@ -184,7 +192,8 @@ proc.demo = rbind(
     mutate(
       Xcoor = rev(Xcoor), 
       Ycoor = rev(Ycoor),
-      Note  = "edited by scott during data cleaning; coordinates swapped on 2019 records based on prior records"
+      Note  = "coordinates swapped on 2019 records based on prior records",
+      edited = TRUE
     )
 )
 
@@ -216,7 +225,8 @@ proc.demo = rbind(
     filter(Tag %in% 3391 & Ycoor %in% 'K') %>%
     mutate(
       Ycoor = 'G',
-      Note = "edited by scott during data cleaning; y-coordinate changed based on 2023 note"
+      Note = "y-coordinate changed based on 2023 note (was K)",
+      edited = TRUE
     )
 )
 
@@ -239,7 +249,8 @@ proc.demo = rbind(
     mutate(
       # Correct tag
       Tag = 3398,
-      Note = "edited by scott during data cleaning; tag changed based on 2019 note"
+      Note = "tag changed based on 2019 note (was 3396)",
+      edited = TRUE
     )
 )
 
@@ -259,7 +270,8 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3989,
       # Add note
-      Note = "edited by scott during data cleaning; tag changed based on 2023 note"
+      Note = "tag changed based on 2023 note (was 3396)",
+      edited = TRUE
     )
 )
 
@@ -273,7 +285,12 @@ proc.demo.dupe %>% filter(grepl('very different coordinates', dupe.status)) %>% 
 ### 3090
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3090))
 # ah this is an obvious one - "F" should be "P"
-proc.demo = proc.demo %>% mutate(Ycoor = ifelse(Tag %in% 3090 & Plot %in% 4, "P", Ycoor))
+proc.demo = proc.demo %>% 
+  mutate(
+    Ycoor = ifelse(Tag %in% 3090 & Plot %in% 4, "P", Ycoor),
+    Note  = ifelse(Tag %in% 3090 & Plot %in% 4, "fixed ycoor (was P)", Note),
+    edited = ifelse(Tag %in% 3090 & Plot %in% 4, TRUE , edited)
+  )
 
 ### 3125
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3125))
@@ -297,7 +314,8 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3480,
       # Add note
-      Note = "edited by scott during data cleaning; tag changed in 2019"
+      Note = "tag changed in 2019 (was 3356)",
+      edited = TRUE
     )
 )
 
@@ -317,7 +335,8 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3178,
       # Add note
-      Note = "edited by scott during data cleaning; tag changed in 2019"
+      Note = "tag changed in 2019 (was 3387)",
+      edited = TRUE
     ),
   proc.demo %>%
     filter(Tag %in% 3387 & Plot %in% 13 & Xcoor %in% 17) %>%
@@ -325,19 +344,60 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3142,
       # Add note
-      Note = "edited by scott during data cleaning; tag changed in 2019"
+      Note = "tag changed in 2019 (was 3387)",
+      edited = TRUE
     )
 )  
 
 ### 3555
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3555))
 # J in 2016 should be a T (likely)
-proc.demo = proc.demo %>% mutate(Ycoor = ifelse(Tag %in% 3555 & Plot %in% 4, 'T', Ycoor))
+proc.demo = proc.demo %>% 
+  mutate(
+    Ycoor = ifelse(Tag %in% 3555 & Plot %in% 4, 'J', Ycoor),
+    Note  = ifelse(Tag %in% 3555 & Plot %in% 4, 'fixed ycoor (was T)', Note),
+    edited = ifelse(Tag %in% 3555 & Plot %in% 4, TRUE, edited)
+  )
 
-### 3646
+### 3634
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3634))
 # somehow "O" got mis-interpreted as "E"?
-proc.demo = proc.demo %>% mutate(Ycoor = ifelse(Tag %in% 3634 & Plot %in% 4, 'O', Ycoor))
+proc.demo = proc.demo %>% 
+  mutate(
+    Ycoor = ifelse(Tag %in% 3634 & Plot %in% 4, 'E', Ycoor),
+    Note  = ifelse(Tag %in% 3634 & Plot %in% 4, 'fixed ycoor (was O)', Note),
+    edited = ifelse(Tag %in% 3634 & Plot %in% 4, TRUE, edited)
+  )
+
+### 3389
+raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3389))
+raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3481))
+# in 2020, tag 3389 in plot 13 (12F) was changed to 3481
+# (there is also a 3481 in plot 15 but that is fine)
+
+proc.demo = rbind(
+  # Old data
+  proc.demo %>% filter(!(Tag %in% 3389 & Plot %in% 13 & Xcoor %in% 12)),
+  # New data
+  proc.demo %>%
+    filter(Tag %in% 3389 & Plot %in% 13 & Xcoor %in% 12) %>%
+    mutate(
+      # Add new (correct) tag
+      Tag = 3481,
+      # Add note
+      Note = "tag changed in 2020 (was 3389)",
+      edited = TRUE
+    )
+)
+
+### 3563
+raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3563)) # proper coord is 15H?
+proc.demo = proc.demo %>%
+  mutate(
+    Ycoor = ifelse(Tag %in% 3563 & Xcoor %in% 15, 'H', Ycoor),
+    Note  = ifelse(Tag %in% 3563 & Plot %in% 4, 'fixed ycoor (was R?)', Note),
+    edited = ifelse(Tag %in% 3563 & Plot %in% 4, TRUE, edited)
+  )
 
 ##### Cool!
 ##### Now, get the off-by-ones
@@ -353,7 +413,7 @@ proc.demo %>% filter(Tag %in% 3429)
 # the 2023 plant could easily be 3114_8_J... oh well, that's not parsimonious
 proc.demo = rbind(
   # Old data
-  proc.demo %>% filter(Tag %in% 3114 & Plot %in% 13),
+  proc.demo %>% filter(!(Tag %in% 3114 & Plot %in% 13)),
   # New data
   proc.demo %>%
     filter(Tag %in% 3114 & Plot %in% 13 & Ycoor %in% 'H') %>%
@@ -361,51 +421,89 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3,
       # Add note
-      Note = "edited by scott during data cleaning; tag changed in 2021"
-    ),
+      Note = "tag changed in 2021",
+      edited = TRUE
+    )
 )
 
 ### 3345
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3345))
 # C/D interchangeable - go with D as it's more commonly used
-proc.demo = proc.demo %>% mutate(Ycoor = ifelse(Tag %in% 3345 & Plot %in% 6, 'D', Ycoor))
+proc.demo = proc.demo %>% 
+  mutate(
+    Ycoor = ifelse(Tag %in% 3345 & Plot %in% 6, 'D', Ycoor),
+    Note  = ifelse(Tag %in% 3345 & Plot %in% 6, 'fixed ycoor (was C)', Note),
+    edited = ifelse(Tag %in% 3345 & Plot %in% 6, TRUE, edited)
+  )
 
 ### 3535
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3535))
 # 16 was misrecorded as 18
-proc.demo = proc.demo %>% mutate(Xcoor = ifelse(Tag %in% 3535 & Plot %in% 13, 18, Xcoor))
+proc.demo = proc.demo %>% 
+  mutate(
+    Xcoor = ifelse(Tag %in% 3535 & Plot %in% 13, 18, Xcoor),
+    Note  = ifelse(Tag %in% 3535 & Plot %in% 13, 'fixed xcoor (was 16)', Note),
+    edited = ifelse(Tag %in% 3535 & Plot %in% 13, TRUE, edited)
+  )
 
 ### 3554
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3554))
 # 6 -> 5
-proc.demo = proc.demo %>% mutate(Xcoor = ifelse(Tag %in% 3554 & Plot %in% 1, 5, Xcoor))
+proc.demo = proc.demo %>% 
+  mutate(
+    Xcoor = ifelse(Tag %in% 3554 & Plot %in% 1, 5, Xcoor),
+    Note  = ifelse(Tag %in% 3554 & Plot %in% 1, 'fixed xcoor (was 6)', Note),
+    edited = ifelse(Tag %in% 3554 & Plot %in% 1, TRUE, edited)
+  )
 
 ### 3585
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3585))
 # 2 -> 3
-proc.demo = proc.demo %>% mutate(Xcoor = ifelse(Tag %in% 3585 & Plot %in% 2, 3, Xcoor))
+proc.demo = proc.demo %>% 
+  mutate(
+    Xcoor = ifelse(Tag %in% 3585 & Plot %in% 2, 3, Xcoor),
+    Note  = ifelse(Tag %in% 3585 & Plot %in% 2, 'fixed xcoor (was 2)', Note),
+    edited = ifelse(Tag %in% 3585 & Plot %in% 2, TRUE, edited)
+  )
 
 ### 3638
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3638))
 # D -> C
-proc.demo = proc.demo %>% mutate(Ycoor = ifelse(Tag %in% 3638 & Plot %in% 13, "C", Ycoor))
+proc.demo = proc.demo %>% 
+  mutate(
+    Ycoor = ifelse(Tag %in% 3638 & Plot %in% 13, "C", Ycoor),
+    Note  = ifelse(Tag %in% 3638 & Plot %in% 13, 'fixed ycoor (was D)', Note),
+    edited = ifelse(Tag %in% 3638 & Plot %in% 13, TRUE, edited)
+  )
 
 ### 3699
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3699))
 # E or F... doesn't matter which
 proc.demo %>% filter(Plot %in% 14 & Xcoor %in% 0 & Ycoor %in% c("E", "F"))
 # this is the only plant at this location
-proc.demo = proc.demo %>% mutate(Ycoor = ifelse(Tag %in% 3699 & Plot %in% 14, 'E', Ycoor))
+proc.demo = proc.demo %>% mutate(
+  Ycoor = ifelse(Tag %in% 3699 & Plot %in% 14, 'E', Ycoor),
+  Note  = ifelse(Tag %in% 3699 & Plot %in% 14, 'fixed ycoor (was F)', Note),
+  edited = ifelse(Tag %in% 3699 & Plot %in% 14, TRUE, edited)
+)
 
 ### 3844
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3844))
 # 7 -> 8
-proc.demo = proc.demo %>% mutate(Xcoor = ifelse(Tag %in% 3844 & Plot %in% 2, 8, Xcoor))
+proc.demo = proc.demo %>% mutate(
+  Xcoor = ifelse(Tag %in% 3844 & Plot %in% 2, 8, Xcoor),
+  Note  = ifelse(Tag %in% 3844 & Plot %in% 2, 'fixed xcoor (was 7)', Note),
+  edited = ifelse(Tag %in% 3844 & Plot %in% 2, TRUE, edited)
+)
 
 ### 3932
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3932))
 # J -> H
-proc.demo = proc.demo %>% mutate(Ycoor = ifelse(Tag %in% 3932 & Plot %in% 15, 'H', Ycoor))
+proc.demo = proc.demo %>% mutate(
+  Ycoor = ifelse(Tag %in% 3932 & Plot %in% 15, 'H', Ycoor),
+  Note  = ifelse(Tag %in% 3932 & Plot %in% 15, 'fixed ycoor (was J)', Note),
+  edited = ifelse(Tag %in% 3932 & Plot %in% 15, TRUE, edited)
+)
 
 unique(proc.demo$Xcoor) # all numeric - good
 unique(proc.demo$Ycoor) # not sure what is up with these numbers?
@@ -448,7 +546,7 @@ proc.demo = proc.demo %>%
 # Fix number of umbels
 unique(proc.demo$No.umbels) # 7.5 and 0N
 raw.demo.list[[3]] %>% filter(No.umbels %in% '7.5') # hmm... no notes
-raw.demo.list[[7]] %>% filter(No.umbels %in% '0N') # also no notes
+raw.demo.list[[8]] %>% filter(No.umbels %in% '0N') # also no notes
 # Looks from this like 0N should be zero (no umbel diameter) and 7.5 can be rounded down to 7
 # Test to make sure this chunk of code works 
 proc.demo %>%
@@ -481,7 +579,51 @@ unique(proc.demo$umbel.diam)
 # for now we can at least fix the nA to NA
 proc.demo = proc.demo %>% mutate(umbel.diam = ifelse(umbel.diam %in% 'nA', NA, umbel.diam))
 
-# YrTag - probably not necessary to really do anything about at this stage.
+######################################################################
+##### Other cleaning
+######################################################################
+
+
+
+# There are duplicate records for some reason for plant 3430 in plot 1
+
+raw.demo.list %>% lapply(function(x) x %>% filter(Tag %in% 3430))
+
+# the ones in plot 1 are duplicate records of the same plant
+# I say just remove the duplicates
+
+proc.demo = rbind(
+  # Records without this tag
+  proc.demo %>% filter(!(Tag %in% 3430 & Plot %in% 1)),
+  proc.demo %>%
+    filter(Tag %in% 3430 & Plot %in% 1) %>%
+    arrange(Year, desc(No.leaves)) %>%
+    filter(!duplicated(Year)) %>%
+    mutate(Note = "dupe records removed", edited = TRUE)
+)
+
+# other dupes?
+
+proc.demo %>% group_by(plantid, Year) %>% filter(n() > 1)
+# none!
+
+######################################################################
+##### Export what we currently have
+######################################################################
+
+# Arrange neatly before export!
+proc.demo %>%
+  arrange(Year, Plot, plantid) %>%
+  write.csv(
+    '01_data_cleaning/out/demo_all_cleaned.csv', 
+    row.names = FALSE
+  )
+
+######################################################################
+##### Old code 
+######################################################################
+
+# YrTag - probably not necessary to reaflly do anything about at this stage.
 # # Look at YrTag
 # unique(proc.demo$YrTag)
 # # question mark record seems to be the major offender
