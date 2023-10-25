@@ -73,7 +73,7 @@ head(proc.2021)
 
 # Add unique plant ID
 proc.2021 = proc.2021 %>% 
-  mutate(plantid = paste0(tag, '_', year, '_', xcoor, ycoor)) %>%
+  mutate(plantid = paste0(tag, '_', plot, '_', xcoor, ycoor)) %>%
   select(-c(xcoor, ycoor))
 
 # Check for duplicated umbel numbers
