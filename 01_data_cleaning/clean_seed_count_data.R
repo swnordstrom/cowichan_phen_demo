@@ -18,8 +18,6 @@ rm(list = ls())
 data.dir = '00_raw_data/lomatium_demography/'
 
 grep('Seed', dir(data.dir), value = TRUE)
-# 2023 missing (needs to be entered)
-# for now, just focus on 2021-2022 (add 2023 later)
 
 seed.counts.list = paste0(data.dir, grep('Seed', dir(data.dir), value = TRUE)) %>%
   lapply(read.csv)
@@ -52,7 +50,20 @@ seed.counts.list[[2]] %>%
   filter(umble.no != umble.no.fix)
 # looks good to me
 
-# Well... might as well do these separately...
+# Look for tag dupes in 2023
+
+seed.counts.list[[3]] %>%
+  distinct(plot, tag, coor) %>%
+  group_by(plot, tag) %>%
+  filter(n() > 1)
+# 7512 listed at two coords
+
+seed.counts.list[[3]] %>% filter(tag %in% 7512)
+# (yes - data entry error)
+
+seed.counts.list[[3]] %>% group_by(plot, tag, umble.no) %>% filter(n() > 1)
+
+# Well... might as well do years separately...
 
 ######################################################################
 ##### Processing 
@@ -114,8 +125,22 @@ proc.2022 %>% group_by(plantid, umble.no) %>% filter(n() > 1)
 head(proc.2022)
 str(proc.2022)
 
-### 2023 code can go here
+### 2023 
 
+proc.2023 = seed.counts.list[[3]]
+
+# Fix bad tag above
+proc.2023 = proc.2023 %>%
+  mutate(
+    tag = ifelse(tag %in% 7512 & coor %in% '3D', 7519, tag),
+    notes = ifelse(tag %in% 7519 & coor %in% '3D', '[tag corrected during cleaning]', notes)
+  )
+
+# Need to add plant ID
+proc.2023 = proc.2023 %>%
+  mutate(plantid = paste(tag, plot, coor, sep = '_'))
+
+# Not sure any other changes need to be made.
 
 ######################################################################
 ##### Combining
@@ -123,7 +148,8 @@ str(proc.2022)
 
 rbind(
   proc.2021 %>% select(year, plantid, plot, tag, umble.no, no.seeds, notes),
-  proc.2022 %>% select(year, plantid, plot, tag, umble.no, no.seeds, notes)
+  proc.2022 %>% select(year, plantid, plot, tag, umble.no, no.seeds, notes),
+  proc.2023 %>% select(year, plantid, plot, tag, umble.no, no.seeds, notes)
 ) %>%
   # Rename umbel column...
   rename(umbel.no = umble.no) %>%
