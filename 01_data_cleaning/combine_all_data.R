@@ -312,6 +312,8 @@ demo.mumb = merge(
 ##### Demo + seed?
 #######################
 
+##### (assessing data only here)
+
 # It looks like only two umbels were observed per plant...
 
 seed %>%
@@ -361,26 +363,522 @@ demo.seed.2022
 
 demo.seed.2022 %>%
   group_by(plantid) %>%
-  filter(any(duplicated(umbel.no)))
+  filter(any(duplicated(umbel.no))) %>%
+  select(-c(year, Year, Plot, Tag)) 
 # only three cases here!
 # and all of them have only one flowering plant! cha ching?
 
-######################################################################
-######################################################################
+# How many of these are listed as no flowering?
 
-# Should be true that all cases where "umbel.diam" is SOS should have non-NA
-# umble.diameter field
-with(demo.mumb, table(umbel.diam, umble.diameter, useNA = 'always')) # not useful...
-# line below should give an empty data frame
-demo.mumb %>% filter(umbel.diam %in% 'SOS' & is.na(umble.diameter)) # damn that's a lot...
-demo.mumb %>%
-  filter(umbel.diam %in% 'SOS') %>%
-  group_by(is.na(umble.diameter)) %>%
-  summarise(n = n()) # okay so only a small number have diameter NA...
+demo.seed.2022 %>% filter(is.na(No.umbels) | No.umbels < 1)
+# concerning...
+# maybe the better matchup would be to the phen dataset...
+# actually I wonder how many of these are due to tags
 
-# Cases where umbel.diam is *not* SOS - do we have anything in umble.diameter?
-demo.mumb %>%
-  filter(!umbel.diam %in% 'SOS') %>%
-  group_by(is.na(umble.diameter)) %>%
+### What about 2023 data?
+
+demo.seed.2023 = merge(
+  x = seed %>% filter(year %in% 2023) %>% mutate(in.seed = TRUE),
+  y = demo %>% filter(Year %in% 2023) %>% mutate(in.demo = TRUE),
+  all.x = TRUE, by = "plantid"
+) %>%
+  mutate(across(starts_with('in'), function(x) ifelse(is.na(x), FALSE, x)))
+
+demo.seed.2023
+table(demo.seed.2023$in.demo)
+# most of these are not in demo...
+# probably poor tag matching... ugh
+
+demo.seed.2023 %>%
+  distinct(plantid, .keep_all = TRUE) %>%
+  group_by(in.demo, in.seed) %>%
   summarise(n = n())
-# why... (maybe umbel.diam is NA? merge failure?)
+
+##### Try to merge all of these together
+
+demo.seed = merge(
+  x = seed %>% mutate(in.seed = TRUE),
+  y = demo %>%
+    filter(Year > 2020) %>%
+    mutate(flowering.in.demo = !is.na(No.umbels) & No.umbels > 0) %>%
+    mutate(coor.demo = paste0(Xcoor, Ycoor)) %>%
+    select(-c(Xcoor, Ycoor, YrTag)) %>%
+    mutate(in.demo = TRUE),
+  by.x = c("year", "plot", "tag"), by.y = c("Year", "Plot", "Tag"),
+  all.x = TRUE, all.y = TRUE, suffixes = c('.seed', '.demo')
+) %>%
+  mutate(across(starts_with('in'), function(x) ifelse(is.na(x), FALSE, x)))
+
+head(demo.seed)
+with(demo.seed, table(in.demo, in.seed, year))
+# Ugh...
+
+# Okay... what could be going wrong in merging:
+# (1) merge duplicates phen and/or demo records
+# (2) seed counts for non-flowering demo records
+# (3) plain ol' misses...
+
+# (1) merging producing duplicate records
+# If this happened, then we should be getting cases where a plantid.demo gets
+# matched to >1 unique plantid.seed (and vice versa)
+
+demo.seed %>%
+  filter(!is.na(plantid.demo)) %>%
+  distinct(year, plantid.demo, plantid.seed, .keep_all = TRUE) %>%
+  group_by(year, plantid.demo) %>%
+  filter(n() > 1) %>%
+  arrange(plantid.demo) %>% distinct(plantid.demo)
+# no duplicated demo records?
+
+demo.seed %>%
+  filter(!is.na(plantid.seed)) %>%
+  distinct(year, plantid.demo, plantid.seed, .keep_all = TRUE) %>%
+  group_by(year, plantid.seed) %>%
+  filter(n() > 1) %>%
+  arrange(plantid.seed) %>%
+  select(year, plot, tag, plantid.seed, coor.demo, plantid.demo, flowering.in.demo)
+# a couple
+
+# The only one that *needs* to be fixed is the 3125_5 in 2023
+# others can be fixed by picking out the "flowering" ones.
+# Which brings us to our next issue...
+
+# (2) seed counts for non-flowering demo records
+# (feel like there will be a ton of these...)
+# Bad record would be: in.seed = TRUE _and_ flowering.in.demo = FALSE
+
+demo.seed %>%
+  filter(!is.na(plantid.demo) & !is.na(plantid.seed)) %>%
+  distinct(year, plantid.demo, plantid.seed, .keep_all = TRUE) %>%
+  group_by(year, flowering.in.demo, in.seed)  %>%
+  summarise(n = n()) %>%
+  pivot_wider(names_from = year, values_from = n)
+# actually this looks okay!  
+
+demo.seed %>%
+  filter(!is.na(plantid.demo) & !is.na(plantid.seed)) %>%
+  distinct(year, plantid.demo, plantid.seed, .keep_all = TRUE) %>%
+  group_by(year, plantid.seed) %>%
+  filter(any(!flowering.in.demo)) %>%
+  select(year, plot, tag, coor.demo, plantid.seed, No.leaves, Stalk_Height, 
+         No.umbels, umbel.no, no.seeds, Note)
+
+# Some of these are just dupes, a couple of them are not...
+# Some of them are not though...
+# Adds up to maybe ten cases? honestly not bad considering how large the dataset is
+# Looks also like only one of these plants has a non-zero number of seeds
+# (3365_1_0J) - rest might be dead/eaten
+
+# (3) plain ol' misses...
+# all of these plants should have demo records of flowering
+
+demo.seed %>%
+  filter(!in.demo | !in.seed) %>%
+  filter(flowering.in.demo | is.na(flowering.in.demo)) %>%
+  distinct(year, plantid.demo, plantid.seed, .keep_all = TRUE) %>%
+  group_by(year) %>%
+  summarise(n = n())
+# that's a lot..
+
+# in 2021, not every plant was surveyed for seed
+# (I think they all were in 2022-2023 though)
+demo.seed %>%
+  filter(flowering.in.demo | is.na(flowering.in.demo)) %>%
+  filter(!in.demo | !in.seed) %>%
+  distinct(year, plantid.demo, plantid.seed, .keep_all = TRUE) %>%
+  group_by(year, in.demo, in.seed) %>%
+  summarise(n = n())
+
+# Maybe should be more concerned with in.seed but not in.demo?
+# assume the in.demo but not in.seed just never had measurements taken
+
+demo.seed %>%
+  filter(flowering.in.demo | is.na(flowering.in.demo)) %>%
+  group_by(year, in.demo, in.seed) %>%
+  # group_by(
+  #   year, 
+  #   in.demo = ifelse(in.demo, 'in.demo', 'not.in.demo'), 
+  #   in.seed = ifelse(in.seed, 'in.seed', 'not.in.seed')
+  # ) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  mutate(case = case_when(
+    in.demo & in.seed ~ 'currently usable',
+    in.demo & !in.seed ~ 'probably no seed record',
+    !in.demo & in.seed ~ 'seed missed in merge'
+    )
+  ) %>%
+  select(-c(in.demo, in.seed)) %>%
+  pivot_wider(names_from = case, values_from = n)
+
+# Okay - have 40-50 seed counts that got missed when merging
+
+##### Try fix cases identified above
+# To fix:
+# - seed counts not matched to demo records
+# - duplicated seed counts (poorly-matched to demo)
+# - (maybe also go back and check the flowering records)
+
+### First, look for seed counts not matched to demo records
+
+demo.seed %>%
+  filter(flowering.in.demo | is.na(flowering.in.demo)) %>%
+  filter(in.seed & !in.demo) %>%
+  distinct(year, plantid.seed)
+
+#   year plantid.seed
+# 1  2021    3748_6_5E
+
+demo %>% filter(Year %in% 2021 & Tag %in% 3748)
+demo %>% filter(Year %in% 2021, Plot %in% 6) %>% arrange(Xcoor)
+seed %>% filter(year %in% 2021, tag %in% 3748)
+# noted as dead... definitely flowered though...
+demo %>% filter(grepl('3748', Note)) # ice cold... not even mentioned in a note...
+demo %>% filter(Tag %in% 3748) # I have literally no records of this tag... anywhere
+demo.seed %>% filter(year %in% 2021, !in.seed, plot %in% 6, flowering.in.demo)
+# could be 3179
+demo %>% filter(Tag %in% 3179) # tag replacement... possible here
+# yes... note in 2022 says replacement tag 3748 was used in 2021
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3748 & year %in% 2021, gsub('3748', '3179', plantid), plantid),
+    notes   = ifelse(tag %in% 3748 & year %in% 2021, '[tag manually edited; 2022 note; was 3748]', notes),
+    tag     = ifelse(tag %in% 3748 & year %in% 2021, 3179, tag)
+  )
+
+# 2  2021    3928_6_7C
+demo %>% filter(Year %in% 2021, Tag %in% 3928) # tag misid or entry
+demo.seed %>% filter(year %in% 2021, !in.seed, plot %in% 6, flowering.in.demo)
+seed %>% filter(tag %in% 3928)
+# one umbel counted in seed, one plant at location 7C in 2021 (also w/ one umbel)
+# going to say these are the same
+# (datasheet says 3918... assuming this is misread of 3916)
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3928 & year %in% 2021, gsub('3928', '3916', plantid), plantid),
+    notes   = ifelse(tag %in% 3928 & year %in% 2021, '[tag manually edited; was 3928]', notes),
+    tag     = ifelse(tag %in% 3928 & year %in% 2021, 3916, tag)
+  )
+
+# actually going in and looking at demo... yeah there's a tag inconsistency here too
+demo = demo %>%
+  mutate(
+    plantid = ifelse(Tag %in% 3918 & Plot %in% 6, gsub('3918', '3916', plantid), plantid),
+    edited = ifelse(Tag %in% 3918 & Plot %in% 6, TRUE, edited),
+    Note = ifelse(Tag %in% 3918 & Plot %in% 6, 'tag mis-entered as 3918 in 2016', Note),
+    Tag = ifelse(Tag %in% 3918 & Plot %in% 6, 3916, Tag),
+  )
+
+# 3  2021    3298_7_9C
+demo %>% filter(Tag %in% 3298) # lol
+demo.seed %>% filter(year %in% 2021, !in.seed, plot %in% 7, flowering.in.demo)
+# seems very likely that it's 3296 (same issue as above...)
+seed %>% filter(tag %in% 3298)
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3298 & year %in% 2021, gsub('3298', '3296', plantid), plantid),
+    notes   = ifelse(tag %in% 3298 & year %in% 2021, '[tag manually edited; was 3298]', notes),
+    tag     = ifelse(tag %in% 3298 & year %in% 2021, 3296, tag)
+  )
+
+demo = demo %>%
+  mutate(
+    plantid = ifelse(Tag %in% 3298 & Plot %in% 7, gsub('3298', '3296', plantid), plantid),
+    edited = ifelse(Tag %in% 3298 & Plot %in% 7, TRUE, edited),
+    Note = ifelse(Tag %in% 3298 & Plot %in% 7, 'tag mis-entered as 3298 in 2016', Note),
+    Tag = ifelse(Tag %in% 3298 & Plot %in% 7, 3296, Tag),
+  )
+
+# 4  2021  3363_14_15H
+demo %>% filter(Tag %in% 3363) # tag was misentered
+seed %>% filter(tag %in% 3363) # mis-entered in both years?
+demo %>% filter(grepl('3363', Note)) # tag wasn't manually changed...
+demo.seed %>% filter(plot %in% 14, year %in% 2021, !in.seed & flowering.in.demo)
+demo.seed %>% filter(plot %in% 14, year %in% 2022, !in.seed & flowering.in.demo)
+seed %>% filter(tag %in% 3363) # yes total mis-read/mis-entry
+demo %>% filter(Tag %in% 3367) # lol
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3363 & plot %in% 14 & year %in% 2021, gsub('3363', '3367', plantid), plantid),
+    notes   = ifelse(tag %in% 3363 & plot %in% 14 & year %in% 2021, '[tag manually edited; was 3363]', notes),
+    tag     = ifelse(tag %in% 3363 & plot %in% 14 & year %in% 2021, 3367, tag)
+  )
+
+# 5  2022       3782_1
+demo %>% filter(Tag %in% 3782)
+# note in 2022 says this plant is not new and was mistakenly confused with 3814
+demo %>% filter(Tag %in% 3814)
+seed %>% filter(tag %in% 3814)
+seed %>% filter(tag %in% 3782) # no additional info here
+demo.seed %>% filter(year %in% 2022, plot %in% 1, !in.seed, flowering.in.demo)
+# hmm... not sure there's a fix for this one 
+
+# 6  2022       5022_5
+demo %>% filter(Tag %in% 5022) # haha...
+seed %>% filter(tag %in% 5022)
+demo %>% filter(Plot %in% 5, Xcoor %in% 8:10, Year %in% 2022)
+# lmao... was it 2055? dyscalcula
+demo %>% filter(Tag %in% 2055) # uh
+demo %>% filter(grepl('^2', Tag))
+demo %>% filter(grepl('^5', Tag)) # I am no longer convinced 5022 = 2055
+demo.seed %>% filter(plot %in% 5, year %in% 2022, !in.seed, flowering.in.demo)
+# okay I'm convinced again
+
+# but are these the same plant? do other records need to be changed?
+demo %>% filter(Tag %in% c(5022, 2055)) %>% arrange(Year, Tag)
+seed %>% filter(tag %in% c(2055, 5022)) # hmm... okay I think they're the same
+# multiple demo records have "tag is 5022" so I'll change the demo
+
+demo = rbind(
+  demo %>% filter(!(Tag %in% 2055 & Plot %in% 5)),
+  demo %>%
+    filter(Tag %in% 2055 & Plot %in% 5) %>%
+    mutate(
+      # Add new (correct) tag
+      Tag = 5022,
+      # update plantid (not sure if this will be done elsewhere)
+      plantid = gsub('2055', '5022', plantid),
+      # Add note
+      Note = "tag mis-recorded as 2055",
+      edited = TRUE
+    )
+)
+
+
+# 7  2022       7536_5
+# see above
+seed %>% filter(tag %in% 7526)
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 7536 & year %in% 2022, gsub('7536', '7526', plantid), plantid),
+    notes   = ifelse(tag %in% 7536 & year %in% 2022, '[tag manually edited; was 7536]', notes),
+    tag     = ifelse(tag %in% 7536 & year %in% 2022, 7526, tag)
+  )
+
+# 8  2022       3354_6
+demo %>% filter(Tag %in% 3354, Plot %in% 6) # misentry
+seed %>% filter(tag %in% 3354)
+demo.seed %>% filter(plot %in% 6, year %in% 2022, !in.seed, flowering.in.demo)
+# 3374 seems like a safe bet
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3354 & year %in% 2022 & plot %in% 6, gsub('3354', '3374', plantid), plantid),
+    notes   = ifelse(tag %in% 3354 & year %in% 2022 & plot %in% 6, '[tag manually edited; was 3354]', notes),
+    tag     = ifelse(tag %in% 3354 & year %in% 2022 & plot %in% 6, 3374, tag)
+  )
+
+# 9  2022       3789_6
+demo %>% filter(Tag %in% 3789)
+demo %>% filter(grepl('3789', Note)) # not a replacement
+seed %>% filter(tag %in% 3789)
+demo.seed %>% filter(plot %in% 6, year %in% 2022, !in.seed, flowering.in.demo)
+# oh... might have been the worst tag-reading job on earth (7->1, 6->8, 4->9)
+demo %>% filter(Tag %in% 3164) # plot six...
+seed %>% filter(tag %in% 3164) # wait... already fixed?
+# oh - no that's for a plant in plot 2 (this one is in plot 6)
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3789 & year %in% 2022 & plot %in% 6, gsub('3789', '3164', plantid), plantid),
+    notes   = ifelse(tag %in% 3789 & year %in% 2022 & plot %in% 6, '[tag manually edited; was 3789]', notes),
+    tag     = ifelse(tag %in% 3789 & year %in% 2022 & plot %in% 6, 3164, tag)
+  )
+
+# 10 2022       3298_7
+# see above
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3298 & year %in% 2022, gsub('3298', '3296', plantid), plantid),
+    notes   = ifelse(tag %in% 3298 & year %in% 2022, '[tag manually edited; was 3298]', notes),
+    tag     = ifelse(tag %in% 3298 & year %in% 2022, 3296, tag)
+  )
+
+# 11 2022       3886_7
+demo %>% filter(Tag %in% 3886) # hmm... tag change?
+seed %>% filter(tag %in% 3886)
+# note in 2022 record for 3866 says typo 3886...
+demo %>% filter(Tag %in% c(3886, 3866))
+# okay - looks like it was simply mis-entered in 3866
+# hmm... change the 2016 demo record and the seed data
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3886 & year %in% 2022, gsub('3886', '3866', plantid), plantid),
+    notes   = ifelse(tag %in% 3886 & year %in% 2022, '[tag manually edited; was 3886]', notes),
+    tag     = ifelse(tag %in% 3886 & year %in% 2022, 3866, tag)
+  )
+
+demo = demo %>%
+  mutate(
+    plantid = ifelse(Tag %in% 3886 & Plot %in% 7, gsub('3886', '3866', plantid), plantid),
+    edited = ifelse(Tag %in% 3886 & Plot %in% 7, TRUE, edited),
+    Note = ifelse(Tag %in% 3886 & Plot %in% 7, 'tag mis-entered as 3866 in 2016', Note),
+    Tag = ifelse(Tag %in% 3886 & Plot %in% 7, 3866, Tag),
+  )
+
+# 12 2022      3614_13
+demo %>% filter(Tag %in% 3614)
+demo %>% filter(grepl('3614', Note))
+seed %>% filter(tag %in% 3614)
+demo.seed %>% filter(plot %in% 13, year %in% 2022, !in.seed, flowering.in.demo)
+# haha... man
+# should be 3164? (one of the other 3164s lol)
+demo %>% filter(Tag %in% 3164)
+# yep... there it is
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3614 & plot %in% 13 & year %in% 2022, gsub('3614', '3164', plantid), plantid),
+    notes   = ifelse(tag %in% 3614 & plot %in% 13 & year %in% 2022, '[tag manually edited; was 3614]', notes),
+    tag     = ifelse(tag %in% 3614 & plot %in% 13 & year %in% 2022, 3164, tag)
+  )
+
+# 13 2022      7537_13
+demo %>% filter(Tag %in% 7537)
+seed %>% filter(tag %in% 7537)
+demo.seed %>% filter(plot %in% 13, year %in% 2022, !in.seed, flowering.in.demo) # ugh...
+demo %>% filter(Tag %in% 3880) # there are several...
+# will want to edit all demo, no?
+# also check to see if old tag appears in seed records...
+seed %>% filter(tag %in% 3880, plot %in% 13) # eh change anyway to be safe
+
+demo = rbind(
+  demo %>% filter(!(Tag %in% 3880 & Plot %in% 13)),
+  demo %>%
+    filter(Tag %in% 3880 & Plot %in% 13) %>%
+    mutate(
+      # Add new (correct) tag
+      Tag = 7537,
+      # update plantid (not sure if this will be done elsewhere)
+      plantid = gsub('3880', '7537', plantid),
+      # Add note
+      Note = "tag changed to 7537 in 2022",
+      edited = TRUE
+    )
+)
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3880 & plot %in% 13, gsub('3880', '7537', plantid), plantid),
+    notes   = ifelse(tag %in% 3880 & plot %in% 13, '[tag manually edited; was 3880]', notes),
+    tag     = ifelse(tag %in% 3880 & plot %in% 13, 7537, tag)
+  )
+
+# 14 2022      3363_14
+demo %>% filter(Tag %in% 3363)
+demo %>% filter(Tag %in% 3367, Plot %in% 14) # four umbels in 2022
+seed %>% filter(tag %in% c(3363, 3367))
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3363 & plot %in% 14 & year %in% 2022, gsub('3363', '3367', plantid), plantid),
+    notes   = ifelse(tag %in% 3363 & plot %in% 14 & year %in% 2022, '[tag manually edited; was 3363]', notes),
+    tag     = ifelse(tag %in% 3363 & plot %in% 14 & year %in% 2022, 3367, tag)
+  )
+
+# 15 2022      3496_14
+demo %>% filter(Tag %in% 3496)
+seed %>% filter(tag %in% 3496)
+demo.seed %>% filter(plot %in% 14, year %in% 2022, !in.seed, flowering.in.demo)
+# it's gotta just be 3495 right?
+demo %>% filter(Tag %in% 3495, Plot %in% 14)
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3496 & plot %in% 14 & year %in% 2022, gsub('3496', '3495', plantid), plantid),
+    notes   = ifelse(tag %in% 3496 & plot %in% 14 & year %in% 2022, '[tag manually edited; was 3496]', notes),
+    tag     = ifelse(tag %in% 3496 & plot %in% 14 & year %in% 2022, 3495, tag)
+  )
+
+# 16 2022      3076_15
+demo %>% filter(Tag %in% 3076)
+seed %>% filter(tag %in% 3076)
+demo.seed %>% filter(plot %in% 15, year %in% 2022, !in.seed, flowering.in.demo)
+demo %>% filter(Tag %in% 3706, Plot %in% 15)
+seed %>% filter(tag %in% 3706)
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3076 & plot %in% 15 & year %in% 2022, gsub('3076', '3706', plantid), plantid),
+    notes   = ifelse(tag %in% 3076 & plot %in% 15 & year %in% 2022, '[tag manually edited; was 3076]', notes),
+    tag     = ifelse(tag %in% 3076 & plot %in% 15 & year %in% 2022, 3706, tag)
+  )
+
+# 17 2022      3813_15
+demo %>% filter(Tag %in% 3813)
+seed %>% filter(tag %in% 3813)
+demo.seed %>% filter(plot %in% 15, year %in% 2022, !in.seed, flowering.in.demo)
+demo %>% filter(Tag %in% 3831)
+seed %>% filter(tag %in% 3831)
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3813 & plot %in% 15 & year %in% 2022, gsub('3813', '3831', plantid), plantid),
+    notes   = ifelse(tag %in% 3813 & plot %in% 15 & year %in% 2022, '[tag manually edited; was 3813]', notes),
+    tag     = ifelse(tag %in% 3813 & plot %in% 15 & year %in% 2022, 3831, tag)
+  )
+
+# 18 2023   3518_3_16J
+demo %>% filter(Tag %in% 3518)
+seed %>% filter(tag %in% 3518)
+# data entry issue... hopefully fixed
+
+# 19 2023    5022_5_9F
+# should have been addressed above...
+demo %>% filter(Tag %in% 5022)
+seed %>% filter(tag %in% 5022)
+
+# 20 2023   5570_6_18H
+demo %>% filter(Tag %in% 5570)
+seed %>% filter(tag %in% 5570)
+demo.seed %>% filter(plot %in% 5, year %in% 2023, !in.seed, flowering.in.demo)
+# dang that's a lot of plants...
+# maybe there was just no phen on plants in xcoor 10-19?
+demo.seed %>% filter(plot %in% 5, grepl('18', coor.demo), year %in% 2023, !in.seed, flowering.in.demo)
+demo.seed %>% filter(plot %in% 5, No.umbels %in% 1, year %in% 2023, !in.seed, flowering.in.demo)
+
+# hmm... might just be lost data (sad)
+
+# 21 2023    5849_7_1E
+demo %>% filter(Tag %in% 5849)
+seed %>% filter(tag %in% 5849)
+demo %>% filter(grepl('5849', Note))
+demo.seed %>% filter(plot %in% 7, year %in% 2023, !in.seed, flowering.in.demo)
+# also a ton of plants in here
+# dude... what's up with that
+# replaced tags...?
+# anyway I think it's probably 5049 (0 got recorded as an 8?) (no - this has one umbel only)
+# (yeah that's def 5049 - I checked the sheet)
+# (the other two umbels are dead)
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 5849 & plot %in% 15 & year %in% 2022, gsub('5849', '5049', plantid), plantid),
+    notes   = ifelse(tag %in% 5849 & plot %in% 15 & year %in% 2022, '[tag manually edited; was 5849]', notes),
+    tag     = ifelse(tag %in% 5849 & plot %in% 15 & year %in% 2022, 5049, tag)
+  )
+
+# 22 2023   7537_13_4C
+demo %>% filter(Tag %in% 7537)
+# think I fixed this above.
+
+# 23 2023  3076_15_12H
+# see above
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3076 & plot %in% 15 & year %in% 2023, gsub('3076', '3706', plantid), plantid),
+    notes   = ifelse(tag %in% 3076 & plot %in% 15 & year %in% 2023, '[tag manually edited; was 3076]', notes),
+    tag     = ifelse(tag %in% 3076 & plot %in% 15 & year %in% 2023, 3706, tag)
+  )
+
+# 24 2023  3813_15_14C
+
+seed = seed %>%
+  mutate(
+    plantid = ifelse(tag %in% 3813 & plot %in% 15 & year %in% 2023, gsub('3813', '3831', plantid), plantid),
+    notes   = ifelse(tag %in% 3813 & plot %in% 15 & year %in% 2023, '[tag manually edited; was 3813]', notes),
+    tag     = ifelse(tag %in% 3813 & plot %in% 15 & year %in% 2023, 3831, tag)
+  )
