@@ -882,3 +882,170 @@ seed = seed %>%
     notes   = ifelse(tag %in% 3813 & plot %in% 15 & year %in% 2023, '[tag manually edited; was 3813]', notes),
     tag     = ifelse(tag %in% 3813 & plot %in% 15 & year %in% 2023, 3831, tag)
   )
+
+##### 
+# Re-try the merge, but with cleaned datasets
+
+demo.seed = merge(
+  x = seed %>% mutate(in.seed = TRUE),
+  y = demo %>%
+    filter(Year > 2020) %>%
+    mutate(flowering.in.demo = !is.na(No.umbels) & No.umbels > 0) %>%
+    mutate(coor.demo = paste0(Xcoor, Ycoor)) %>%
+    select(-c(Xcoor, Ycoor, YrTag)) %>%
+    mutate(in.demo = TRUE),
+  by.x = c("year", "plot", "tag"), by.y = c("Year", "Plot", "Tag"),
+  all.x = TRUE, all.y = TRUE, suffixes = c('.seed', '.demo')
+) %>%
+  mutate(across(starts_with('in'), function(x) ifelse(is.na(x), FALSE, x)))
+
+head(demo.seed)
+with(demo.seed, table(in.demo, in.seed, year))
+# Some issues, otherwise okay though.
+# (merge with multiple umbels?)
+
+##### 
+# (Merge again, but this time without giving us all demo records)
+
+demo.seed = merge(
+  x = seed,
+  y = demo %>%
+    filter(Year > 2020) %>%
+    mutate(flowering.in.demo = !is.na(No.umbels) & No.umbels > 0) %>%
+    mutate(coor.demo = paste0(Xcoor, Ycoor)) %>%
+    select(-c(Xcoor, Ycoor, YrTag)),
+  by.x = c("year", "plot", "tag"), by.y = c("Year", "Plot", "Tag"),
+  all.x = TRUE, all.y = FALSE, suffixes = c('.seed', '.demo')
+)
+
+head(demo.seed)
+nrow(demo.seed)
+
+# write.csv(
+#   demo.seed,
+#   '01_data_cleaning/out/demo_seed_v1.csv',
+#   row.names = FALSE
+# )
+
+# (ah shoot... also just realized that changes to demo df above would influence
+# demo.mumb merge, potentially)
+
+# Write some kind of temp demo data frame too...
+# write.csv(
+#   demo,
+#   '01_data_cleaning/out/demo_all_clean_v2.csv',
+#   row.names = FALSE
+# )
+
+#######################
+##### Demo for survival
+#######################
+
+##### Look at NAs in the dataset
+
+apply(demo, 2, function(x) sum(is.na(x)))
+# NAs in leaves, stalk height, leaf lengths, number of umbels, umbel diameters...
+# some of these are due to non-flowering
+# I'd also bet that some of these are due to mortality...
+
+### What's up with the leaf counts?
+
+demo %>% filter(is.na(No.leaves))
+# just from these few cases, can see there are some cases where there are umbels listed (argh)
+
+demo %>% filter(is.na(No.leaves)) %>%
+  group_by(Year) %>% summarise(n = n())
+# occurring throughout, but a ton in 2020
+
+demo %>%
+  group_by(leaf.na = is.na(No.leaves), Year) %>% 
+  summarise(n = n()) %>%
+  ungroup() %>%
+  pivot_wider(names_from = leaf.na, values_from = n)
+# hmm okay so there definitely were leaf counts being recorded in 2020!
+
+demo %>% filter(Year %in% 2020) # yeah most of these NA records are just NA everywhere...
+
+demo %>%
+  filter(Year %in% 2020) %>%
+  group_by(Plot, leafno.na = is.na(No.leaves)) %>%
+  summarise(n = n()) %>%
+  pivot_wider(names_from = leafno.na, values_from = n)
+# okay - going to guess these were simply not sampled in 2020
+# (oh I do seem to remember there being a note about this somewhere...)
+
+# What about NAs in other years? Are they dead? Or no-checks?
+
+demo %>%
+  filter(!Year %in% 2020) %>%
+  filter(is.na(No.leaves))
+# yeah... not really sure what to do about these
+
+# How many cases are there where there are NAs for leaf size but other data is provided?
+demo %>%
+  filter(is.na(No.leaves) & (!is.na(Stalk_Height) | !is.na(Leaf.length) | !is.na(No.umbels)))
+# well... only six cases... assume they are alive then
+
+### How often do the NAs later have a non-NA record?
+
+demo %>%
+  group_by(plantid) %>%
+  filter(any(is.na(No.leaves)) & any(!is.na(No.leaves))) %>%
+  mutate(min.na = min(Year[is.na(No.leaves)]), max.no.na = max(Year[!is.na(No.leaves) & No.leaves > 0])) %>%
+  group_by(is.bad = max.no.na > min.na) %>%
+  summarise(n = n())
+# oof... lots of baddies it seems  
+
+demo %>%
+  group_by(plantid) %>%
+  filter(any(is.na(No.leaves)) & any(!is.na(No.leaves))) %>%
+  mutate(min.na = min(Year[is.na(No.leaves)]), max.no.na = max(Year[!is.na(No.leaves) & No.leaves > 0])) %>%
+  filter(max.no.na > min.na) %>%
+  arrange(plantid, Year)
+# suggests to me that NAs should just be treated as no-checks
+
+### Okay... how often do we have no-leaf plants appear in a later year?
+
+demo %>%
+  group_by(plantid) %>%
+  filter(any(!No.leaves & !is.na(No.leaves))) %>%
+  filter(Year > min(Year[!No.leaves])) %>%
+  mutate(dead.status = any(No.leaves > 0)) %>%
+  distinct(plantid, .keep_all = TRUE) %>%
+  group_by(false.dead) %>%
+  summarise(n = n())
+# okay... 120 of 183 of plants ever thought dead were misses!
+# (actually might be higher... code above does not account for 2023-only deaths)
+# (although it also doesn't account for multiple non-consec zeros)
+
+# (survival should be done with occupancy modeling, methinks)
+
+##### Make a demo table just to see what it would look like
+
+demo.table = demo %>%
+  mutate(
+    detected = (!is.na(No.leaves) | !is.na(Stalk_Height | !is.na(Leaf.length) | !is.na(No.umbels))),
+    obs.alive = detected & (No.leaves > 0),
+    no.leaves = ifelse(obs.alive, No.leaves, NA),
+    leaf.leng = ifelse(obs.alive, Leaf.length, NA),
+    flowering = case_when(
+      !detected  ~ NA,
+      !obs.alive ~ FALSE,
+      No.umbels > 0 ~ TRUE,
+      !No.umbels ~ FALSE,
+      is.na(No.umbels) ~ FALSE, # assume it would have been recorded if it was flowering
+      .default = NA
+    ),
+    no.umbels = ifelse(No.umbels > 0, No.umbels, NA),
+  ) %>%
+  select(plantid, Plot, Year, detected, obs.alive, no.leaves, leaf.leng, flowering, no.umbels) %>%
+  arrange(Year, Plot, plantid)
+
+# maybe export this for now...
+
+# Write some kind of temp demo data frame too...
+write.csv(
+  demo.table,
+  '01_data_cleaning/out/demo_table.csv',
+  row.names = FALSE
+)
