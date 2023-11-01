@@ -1012,7 +1012,7 @@ demo %>%
   filter(Year > min(Year[!No.leaves])) %>%
   mutate(dead.status = any(No.leaves > 0)) %>%
   distinct(plantid, .keep_all = TRUE) %>%
-  group_by(false.dead) %>%
+  group_by(dead.status) %>%
   summarise(n = n())
 # okay... 120 of 183 of plants ever thought dead were misses!
 # (actually might be higher... code above does not account for 2023-only deaths)
