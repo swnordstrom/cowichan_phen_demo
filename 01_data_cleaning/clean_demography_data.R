@@ -583,8 +583,6 @@ proc.demo = proc.demo %>% mutate(umbel.diam = ifelse(umbel.diam %in% 'nA', NA, u
 ##### Other cleaning
 ######################################################################
 
-
-
 # There are duplicate records for some reason for plant 3430 in plot 1
 
 raw.demo.list %>% lapply(function(x) x %>% filter(Tag %in% 3430))
@@ -606,6 +604,25 @@ proc.demo = rbind(
 
 proc.demo %>% group_by(plantid, Year) %>% filter(n() > 1)
 # none!
+
+### Non-integer leaf counts
+
+# Two cases where data was mis-entered in 2020
+# ih each case, one leaf count was reported, then (poorly) scratched out and a
+# different number written instead
+# the data was then entered with both digits separated by an (imaginary) period
+# correct number to enter is just the latter
+
+proc.demo %>% filter((No.leaves %% 1) > 0)
+
+proc.demo %>%
+  mutate(No.leaves.test = as.numeric(gsub('^\\d\\.', '', as.character(No.leaves)))) %>%
+  filter(No.leaves.test != No.leaves)
+# good!  
+
+proc.demo = proc.demo %>%
+  mutate(No.leaves = as.numeric(gsub('^\\d\\.', '', as.character(No.leaves))))
+  
 
 ######################################################################
 ##### Export what we currently have
