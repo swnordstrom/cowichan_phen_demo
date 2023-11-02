@@ -294,8 +294,8 @@ AIC(p.fl.n.l.y.f, p.fl.n.l.y.u, p.fl.n.l.y)
 # Oops haven't done treatment effects yet!
 
 p.fl.n.l.y.f.t = glmer(
-  formula = flowering ~ log(no.leaves.prev) + log(leaf.leng.prev) + flowering.prev + trt +
-    (1 | Year) + (1 | Plot / plantid),
+  formula = flowering ~ log(no.leaves.prev) + log(leaf.leng.prev) + flowering.prev +
+    (trt | Year) + (1 | Plot / plantid),
   data = demo.prev.for.mod,
   family = 'binomial'
 )
@@ -397,7 +397,7 @@ demo.prev.for.mod %>%
     panel.background = element_blank()
   )
 
-ggsave('02_data_exploration/figs/flowering_lfln.png', height = 8, width = 8)
+# ggsave('02_data_exploration/figs/flowering_lfln.png', height = 8, width = 8)
 
 demo.prev.for.mod %>%
   ggplot(aes(x = no.leaves.prev)) +
@@ -435,4 +435,170 @@ demo.prev.for.mod %>%
     panel.background = element_blank()
   )
 
-ggsave('02_data_exploration/figs/flowering_lfct.png', height = 8, width = 8)
+# ggsave('02_data_exploration/figs/flowering_lfct.png', height = 8, width = 8)
+
+##### Model with one "size" component...
+
+demo.prev.for.mod = demo.prev.for.mod %>%
+  mutate(
+    size = log(no.leaves * leaf.leng),
+    size.prev = log(no.leaves.prev * leaf.leng.prev)
+  ) %>%
+  # Because it was suggested by Jenn, remove 2017 data (2016 leaf sizes are unreliable)
+  filter(!Year %in% 2017)
+
+### Null model as before
+
+p.fl.0 = glmer(
+  formula = flowering ~ (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+### Model with current size
+
+p.fl.s1 = glmer(
+  formula = flowering ~ size + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+### Model with prior size
+
+p.fl.s0 = glmer(
+  formula = flowering ~ size.prev + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+### Model with both prior and current size
+
+p.fl.s0.s1 = glmer(
+  formula = flowering ~ size + size.prev + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+### Compare with AIC
+AIC(p.fl.0, p.fl.s0, p.fl.s1, p.fl.s0.s1) # both of them! what the heck
+
+summary(p.fl.s0.s1)
+# both are positive (greater effect for current size)
+
+### Look for year effects
+p.fl.s0.s1.y = glmer(
+  formula = flowering ~ size + size.prev + (1 | Year) + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+AIC(p.fl.s0.s1.y, p.fl.s0.s1) # year effects are good
+
+### Well... do any of the size variables vary by year?
+
+p.fl.ys0.ys1 = glmer(
+  formula = flowering ~  (size + size.prev | Year) + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+# convergence error...
+
+p.fl.ys0.s1 = glmer(
+  formula = flowering ~  size + (size.prev | Year) + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+p.fl.s0.ys1 = glmer(
+  formula = flowering ~  size.prev + (size | Year) + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+AIC(p.fl.s0.ys1, p.fl.ys0.s1, p.fl.s0.s1.y) %>% arrange(AIC)
+# no evidence that size effects vary by year
+
+### Look at prior flowering
+
+p.fl.s0.s1.y.f0 = glmer(
+  formula = flowering ~ size + size.prev + flowering.prev + (1 | Year) + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+AIC(p.fl.s0.s1.y.f0, p.fl.s0.s1.y) # yep.
+summary(p.fl.s0.s1.y.f0)
+# positive effect...
+
+### Prior-flowering varying by year
+
+p.fl.s0.s1.yf0 = glmer(
+  formula = flowering ~ size + size.prev + (flowering.prev | Year) + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+AIC(p.fl.s0.s1.yf0, p.fl.s0.s1.y.f0) %>% arrange(AIC) # nope - fl-effect does not vary by year
+
+### Checking for a treatment effect
+
+p.fl.s0.s1.y.f0.t = glmer(
+  formula = flowering ~ size + size.prev + flowering.prev + trt + (1 | Year) + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+AIC(p.fl.s0.s1.y.f0.t, p.fl.s0.s1.y.f0) %>% arrange(AIC) # nope - no evidence of treatment effect...
+
+### But could treatment have a year-varying effect?
+
+p.fl.s0.s1.f0.yt = glmer(
+  formula = flowering ~ size + size.prev + flowering.prev + (trt | Year) + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.prev.for.mod
+)
+
+# did not converge
+
+AIC(p.fl.s0.s1.f0.yt, p.fl.s0.s1.y.f0) # it looks slightly better though... oh well.
+
+### Let's plot
+
+summary(p.fl.s0.s1.y.f0)
+
+fl.preds = expand.grid(
+  Year = factor(2018:2023),
+  size = seq(.5, 6, by = .25),
+  size.prev = seq(.5, 6, by = .25),
+  flowering.prev = c(TRUE, FALSE)
+) %>%
+  mutate(fl.pred = ilogit(predict(p.fl.s0.s1.y.f0, newdata = ., re.form = ~ (1 | Year))))
+
+head(fl.preds)
+
+ggplot() +
+  geom_tile(
+    data = fl.preds %>%
+      mutate(flowering.prev = ifelse(flowering.prev, 'Flowered last year', 'Did not flower last year')),
+    aes(x = size.prev, y = size, fill = fl.pred)
+  ) +
+  geom_point(
+    data = demo.prev.for.mod %>% 
+      group_by(Year, flowering.prev) %>% 
+      sample_n(50) %>%
+      mutate(
+        flowering = ifelse(flowering, 'Flowered', 'Did not flower'),
+        flowering.prev = ifelse(flowering.prev, 'Flowered last year', 'Did not flower last year')
+      ),
+    aes(x = size.prev, y = size, shape = flowering),
+    colour = 'black', size = 2
+  ) +
+  scale_shape_manual(values = c(21, 19), '') +
+  scale_fill_stepsn(colours = RColorBrewer::brewer.pal(4, 'Greys'), 'Probability of flowering') +
+  facet_wrap(~ paste(Year, flowering.prev, sep = ', ')) +
+  labs(x = 'Size in previous year', y = 'Size in current year') +
+  theme(
+    legend.position = 'bottom',
+    panel.background = element_blank()
+  )
+
