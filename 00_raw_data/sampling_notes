@@ -1,0 +1,57 @@
+# Lomatium sampling oddities
+
+Going through metadata and datasheets to find broad-scale (i.e., not individual plant/record) notes about sampling irregularities that should be accounted for in analysis.
+
+### 2017
+
+Plot 13: ran out of pins when tagging plants, so new plants (?) were missed. Note says "1-3 on the 0-9 side, many more on the 10-19 side".
+
+Seems to me like this means don't include this plot in recruitment in 2017.
+
+Also this note fro metadata: "We tagged a lot of new plants in 2017, but probably not seedlings. Seems likely we missed some of these in 2016 OR that plants commonly go dormant." So maybe assume all new plant data in 2017 is suspect?
+
+### 2019 
+
+Seems from metadata like demo was not done in plot 9 this year (note says "diversity only"). N.b. this note was found in one of the 2020 metadata files ("v4").
+
+(Actually I went and checked and it does look like demo happened in plot 9 in 2019... so... idk what this note is saying.)
+
+### 2020 
+
+Here are notes from metadata:
+
+Plot 1: \*eaten leaves were included in counts, 0-9, found 2 NPNT from last year!
+Plot 2: 0-9, added some new plants
+Plot 3: all in 0-6, no new plants found
+Plot 4: all; measured individual in div plot, tagged more in 1st plot but not in div plot
+Plot 5: none flowering, measured no large ones in 2nd plot
+Plot 6: measured all + new plants
+Plot 7: measured all + new plants
+Plot 8:  none
+Plot 9: all
+Plot 10: all
+Plot 11: none
+Plot 12: all + new plants
+Plot 13: 0-9 + new plants
+Plot 14: 0-9, measured all the flowering plants in 2nd plot as well
+Plot 15: 0-9, looked for new seedlings but found none; sporadically looked in 2nd plot for big ones
+
+Takeaways here:
+- Most plots were not surveyed for xcoord > 9
+- Recruitment was suspect
+- Some plots skipped altogether
+
+Resurveying old plants:
+Plots 1, 2, 13, 14, 15: only surveyed 0-9
+Plot 3: only surveyed 0-6
+Plots 4, 6, 7, 9, 10, 12: surveyed all plants
+Plots 8, 11: no surveys (these might be the empty plots anyway)
+Plot 5: unclear
+
+Surveying new plants:
+Plots 2, 13, 15: only surveyed 0-9
+Plot 3: ony surveyed 0-6
+Plots 4(?), 6, 7, 12: surveyed all plants
+Plots 8, 11: no surveys (might be empty anyway)
+Plot 1, 5, 9, 10: unclear
+
