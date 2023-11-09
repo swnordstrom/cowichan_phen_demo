@@ -37,13 +37,75 @@ shared.cols = Reduce(intersect, lapply(raw.demo.list, names))
 
 # Combine common columns into one data frame
 raw.demo = raw.demo.list %>%
-  lapply(function(df) df[,shared.cols]) %>%
+  lapply(
+    function(df) {
+      df %>% 
+        select(c(all_of(shared.cols), contains('ote'))) %>%
+        rename_with(function(x) 'notes', contains('ote'))
+    }
+  ) %>%
   do.call(what = rbind)
 
 head(raw.demo)
 
 # Create a proc.demo data frame for storing processed demo
 proc.demo = raw.demo %>% mutate(Note = NA, edited = FALSE)
+
+# Also get in 'notes' column
+raw.demo.list %>%
+  lapply(function(df) df %>% 
+           select(Plot, Tag, Xcoor, Ycoor, contains('ote')) %>%
+           rename_with(function(x) 'notes', contains('ote')))
+
+######################################################################
+##### Fix data entry mistakes
+######################################################################
+
+##### 2018 column mistakes
+# in 2018 column names are wrong (!)
+# leaf length was recorded as "height"
+# umble height was recorded as "leaf length"
+# but in years where plants did not flower, leaf length = "height"
+proc.demo$Leaf.length[proc.demo$Year %in% 2018] = raw.demo.list[[3]]$Height
+proc.demo$Stalk_Height[proc.demo$Year %in% 2018] = raw.demo.list[[3]]$Leaf.length
+
+# umbel count of 7.5 is a mis-entry - should be 2 umbels, stalk height 7.5
+proc.demo[with(proc.demo, Plot %in% 15 & Tag %in% 3492 & Year %in% 2018), c("Stalk_Height", "No.umbels")] = 
+  proc.demo[with(proc.demo, Plot %in% 15 & Tag %in% 3492 & Year %in% 2018), c("No.umbels", "Stalk_Height")]
+# (fix umbel heights later...)
+proc.demo$edited[with(proc.demo, Plot %in% 15 & Tag %in% 3492 & Year %in% 2018)] = TRUE
+proc.demo$Note[with(proc.demo, Plot %in% 15 & Tag %in% 3492 & Year %in% 2018)] = 
+  "data entry mistake; umbel count and stalk height were swapped"
+
+# I think this alos happened with 3493 in 2018
+proc.demo[with(proc.demo, Plot %in% 15 & Tag %in% 3493 & Year %in% 2018), c("Stalk_Height", "No.umbels")] = 
+  proc.demo[with(proc.demo, Plot %in% 15 & Tag %in% 3493 & Year %in% 2018), c("No.umbels", "Stalk_Height")]
+# (fix umbel heights later...)
+proc.demo$edited[with(proc.demo, Plot %in% 15 & Tag %in% 3493 & Year %in% 2018)] = TRUE
+proc.demo$Note[with(proc.demo, Plot %in% 15 & Tag %in% 3493 & Year %in% 2018)] = 
+  "data entry mistake; umbel count and stalk height were swapped"
+
+##### Fix some mistakenly-entered leaf counts that I found
+
+proc.demo = proc.demo %>%
+  mutate(
+    Leaf.length = ifelse(Tag %in% 3687 & Plot %in% 1 & Year %in% 2020, 10.1, Leaf.length),
+    edited = ifelse(Tag %in% 3687 & Plot %in% 1 & Year %in% 2020, TRUE, edited),
+    Note = ifelse(ifelse(Tag %in% 3687 & Plot %in% 1 & Year %in% 2020,
+                         "data entry mistake; was entered as 1",
+                         Note))
+  )
+
+##### At some point someone mistakenly entered decimal leaf-counts
+# (I checked the original data - a count was recorded, poorly-scratched out, and
+# replaced with another count, and the data-enterer placed both separated by a
+# period (?))
+# so just take out the first digit and the period
+
+proc.demo %>% filter(grepl('\\.', No.leaves))
+
+proc.demo = proc.demo %>%
+  mutate(No.leaves = gsub('\\d\\.', '', as.character(No.leaves)))
 
 ######################################################################
 ##### Need unique identifiers for each plant
@@ -604,24 +666,6 @@ proc.demo = rbind(
 
 proc.demo %>% group_by(plantid, Year) %>% filter(n() > 1)
 # none!
-
-### Non-integer leaf counts
-
-# Two cases where data was mis-entered in 2020
-# ih each case, one leaf count was reported, then (poorly) scratched out and a
-# different number written instead
-# the data was then entered with both digits separated by an (imaginary) period
-# correct number to enter is just the latter
-
-proc.demo %>% filter((No.leaves %% 1) > 0)
-
-proc.demo %>%
-  mutate(No.leaves.test = as.numeric(gsub('^\\d\\.', '', as.character(No.leaves)))) %>%
-  filter(No.leaves.test != No.leaves)
-# good!  
-
-proc.demo = proc.demo %>%
-  mutate(No.leaves = as.numeric(gsub('^\\d\\.', '', as.character(No.leaves))))
   
 
 ######################################################################
@@ -635,6 +679,13 @@ proc.demo %>%
     '01_data_cleaning/out/demo_all_cleaned.csv', 
     row.names = FALSE
   )
+
+######################################################################
+##### TO DO:
+######################################################################
+
+# - fix 2018 stalk heights with ifelse (see beginning of script)
+
 
 ######################################################################
 ##### Old code 
