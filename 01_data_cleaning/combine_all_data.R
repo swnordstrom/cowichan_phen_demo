@@ -12,7 +12,7 @@ rm(list = ls())
 ######################################################################
 
 # All demo data
-demo = read.csv('01_data_cleaning/out/demo_all_cleaned.csv')
+demo = read.csv('01_data_cleaning/out/demo_all_cleaned.csv', encoding = 'latin1')
 
 # Multi-umbel data (2021-2023)
 mumb = read.csv('01_data_cleaning/out/multi_umbel_clean.csv')
@@ -41,12 +41,9 @@ nrow(mumb)
 demo.mumb = merge(
   x = demo %>% 
     # Get relevant columns
-    select(Year, No.leaves, Leaf.length, No.umbels, umbel.diam, edited, Note, plantid) %>%
+    select(Year, No.leaves, Leaf.length, No.umbels, umbel.diam, demo.note, proc.note, edited, plantid) %>%
     # Rename notes column to specify source
-    rename(
-      demo.note = Note,
-      demo.edit = edited
-    ) %>%
+    rename(demo.edit = edited) %>%
     # This column will help with assessing the merge...
     mutate(in.demo = TRUE),
   y = mumb %>% 
@@ -134,7 +131,7 @@ demo.mumb %>% filter(Year %in% 2021, grepl('\\_2\\_14B', plantid))
 demo %>% filter(Tag %in% 3053)
 # ah - note in original dataset: "umbels dead"
 demo = demo %>%
-  mutate(Note = ifelse(Year %in% 2021 & plantid %in% '3053_2_14B', 'umbels dead', Note))
+  mutate(proc.note = ifelse(Year %in% 2021 & plantid %in% '3053_2_14B', 'umbels dead', proc.note))
 
 ### 2  2021    3135_12_7G
 # possible data entry error?
@@ -200,10 +197,10 @@ mumb %>% filter(Tag %in% 3469) # doesn't appear until 2023
 demo %>% filter(Tag %in% 3469, Plot %in% 14)
 # ah - note in 2022 datasheet says second umbel clipped
 demo = demo %>%
-  mutate(Note = 
+  mutate(proc.note = 
            ifelse(Year %in% 2022 & Tag %in% 3469 & Plot %in% 14,
                   'one umbel clipped',
-                  Note)
+                  proc.note)
          )
 
 ### 17 2022     3542_1_0I
@@ -265,7 +262,7 @@ mumb = mumb %>%
 ### 4 2022 3389_13_12F
 demo %>% filter(Tag %in% 3389)
 # tag was changed somewhere
-demo %>% filter(grepl('3389', Note))
+demo %>% filter(grepl('3389', proc.note))
 mumb = mumb %>%
   mutate(
     plantid = ifelse(Tag %in% 3389 & Plot %in% 13, '3481_13_12F', plantid),
@@ -289,12 +286,9 @@ mumb %>% filter(Tag %in% 3389)
 demo.mumb = merge(
   x = demo %>% 
     # Get relevant columns
-    select(Year, No.leaves, Leaf.length, No.umbels, umbel.diam, edited, Note, plantid) %>%
+    select(Year, No.leaves, Leaf.length, No.umbels, umbel.diam, demo.note, proc.note, edited, plantid) %>%
     # Rename notes column to specify source
-    rename(
-      demo.note = Note,
-      demo.edit = edited
-    ) %>%
+    rename(demo.edit = edited) %>%
     # This column will help with assessing the merge...
     mutate(in.demo = TRUE),
   y = mumb %>% 
@@ -461,7 +455,7 @@ demo.seed %>%
   group_by(year, plantid.seed) %>%
   filter(any(!flowering.in.demo)) %>%
   select(year, plot, tag, coor.demo, plantid.seed, No.leaves, Stalk_Height, 
-         No.umbels, umbel.no, no.seeds, Note)
+         No.umbels, umbel.no, no.seeds, demo.note, proc.note)
 
 # Some of these are just dupes, a couple of them are not...
 # Some of them are not though...
@@ -533,7 +527,7 @@ demo %>% filter(Year %in% 2021 & Tag %in% 3748)
 demo %>% filter(Year %in% 2021, Plot %in% 6) %>% arrange(Xcoor)
 seed %>% filter(year %in% 2021, tag %in% 3748)
 # noted as dead... definitely flowered though...
-demo %>% filter(grepl('3748', Note)) # ice cold... not even mentioned in a note...
+demo %>% filter(grepl('3748', demo.note)) # ice cold... not even mentioned in a note...
 demo %>% filter(Tag %in% 3748) # I have literally no records of this tag... anywhere
 demo.seed %>% filter(year %in% 2021, !in.seed, plot %in% 6, flowering.in.demo)
 # could be 3179
@@ -566,7 +560,7 @@ demo = demo %>%
   mutate(
     plantid = ifelse(Tag %in% 3918 & Plot %in% 6, gsub('3918', '3916', plantid), plantid),
     edited = ifelse(Tag %in% 3918 & Plot %in% 6, TRUE, edited),
-    Note = ifelse(Tag %in% 3918 & Plot %in% 6, 'tag mis-entered as 3918 in 2016', Note),
+    proc.note = ifelse(Tag %in% 3918 & Plot %in% 6, 'tag mis-entered as 3918 in 2016', proc.note),
     Tag = ifelse(Tag %in% 3918 & Plot %in% 6, 3916, Tag),
   )
 
@@ -587,14 +581,14 @@ demo = demo %>%
   mutate(
     plantid = ifelse(Tag %in% 3298 & Plot %in% 7, gsub('3298', '3296', plantid), plantid),
     edited = ifelse(Tag %in% 3298 & Plot %in% 7, TRUE, edited),
-    Note = ifelse(Tag %in% 3298 & Plot %in% 7, 'tag mis-entered as 3298 in 2016', Note),
+    proc.note = ifelse(Tag %in% 3298 & Plot %in% 7, 'tag mis-entered as 3298 in 2016', proc.note),
     Tag = ifelse(Tag %in% 3298 & Plot %in% 7, 3296, Tag),
   )
 
 # 4  2021  3363_14_15H
 demo %>% filter(Tag %in% 3363) # tag was misentered
 seed %>% filter(tag %in% 3363) # mis-entered in both years?
-demo %>% filter(grepl('3363', Note)) # tag wasn't manually changed...
+demo %>% filter(grepl('3363', proc.note)) # tag wasn't manually changed...
 demo.seed %>% filter(plot %in% 14, year %in% 2021, !in.seed & flowering.in.demo)
 demo.seed %>% filter(plot %in% 14, year %in% 2022, !in.seed & flowering.in.demo)
 seed %>% filter(tag %in% 3363) # yes total mis-read/mis-entry
@@ -642,7 +636,7 @@ demo = rbind(
       # update plantid (not sure if this will be done elsewhere)
       plantid = gsub('2055', '5022', plantid),
       # Add note
-      Note = "tag mis-recorded as 2055",
+      proc.note = "tag mis-recorded as 2055",
       edited = TRUE
     )
 )
@@ -672,7 +666,7 @@ seed = seed %>%
 
 # 9  2022       3789_6
 demo %>% filter(Tag %in% 3789)
-demo %>% filter(grepl('3789', Note)) # not a replacement
+demo %>% filter(grepl('3789', proc.note)) # not a replacement
 seed %>% filter(tag %in% 3789)
 demo.seed %>% filter(plot %in% 6, year %in% 2022, !in.seed, flowering.in.demo)
 # oh... might have been the worst tag-reading job on earth (7->1, 6->8, 4->9)
@@ -714,13 +708,13 @@ demo = demo %>%
   mutate(
     plantid = ifelse(Tag %in% 3886 & Plot %in% 7, gsub('3886', '3866', plantid), plantid),
     edited = ifelse(Tag %in% 3886 & Plot %in% 7, TRUE, edited),
-    Note = ifelse(Tag %in% 3886 & Plot %in% 7, 'tag mis-entered as 3866 in 2016', Note),
+    proc.note = ifelse(Tag %in% 3886 & Plot %in% 7, 'tag mis-entered as 3866 in 2016', proc.note),
     Tag = ifelse(Tag %in% 3886 & Plot %in% 7, 3866, Tag),
   )
 
 # 12 2022      3614_13
 demo %>% filter(Tag %in% 3614)
-demo %>% filter(grepl('3614', Note))
+demo %>% filter(grepl('3614', proc.note))
 seed %>% filter(tag %in% 3614)
 demo.seed %>% filter(plot %in% 13, year %in% 2022, !in.seed, flowering.in.demo)
 # haha... man
@@ -754,7 +748,7 @@ demo = rbind(
       # update plantid (not sure if this will be done elsewhere)
       plantid = gsub('3880', '7537', plantid),
       # Add note
-      Note = "tag changed to 7537 in 2022",
+      proc.note = "tag changed to 7537 in 2022",
       edited = TRUE
     )
 )
@@ -844,7 +838,7 @@ demo.seed %>% filter(plot %in% 5, No.umbels %in% 1, year %in% 2023, !in.seed, fl
 # 21 2023    5849_7_1E
 demo %>% filter(Tag %in% 5849)
 seed %>% filter(tag %in% 5849)
-demo %>% filter(grepl('5849', Note))
+demo %>% filter(grepl('5849', proc.note))
 demo.seed %>% filter(plot %in% 7, year %in% 2023, !in.seed, flowering.in.demo)
 # also a ton of plants in here
 # dude... what's up with that
@@ -1020,6 +1014,12 @@ demo %>%
 
 # (survival should be done with occupancy modeling, methinks)
 
+write.csv(
+  demo,
+  '01_data_cleaning/out/demo_postcombine.csv',
+  row.names = FALSE
+)
+
 ##### Make a demo table just to see what it would look like
 
 demo.table = demo %>%
@@ -1038,14 +1038,18 @@ demo.table = demo %>%
     ),
     no.umbels = ifelse(No.umbels > 0, No.umbels, NA),
   ) %>%
-  select(plantid, Plot, Year, detected, obs.alive, no.leaves, leaf.leng, flowering, no.umbels) %>%
+  select(
+    plantid, Plot, Year, detected, obs.alive, 
+    no.leaves, leaf.leng, flowering, no.umbels,
+    proc.note, demo.note
+  ) %>%
   arrange(Year, Plot, plantid)
 
 # maybe export this for now...
 
-# Write some kind of temp demo data frame too...
-write.csv(
-  demo.table,
-  '01_data_cleaning/out/demo_table.csv',
-  row.names = FALSE
-)
+# # # Write some kind of temp demo data frame too...
+# write.csv(
+#   demo.table,
+#   '01_data_cleaning/out/demo_table.csv',
+#   row.names = FALSE
+# )
