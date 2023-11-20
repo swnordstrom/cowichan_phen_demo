@@ -41,7 +41,7 @@ raw.demo = raw.demo.list %>%
     function(df) {
       df %>% 
         select(c(all_of(shared.cols), contains('ote'))) %>%
-        rename_with(function(x) 'notes', contains('ote'))
+        rename_with(function(x) 'demo.note', contains('ote'))
     }
   ) %>%
   do.call(what = rbind)
@@ -49,13 +49,13 @@ raw.demo = raw.demo.list %>%
 head(raw.demo)
 
 # Create a proc.demo data frame for storing processed demo
-proc.demo = raw.demo %>% mutate(Note = NA, edited = FALSE)
+proc.demo = raw.demo %>% mutate(proc.note = NA, edited = FALSE)
 
 # Also get in 'notes' column
 raw.demo.list %>%
   lapply(function(df) df %>% 
            select(Plot, Tag, Xcoor, Ycoor, contains('ote')) %>%
-           rename_with(function(x) 'notes', contains('ote')))
+           rename_with(function(x) 'demo.note', contains('ote')))
 
 ######################################################################
 ##### Fix data entry mistakes
@@ -74,7 +74,7 @@ proc.demo[with(proc.demo, Plot %in% 15 & Tag %in% 3492 & Year %in% 2018), c("Sta
   proc.demo[with(proc.demo, Plot %in% 15 & Tag %in% 3492 & Year %in% 2018), c("No.umbels", "Stalk_Height")]
 # (fix umbel heights later...)
 proc.demo$edited[with(proc.demo, Plot %in% 15 & Tag %in% 3492 & Year %in% 2018)] = TRUE
-proc.demo$Note[with(proc.demo, Plot %in% 15 & Tag %in% 3492 & Year %in% 2018)] = 
+proc.demo$proc.note[with(proc.demo, Plot %in% 15 & Tag %in% 3492 & Year %in% 2018)] = 
   "data entry mistake; umbel count and stalk height were swapped"
 
 # I think this alos happened with 3493 in 2018
@@ -82,18 +82,30 @@ proc.demo[with(proc.demo, Plot %in% 15 & Tag %in% 3493 & Year %in% 2018), c("Sta
   proc.demo[with(proc.demo, Plot %in% 15 & Tag %in% 3493 & Year %in% 2018), c("No.umbels", "Stalk_Height")]
 # (fix umbel heights later...)
 proc.demo$edited[with(proc.demo, Plot %in% 15 & Tag %in% 3493 & Year %in% 2018)] = TRUE
-proc.demo$Note[with(proc.demo, Plot %in% 15 & Tag %in% 3493 & Year %in% 2018)] = 
+proc.demo$proc.note[with(proc.demo, Plot %in% 15 & Tag %in% 3493 & Year %in% 2018)] = 
   "data entry mistake; umbel count and stalk height were swapped"
 
-##### Fix some mistakenly-entered leaf counts that I found
+##### Fix some mistakenly-entered leaf data that I found
 
 proc.demo = proc.demo %>%
   mutate(
     Leaf.length = ifelse(Tag %in% 3687 & Plot %in% 1 & Year %in% 2020, 10.1, Leaf.length),
     edited = ifelse(Tag %in% 3687 & Plot %in% 1 & Year %in% 2020, TRUE, edited),
-    Note = ifelse(ifelse(Tag %in% 3687 & Plot %in% 1 & Year %in% 2020,
+    proc.note = ifelse(ifelse(Tag %in% 3687 & Plot %in% 1 & Year %in% 2020,
                          "data entry mistake; was entered as 1",
-                         Note))
+                         proc.note))
+  )
+
+### 2018 case - ycoord "O" was mistakenly entered as zero in leaf count field
+# (also y-coor was left out in 2017 - add that back in here too)
+proc.demo = proc.demo %>%
+  mutate(
+    Ycoor = ifelse(Tag %in% 3103 & Plot %in% 4 & Year %in% 2017, 'O', Ycoor),
+    No.leaves = ifelse(Tag %in% 3103 & Plot %in% 4 & Year %in% 2018, 1, No.leaves),
+    edited = ifelse(Tag %in% 3103 & Plot %in% 4 & Year %in% 2018, TRUE, edited),
+    proc.note = ifelse(ifelse(Tag %in% 3103 & Plot %in% 4 & Year %in% 2018,
+                              "data entry mistake; leaf count was entered as 0",
+                              proc.note))
   )
 
 ##### At some point someone mistakenly entered decimal leaf-counts
@@ -106,6 +118,18 @@ proc.demo %>% filter(grepl('\\.', No.leaves))
 
 proc.demo = proc.demo %>%
   mutate(No.leaves = gsub('\\d\\.', '', as.character(No.leaves)))
+
+##### 2020 umbel counts: there are ten plants where umbel counts were entered
+# as double digit (?) - there's one for each number 11-20
+# these occur in the last 10 new plants, in order, added to the new plant data
+# sheet; no umbel counts are recorded on the data sheet
+# for these ten plants there are no umbel counts or stalk heights
+# fixeth!
+
+proc.demo = proc.demo %>%
+  mutate(
+    No.umbels = ifelse(No.umbels %in% as.character(9:20) & Year %in% 2020 & is.na(Stalk_Height), '0', No.umbels)
+  )
 
 ######################################################################
 ##### Need unique identifiers for each plant
@@ -126,10 +150,10 @@ proc.demo = proc.demo %>%
   mutate(
     Ycoor = ifelse(Tag %in% 3044 & Plot %in% 7, 'D', Ycoor),
     edited = ifelse(Tag %in% 3044 & Plot %in% 7, TRUE, edited),
-    Note = ifelse(
+    proc.note = ifelse(
       Tag %in% 3044 & Plot %in% 7,
       "one ycoor fixed (was NA)",
-      Note
+      proc.note
     )
   )
 
@@ -254,7 +278,7 @@ proc.demo = rbind(
     mutate(
       Xcoor = rev(Xcoor), 
       Ycoor = rev(Ycoor),
-      Note  = "coordinates swapped on 2019 records based on prior records",
+      proc.note  = "coordinates swapped on 2019 records based on prior records",
       edited = TRUE
     )
 )
@@ -287,7 +311,7 @@ proc.demo = rbind(
     filter(Tag %in% 3391 & Ycoor %in% 'K') %>%
     mutate(
       Ycoor = 'G',
-      Note = "y-coordinate changed based on 2023 note (was K)",
+      proc.note = "y-coordinate changed based on 2023 note (was K)",
       edited = TRUE
     )
 )
@@ -311,7 +335,7 @@ proc.demo = rbind(
     mutate(
       # Correct tag
       Tag = 3398,
-      Note = "tag changed based on 2019 note (was 3396)",
+      proc.note = "tag changed based on 2019 note (was 3396)",
       edited = TRUE
     )
 )
@@ -332,7 +356,7 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3989,
       # Add note
-      Note = "tag changed based on 2023 note (was 3396)",
+      proc.note = "tag changed based on 2023 note (was 3396)",
       edited = TRUE
     )
 )
@@ -350,7 +374,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3090))
 proc.demo = proc.demo %>% 
   mutate(
     Ycoor = ifelse(Tag %in% 3090 & Plot %in% 4, "P", Ycoor),
-    Note  = ifelse(Tag %in% 3090 & Plot %in% 4, "fixed ycoor (was P)", Note),
+    proc.note  = ifelse(Tag %in% 3090 & Plot %in% 4, "fixed ycoor (was P)", proc.note),
     edited = ifelse(Tag %in% 3090 & Plot %in% 4, TRUE , edited)
   )
 
@@ -376,7 +400,7 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3480,
       # Add note
-      Note = "tag changed in 2019 (was 3356)",
+      proc.note = "tag changed in 2019 (was 3356)",
       edited = TRUE
     )
 )
@@ -397,7 +421,7 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3178,
       # Add note
-      Note = "tag changed in 2019 (was 3387)",
+      proc.note = "tag changed in 2019 (was 3387)",
       edited = TRUE
     ),
   proc.demo %>%
@@ -406,7 +430,7 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3142,
       # Add note
-      Note = "tag changed in 2019 (was 3387)",
+      proc.note = "tag changed in 2019 (was 3387)",
       edited = TRUE
     )
 )  
@@ -417,7 +441,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3555))
 proc.demo = proc.demo %>% 
   mutate(
     Ycoor = ifelse(Tag %in% 3555 & Plot %in% 4, 'J', Ycoor),
-    Note  = ifelse(Tag %in% 3555 & Plot %in% 4, 'fixed ycoor (was T)', Note),
+    proc.note  = ifelse(Tag %in% 3555 & Plot %in% 4, 'fixed ycoor (was T)', proc.note),
     edited = ifelse(Tag %in% 3555 & Plot %in% 4, TRUE, edited)
   )
 
@@ -427,7 +451,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3634))
 proc.demo = proc.demo %>% 
   mutate(
     Ycoor = ifelse(Tag %in% 3634 & Plot %in% 4, 'E', Ycoor),
-    Note  = ifelse(Tag %in% 3634 & Plot %in% 4, 'fixed ycoor (was O)', Note),
+    proc.note  = ifelse(Tag %in% 3634 & Plot %in% 4, 'fixed ycoor (was O)', proc.note),
     edited = ifelse(Tag %in% 3634 & Plot %in% 4, TRUE, edited)
   )
 
@@ -447,7 +471,7 @@ proc.demo = rbind(
       # Add new (correct) tag
       Tag = 3481,
       # Add note
-      Note = "tag changed in 2020 (was 3389)",
+      proc.note = "tag changed in 2020 (was 3389)",
       edited = TRUE
     )
 )
@@ -457,7 +481,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3563)) # proper coo
 proc.demo = proc.demo %>%
   mutate(
     Ycoor = ifelse(Tag %in% 3563 & Xcoor %in% 15, 'H', Ycoor),
-    Note  = ifelse(Tag %in% 3563 & Plot %in% 4, 'fixed ycoor (was R?)', Note),
+    proc.note  = ifelse(Tag %in% 3563 & Plot %in% 4, 'fixed ycoor (was R?)', proc.note),
     edited = ifelse(Tag %in% 3563 & Plot %in% 4, TRUE, edited)
   )
 
@@ -481,9 +505,9 @@ proc.demo = rbind(
     filter(Tag %in% 3114 & Plot %in% 13 & Ycoor %in% 'H') %>%
     mutate(
       # Add new (correct) tag
-      Tag = 3,
+      Tag = 3114,
       # Add note
-      Note = "tag changed in 2021",
+      proc.note = "tag changed in 2021",
       edited = TRUE
     )
 )
@@ -494,7 +518,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3345))
 proc.demo = proc.demo %>% 
   mutate(
     Ycoor = ifelse(Tag %in% 3345 & Plot %in% 6, 'D', Ycoor),
-    Note  = ifelse(Tag %in% 3345 & Plot %in% 6, 'fixed ycoor (was C)', Note),
+    proc.note  = ifelse(Tag %in% 3345 & Plot %in% 6, 'fixed ycoor (was C)', proc.note),
     edited = ifelse(Tag %in% 3345 & Plot %in% 6, TRUE, edited)
   )
 
@@ -504,7 +528,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3535))
 proc.demo = proc.demo %>% 
   mutate(
     Xcoor = ifelse(Tag %in% 3535 & Plot %in% 13, 18, Xcoor),
-    Note  = ifelse(Tag %in% 3535 & Plot %in% 13, 'fixed xcoor (was 16)', Note),
+    proc.note  = ifelse(Tag %in% 3535 & Plot %in% 13, 'fixed xcoor (was 16)', proc.note),
     edited = ifelse(Tag %in% 3535 & Plot %in% 13, TRUE, edited)
   )
 
@@ -514,7 +538,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3554))
 proc.demo = proc.demo %>% 
   mutate(
     Xcoor = ifelse(Tag %in% 3554 & Plot %in% 1, 5, Xcoor),
-    Note  = ifelse(Tag %in% 3554 & Plot %in% 1, 'fixed xcoor (was 6)', Note),
+    proc.note  = ifelse(Tag %in% 3554 & Plot %in% 1, 'fixed xcoor (was 6)', proc.note),
     edited = ifelse(Tag %in% 3554 & Plot %in% 1, TRUE, edited)
   )
 
@@ -524,7 +548,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3585))
 proc.demo = proc.demo %>% 
   mutate(
     Xcoor = ifelse(Tag %in% 3585 & Plot %in% 2, 3, Xcoor),
-    Note  = ifelse(Tag %in% 3585 & Plot %in% 2, 'fixed xcoor (was 2)', Note),
+    proc.note  = ifelse(Tag %in% 3585 & Plot %in% 2, 'fixed xcoor (was 2)', proc.note),
     edited = ifelse(Tag %in% 3585 & Plot %in% 2, TRUE, edited)
   )
 
@@ -534,7 +558,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3638))
 proc.demo = proc.demo %>% 
   mutate(
     Ycoor = ifelse(Tag %in% 3638 & Plot %in% 13, "C", Ycoor),
-    Note  = ifelse(Tag %in% 3638 & Plot %in% 13, 'fixed ycoor (was D)', Note),
+    proc.note  = ifelse(Tag %in% 3638 & Plot %in% 13, 'fixed ycoor (was D)', proc.note),
     edited = ifelse(Tag %in% 3638 & Plot %in% 13, TRUE, edited)
   )
 
@@ -545,7 +569,7 @@ proc.demo %>% filter(Plot %in% 14 & Xcoor %in% 0 & Ycoor %in% c("E", "F"))
 # this is the only plant at this location
 proc.demo = proc.demo %>% mutate(
   Ycoor = ifelse(Tag %in% 3699 & Plot %in% 14, 'E', Ycoor),
-  Note  = ifelse(Tag %in% 3699 & Plot %in% 14, 'fixed ycoor (was F)', Note),
+  proc.note  = ifelse(Tag %in% 3699 & Plot %in% 14, 'fixed ycoor (was F)', proc.note),
   edited = ifelse(Tag %in% 3699 & Plot %in% 14, TRUE, edited)
 )
 
@@ -554,7 +578,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3844))
 # 7 -> 8
 proc.demo = proc.demo %>% mutate(
   Xcoor = ifelse(Tag %in% 3844 & Plot %in% 2, 8, Xcoor),
-  Note  = ifelse(Tag %in% 3844 & Plot %in% 2, 'fixed xcoor (was 7)', Note),
+  proc.note  = ifelse(Tag %in% 3844 & Plot %in% 2, 'fixed xcoor (was 7)', proc.note),
   edited = ifelse(Tag %in% 3844 & Plot %in% 2, TRUE, edited)
 )
 
@@ -563,7 +587,7 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3932))
 # J -> H
 proc.demo = proc.demo %>% mutate(
   Ycoor = ifelse(Tag %in% 3932 & Plot %in% 15, 'H', Ycoor),
-  Note  = ifelse(Tag %in% 3932 & Plot %in% 15, 'fixed ycoor (was J)', Note),
+  proc.note  = ifelse(Tag %in% 3932 & Plot %in% 15, 'fixed ycoor (was J)', proc.note),
   edited = ifelse(Tag %in% 3932 & Plot %in% 15, TRUE, edited)
 )
 
@@ -581,6 +605,278 @@ proc.demo %>% filter(Plot %in% 9)
 proc.demo %>% filter(grepl('\\s', Ycoor))
 proc.demo = proc.demo %>% mutate(Ycoor = gsub('\\s', '', Ycoor))
 # fixed.
+
+################
+##### Look for plants with with '[Tt]ag' in the notes field
+################
+
+# from here:
+# demo %>% filter(grepl('[Tt]ag', demo.note), np %in% 'none') # np is added col
+
+### 3323/3500
+raw.demo %>% filter(Tag %in% c(3323, 3500)) %>% arrange(Plot, Year)
+# no 2016 record for 3500 in plot 2
+
+### 3703/3844
+raw.demo %>% filter(Tag %in% c(3703, 3844)) %>% arrange(Year, Tag) # 12 leaves???
+# actually this looks fine too - two different plants
+raw.demo %>% filter(Tag %in% c(3703, 3844)) %>% arrange(Tag, Year)
+
+### 3093
+raw.demo %>% filter(Tag %in% 3093) # not a 2017 recruit...
+# ('found plant with unlisted tag' - these are not recruits)
+
+### 3090
+raw.demo %>% filter(Tag %in% 3090) # ugh...
+
+### 3049
+raw.demo %>% filter(Tag %in% 3049)
+# not a new recruit...
+
+### 3814/3782
+raw.demo %>% filter(Tag %in% c(3814, 3782))
+# ugh... which is which?
+# 3782 is not new recruit in 2022/2023
+# also where is 3782 record for 2022?
+raw.demo %>% filter(Plot %in% 1, Xcoor %in% 0, Ycoor %in% 'J')
+
+### 3180
+raw.demo %>% filter(Tag %in% 3180) %>% arrange(Plot, Year)
+proc.demo %>% filter(Tag %in% 3180) %>% arrange(Plot, Xcoor, Year)
+
+### 3142
+raw.demo %>% filter(Tag %in% c(3142, 3792))
+proc.demo %>% filter(Tag %in% c(3142, 3792), Plot %in% 6)
+# no records for 3792...
+
+### 3179
+raw.demo %>% filter(Tag %in% c(3179, 3748), Plot %in% 6)
+# no records for 3748...
+
+### 3429
+raw.demo %>% filter(Tag %in% c(3, 3429))
+raw.demo %>% filter(Plot %in% 13, Xcoor %in% 8, Ycoor %in% 'H')
+
+### 3094
+raw.demo %>% filter(Tag %in% 3094)
+# woohoo... definitely dead plant!
+
+### 3171
+raw.demo %>% filter(Tag %in% c(3171, 3588)) %>% arrange(Year, Tag)
+# good demo records!
+
+### 3036
+raw.demo %>% filter(Tag %in% c(3036, 3762)) %>% arrange(Year, Tag)
+# finally! this routine is useful somehow...
+
+proc.demo = proc.demo %>%
+  # Get rid of empty record for 3036 in 2021
+  filter(!(Tag %in% 3036 & Year %in% 2021)) %>%
+  # Re-assign tag in 3762 record
+  mutate(
+   proc.note  = ifelse(Tag %in% 3762 & Year %in% 2021, 'manuall fixed tag (see demo note)', proc.note),
+   edited = ifelse(Tag %in% 3762 & Year %in% 2021, TRUE, edited),
+   Tag = ifelse(Tag %in% 3762 & Year %in% 2021, 3036, Tag)
+  ) %>%
+  # Now, get rid of 3762 records
+  filter(!(Tag %in% 3762 & Year > 2021 & Plot %in% 3))
+  
+### 3915/5051
+raw.demo %>% filter(Tag %in% c(3915, 5051)) %>% arrange(Year, Tag)
+# okay... same plant
+# ugh
+
+proc.demo = rbind(
+  # Separate out records of other plants
+  proc.demo %>% filter(!(Tag %in% c(3915, 5051) & Plot %in% 7)),
+  # Modify the baddies
+  proc.demo %>%
+    filter(Tag %in% c(3915, 5051) & Plot %in% 7) %>%
+    mutate(
+      # Add note about editing
+      proc.note = ifelse(Year < 2021, 'changed tag manually; was 3195 before 2021', proc.note),
+      edited = ifelse(Year < 2021, TRUE, edited),
+      # Tag was replaced in 2021, so set prior years' recs to current tag
+      Tag = ifelse(Year < 2021, 5051, Tag)
+    ) %>%
+  # Oh... it looks like records in/after 2021 for 3915 are empty
+  # so I can just remove these now...
+  filter(!Tag %in% 3915)
+)
+
+### 3423/3815
+raw.demo %>% filter(Tag %in% c(3423, 3815)) %>% arrange(Plot, Tag, Year)
+raw.demo %>% filter(Tag %in% c(3423, 3815), Plot %in% 12) %>% arrange(Year, Tag)
+# lol
+# okay well I guess no changes to this
+
+### 3119/3388
+raw.demo %>% filter(Tag %in% c(3388, 3119)) %>% arrange(Plot, Tag)
+raw.demo %>% filter(Tag %in% c(3388, 3119), Plot %in% 13) %>% arrange(Year, Tag)
+proc.demo %>% filter(Tag %in% c(3388, 3119), Plot %in% 13) %>% arrange(Year, Tag)
+# easy one!
+proc.demo = proc.demo %>%
+  mutate(
+    proc.note = ifelse(Tag %in% 3388 & Plot %in% 13, 'tag manually edited; was 3388', proc.note),
+    edited    = ifelse(Tag %in% 3388 & Plot %in% 13, TRUE, edited),
+    Tag       = ifelse(Tag %in% 3388 & Plot %in% 13, 3119, Tag)
+  )
+
+### 3615
+raw.demo %>% filter(Tag %in% c(3615, 3745)) %>% arrange(Plot, Tag)
+proc.demo %>% filter(Tag %in% c(3615, 3745), Plot %in% 15) %>% arrange(Year, Tag)
+# say 3615 and 3745 are different plants
+# assume that if 3745 was alive in 2023, it would have been found
+# so, change tag in 2023 record to 3745
+proc.demo = proc.demo %>%
+  mutate(
+    proc.note = ifelse(Tag %in% 3615 & Plot %in% 15 & Year %in% 2023, 
+                       'tag manually edited; was 3615', 
+                       proc.note),
+    edited    = ifelse(Tag %in% 3615 & Plot %in% 15 & Year %in% 2023, TRUE, edited),
+    Tag       = ifelse(Tag %in% 3615 & Plot %in% 15 & Year %in% 2023, 3745, Tag)
+  )
+
+### 5023
+raw.demo %>% filter(Tag %in% c(5023, 3807))
+# seems like these are the same plant
+proc.demo %>% filter(Tag %in% c(5023, 3807))
+
+proc.demo = rbind(
+  # Set aside other plants
+  proc.demo %>% filter(!(Tag %in% c(3807, 5023) & Plot %in% 5)),
+  # Isolate and fix records for this plant
+  proc.demo %>%
+    filter(Tag %in% c(3807, 5023), Plot %in% 5) %>%
+    # Remove empty records
+    filter(!(Tag %in% 3807 & Year %in% 2021)) %>%
+    filter(!(Tag %in% 5023 & Year %in% 2022)) %>%
+    # One remaining record - 5023 in 2021, change tag to 3807
+    mutate(
+      proc.note = ifelse(Tag %in% 5023, 'tag edited; was 5023', proc.note),
+      edited    = ifelse(Tag %in% 5023, TRUE, edited),
+      Tag       = ifelse(Tag %in% 5023, 3807, Tag)
+    )
+    
+)
+
+### 3729
+raw.demo %>% filter(Tag %in% 3729) # no problems here
+
+### 3773
+raw.demo %>% filter(Tag %in% 3773) # no problems here
+
+### 3039
+raw.demo %>% filter(Tag %in% 3039)
+# ahhhhhhhhh!!!
+# actually it looks like 3039 did in fact die in 2020
+raw.demo %>% filter(Tag %in% c(3039, 3558, 3726)) %>% arrange(Tag, Year)
+# well... 3558 looks like it died
+# note suggests to me that 3726 = 3039
+proc.demo = rbind(
+  # Separate out records for other plants
+  proc.demo %>% filter(!(Tag %in% c(3039, 3726) & Plot %in% 13)),
+  # Isolate records for 3039/3726
+  proc.demo %>%
+    filter(Tag %in% c(3039, 3726) & Plot %in% 13) %>%
+    # Get rid of records for 3039 after 2020 (when 3726 was first tagged)
+    filter(!(Tag %in% 3039 & Year > 2020)) %>%
+    mutate(
+      proc.note = ifelse(Tag %in% 3726, 'tag manually edited; was 3726', proc.note),
+      edited    = ifelse(Tag %in% 3726, TRUE, edited),
+      Tag       = ifelse(Tag %in% 3726, 3039, Tag)
+    )
+)
+
+### 3558
+raw.demo %>% filter(Tag %in% c(3558, 3769))
+proc.demo %>% filter(Tag %in% c(3558, 3769)) %>% arrange(Year, Tag)
+# yep... think these are the same plant
+proc.demo = rbind(
+  # These records are fine
+  proc.demo %>% filter(!(Tag %in% c(3558, 3769) & Plot %in% 13)),
+  # Isolate relevant records and fix
+  proc.demo %>%
+    filter(Tag %in% c(3558, 3769), Plot %in% 13) %>%
+    # Gert rid of 3558 records after 2020
+    filter(!(Tag %in% 3558 & Year > 2020)) %>%
+    # Fix info in remaining records
+    mutate(
+      proc.note = ifelse(Tag %in% 3769, 'tag changed; was 3769', proc.note),
+      edited    = ifelse(Tag %in% 3769, TRUE, edited),
+      Ycoor     = ifelse(Tag %in% 3769, 'F', Ycoor),
+      Tag       = ifelse(Tag %in% 3769, 3558, Tag)
+    )
+)
+
+################
+##### Look at plants with tag numbers in notes
+################
+
+# (list of plants to check from here)
+# demo %>%
+#   filter(grepl('\\d{4}', demo.note)) %>%
+#   filter(!grepl('[Tt]ag', demo.note)) %>%
+#   select(-c(plantid, trt)) %>%
+#   filter(!edited) %>%
+#   arrange(grepl('20[12][01236789]', demo.note), Plot, Tag, Year)
+
+# (going to assume there's no useful info in 'near' or 'next to' notes)
+
+### 3964
+raw.demo %>% filter(Tag %in% 3964)
+raw.demo %>% filter(Tag %in% c(3964, 3934)) %>% arrange(Year, Tag)
+# nah these are separate plants
+
+# 3456
+raw.demo %>% filter(Tag %in% c(3456, 7587)) %>% arrange(Year, Tag)
+# two leaves in every year... going to assume this is the same plant!
+proc.demo %>% filter(Tag %in% c(3456, 7587))
+proc.demo = rbind(
+  # Records for other plants
+  proc.demo %>% filter(!(Tag %in% c(3456, 7587) & Plot %in% 6)),
+  # Records for this plant
+  proc.demo %>%
+    filter(Tag %in% c(3456, 7587)) %>%
+    filter(!(Tag %in% 3456 & Year > 2021)) %>%
+    mutate(
+      proc.note = ifelse(Tag %in% 7587, 'edited tag; was 7587', proc.note),
+      edited    = ifelse(Tag %in% 7587, TRUE, edited),
+      Ycoor     = ifelse(Tag %in% 7587, 'B', Ycoor),
+      Tag       = ifelse(Tag %in% 7587, 3456, Tag)
+    )
+)
+
+### 3059
+proc.demo %>% filter(Tag %in% 3059)
+# argh...
+proc.demo %>% filter(Tag %in% c(3059, 3731, 3770))
+# I mean I guess I should follow the splitting rules... but which of these is it?
+# idk, and it would be arbitrary
+# maybe just ignore...
+
+### 7511
+proc.demo %>% filter(Tag %in% 7511)
+proc.demo %>% filter(Tag %in% c(7511, 3417)) %>% arrange(Plot, Year, Tag)
+# lol... man
+proc.demo %>% filter(Tag %in% c(7511, 3417), Plot %in% 12)
+# no - these are in fact different plants based on 2023 record!
+
+### 3393
+proc.demo %>% filter(Tag %in% c(3393, 3157), Plot %in% 15)
+# hmm... assume these are two different plants
+# both seen in 2017, but not again after that
+# hmm... oh well
+
+### 3417
+raw.demo %>% filter(Tag %in% c(3417, 3471), Plot %in% 14)
+proc.demo = proc.demo %>%
+  mutate(
+    proc.note = ifelse(Tag %in% 3417 & Plot %in% 14, 'changed tag; was mis-entered as 3417', proc.note),
+    edited    = ifelse(Tag %in% 3417 & Plot %in% 14, TRUE, edited),
+    Tag       = ifelse(Tag %in% 3417 & Plot %in% 14, 3471, Tag)
+  )
+
 
 ################
 ##### Assign IDs
@@ -659,7 +955,7 @@ proc.demo = rbind(
     filter(Tag %in% 3430 & Plot %in% 1) %>%
     arrange(Year, desc(No.leaves)) %>%
     filter(!duplicated(Year)) %>%
-    mutate(Note = "dupe records removed", edited = TRUE)
+    mutate(proc.note = "dupe records removed", edited = TRUE)
 )
 
 # other dupes?
@@ -685,7 +981,6 @@ proc.demo %>%
 ######################################################################
 
 # - fix 2018 stalk heights with ifelse (see beginning of script)
-
 
 ######################################################################
 ##### Old code 
