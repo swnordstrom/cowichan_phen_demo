@@ -214,7 +214,117 @@ demo.des.plt = make.design.data(
   parameters = list(Phi = list(static = 'Plot'), p = list(static = 'Plot'))
 )
 
-merge_design.covariates(
+# # This doesn't work (lol)
+# abcde = merge_design.covariates(
+#   demo.des.plt$Phi,
+#   df = demo %>% 
+#     mutate(size = ifelse(
+#       is.na(Leaf.length) | is.na(No.leaves),
+#       NA,
+#       log(No.leaves * Leaf.length)
+#     )
+#   ) %>%
+#     select(plantid, size, Year) %>%
+#     rename(time = Year) # %>%
+#     # group_by(plantid) %>%
+#     # filter(!any(is.na(size) & obs.alive) & No.umbels > 0)
+# )
+
+demo.des.plt$Phi = merge(
+  x = demo.proc.plt$data[,c("plantid", "id")],
+  y = demo
+) %>%
+  mutate(size = ifelse(
+    is.na(Leaf.length) | is.na(No.leaves),
+    NA,
+    log(No.leaves * Leaf.length)
+  )
+) %>%
+  select(id, size, Year) %>%
+  rename(time = Year) %>%
+  merge(y = demo.des.plt$Phi, all.y = TRUE) %>%
+  select(id, occ, time, cohort, age, Plot, size, Time, Cohort, Age, order)
+
+demo.cr_phi.1_p.1 = crm(
+  demo.proc.plt,
+  demo.des.plt
+)
+
+demo.cr_phi.t_p.t = crm(
+  demo.proc.plt,
   demo.des.plt,
-  df = demo %>% mutate(size = )
+  model.parameters = list(
+    Phi = list(formula = ~ time),
+    p   = list(formula = ~ time)
+  )
+)
+
+demo.cr_phi.t.x_p.t = crm(
+  demo.proc.plt,
+  demo.des.plt,
+  model.parameters = list(
+    Phi = list(formula = ~ time + size),
+    p   = list(formula = ~ time)
+  )
+)
+
+# arg....
+
+#####
+#####
+# Try again, this time taking out plants with NAs for size when alive
+#####
+
+demo.rm = demo %>%
+  arrange(Year) %>%
+  mutate(obs.alive = as.numeric(!((!No.leaves | is.na(No.leaves)) & (is.na(No.umbels) | !No.umbels)))) %>%
+  # Remove *all* records for any plant observed alive but without size
+  group_by(plantid) %>%
+  filter(!any(obs.alive & (is.na(No.leaves) | is.na(Leaf.length)))) %>%
+  ungroup()
+
+demo.rm.ch = demo.rm %>%
+  mutate(Year = paste0('y', Year)) %>%
+  pivot_wider(
+    id_cols = c(plantid, Plot, trt),
+    names_from = Year, values_from = obs.alive, values_fill = 0
+  ) %>%
+  unite(col = ch, all_of(starts_with('y')), sep = '') %>%
+  mutate(Plot = factor(Plot), trt = factor(trt)) %>%
+  # Needed to process data
+  as.data.frame()
+
+demo.proc.plt = process.data(
+  data = demo.rm.ch,
+  begin.time = 2016,
+  groups = "Plot"
+)
+
+demo.des.plt = make.design.data(
+  data = demo.proc.plt,
+  parameters = list(Phi = list(static = 'Plot'), p = list(static = 'Plot'))
+)
+
+demo.des.plt$Phi = merge(
+  x = demo.proc.plt$data[,c("plantid", "id")],
+  y = demo.rm
+) %>%
+  mutate(size = ifelse(
+    is.na(Leaf.length) | is.na(No.leaves),
+    NA,
+    log(No.leaves * Leaf.length)
+  )
+  ) %>%
+  select(id, size, Year) %>%
+  rename(time = Year) %>%
+  merge(y = demo.des.plt$Phi, all.y = TRUE) %>%
+  select(id, occ, time, cohort, age, Plot, size, Time, Cohort, Age, order)
+
+demo.cr_phi.t.x_p.t = crm(
+  demo.proc.plt,
+  demo.des.plt,
+  model.parameters = list(
+    Phi = list(formula = ~ time + size),
+    p   = list(formula = ~ time)
+  )
 )
