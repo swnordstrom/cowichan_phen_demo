@@ -267,17 +267,19 @@ clim.corr.df %>%
   ggplot(aes(x = vara, y = varb)) +
   geom_tile(aes(alpha = abs(corr), fill = corr)) +
   scale_fill_gradient2(low = 'blue', high = 'red', mid = 'white', midpoint = 0) +
-  theme(axis.text.x = element_text(angle = 90))
+  theme(axis.text.x = element_text(angle = 90), legend.position = 'none')
 # interesting...
 
 clim.corr.df %>%
   filter(vara != varb) %>%
   arrange(desc(abs(corr)))
-# damn wtf... super strong correlations between growing season precipitaton and mean/max temperatures
+# damn wtf... super strong correlations between growing season precipitaton and
+# mean/max temperatures
 
 clim.corr.df %>%
   filter(vara != varb) %>%
   filter(abs(corr) > 0.5) %>%
+  arrange(desc(abs(corr))) %>%
   print(n = nrow(.))
 
 clim.summ %>%
@@ -299,5 +301,112 @@ clim.dy %>%
 # oh lmao there was a huge rain right on april 1
 # man okay so it seems like the breaks for periods can be pretty influential
 
+# What is the precip correlation like?
+clim.corr.df %>%
+  filter(grepl('prec\\.sum', vara)) %>%
+  ggplot(aes(x = vara, y = varb)) +
+  geom_tile(aes(alpha = abs(corr), fill = corr)) +
+  scale_fill_gradient2(low = 'blue', high = 'red', mid = 'white', midpoint = 0) +
+  theme(axis.text.x = element_text(angle = 90), legend.position = 'none')
+# growing season precipitation - super high correlations with other growing season indicators
+# some weak stuff with summer and winter precip
+
+clim.corr.df %>%
+  filter(grepl('prec\\.sum', vara)) %>%
+  arrange(vara, desc(abs(corr))) %>%
+  print(n = nrow(.))
+# summer and winter precip are correlated...
+# summer correlated with summer max temp and mean temp...
+# winter correlated with winter min temperature, but not much else
+
+clim.corr.df %>%
+  filter(grepl('grow', vara) & grepl('grow', varb)) %>%
+  filter(corr < 1) %>%
+  print(n = nrow(.))
+# Jesus all of these are super correlated
+# guess I should only take one of these variables...
+# mean temp, just because it makes sense?
+
+clim.corr.df %>%
+  filter(grepl('summer', vara) & grepl('summer', varb)) %>%
+  filter(corr < 1) %>%
+  arrange(desc(abs(corr))) %>%
+  print(n = nrow(.))
+# sould do min temp, precip? I hate min temp as a predictor though
+# precip and... mean temp? still pretty correlated...
+
+clim.corr.df %>%
+  filter(grepl('early', vara) & grepl('early', varb)) %>%
+  filter(corr < 1) %>%
+  arrange(desc(abs(corr))) %>%
+  print(n = nrow(.))
+# precip and mean temp ~ 0.4
+# max temp... might as well include in here
+# mean and min are super correlated... so maybe
+# precip and min, which is ~0.34?
+
+clim.corr.df %>%
+  filter(grepl('winter', vara) & grepl('winter', varb)) %>%
+  filter(corr < 1) %>%
+  arrange(desc(abs(corr))) %>%
+  print(n = nrow(.))
+# precip and min fairly correlated
+# max and mean fairly correlated
+# maybe just mean (not sure if others are meaningful)
+
+clim.corr.df %>%
+  filter(grepl('last', vara)) %>%
+  filter(corr < 1) %>%
+  arrange(desc(abs(corr))) %>%
+  print(n = nrow(.))
+# last freeze date is corr with a lot of growing season measures
+# correlated with early measures too (makes sense)
+# hmm...
+
+clim.corr.df %>%
+  filter(
+    vara %in% c('grow_mean.temp', 'early_prec.sum', 'early_minnTemp', 
+                'winter_meanTemp', 'summer_prec.sum', 'summer_meanTemp',
+                'last.freeze'),
+    varb %in% c('grow_mean.temp', 'early_prec.sum', 'early_minnTemp', 
+                'winter_meanTemp', 'summer_prec.sum', 'summer_meanTemp',
+                'last.freeze')
+  ) %>%
+  filter(vara != varb) %>%
+  arrange(desc(abs(corr))) %>%
+  print(n = nrow(.))
+# these are considerably less correlated, which is good
+# summer measures are correlated which is annoying
+# last freeze date corelated with winter temperature, which kinda makes sense
+
+clim.summ %>%
+  ggplot(aes(x = summer_meanTemp, y = summer_prec.sum)) +
+  geom_label(aes(label = Year))
+# 2014 an outlier from an otherwise obvious trend
+# ugh
+
+clim.summ %>%
+  ggplot(aes(x = winter_meanTemp, y = last.freeze)) +
+  geom_label(aes(label = Year))
+# interesting... much weaker pattern here
+
+# Subset out relevant variables
+clim.subs = clim.summ %>%
+  select(Year, last.freeze, early_prec.sum, early_minnTemp,
+         grow_meanTemp, summer_meanTemp, winter_meanTemp)
+
+head(clim.subs)
+tail(clim.subs)
+
+# Export for now
+write.csv(
+  clim.subs,
+  row.names = FALSE,
+  '01_data_cleaning/out/climate_summary.csv'
+)
+
+######## Other thoughts, etc.
+
 # wonder if I should also do some de-trending? does it matter???
 # z-scoring... would allow me to do polynomial tests...
+
