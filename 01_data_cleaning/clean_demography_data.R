@@ -753,8 +753,9 @@ proc.demo = rbind(
     filter(!(Tag %in% 5023 & Year %in% 2022)) %>%
     # One remaining record - 5023 in 2021, change tag to 3807
     mutate(
-      proc.note = ifelse(Tag %in% 5023, 'tag edited; was 5023', proc.note),
+      proc.note = ifelse(Tag %in% 5023, 'tag and ycoor edited; was 5023-I', proc.note),
       edited    = ifelse(Tag %in% 5023, TRUE, edited),
+      Ycoor     = ifelse(Tag %in% 5023, 'H', Ycoor),
       Tag       = ifelse(Tag %in% 5023, 3807, Tag)
     )
     

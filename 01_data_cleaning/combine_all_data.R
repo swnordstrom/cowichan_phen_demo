@@ -1014,6 +1014,22 @@ demo %>%
 
 # (survival should be done with occupancy modeling, methinks)
 
+##### Check, quickly, for missing records for plants
+
+demo %>%
+  arrange(plantid, Year) %>%
+  group_by(plantid) %>%
+  filter(n() > 1) %>%
+  filter(max(diff(Year)) > 1)
+# - 3585 and 3844 are cases where new tag was added in 2017, old tag was kept on,
+# and inexplicably the old tag was found in 2019... not sure there's a good way
+# to disentangle these
+# - 3699... was mysteriously not entered in 2019, not searched in 2020, found in 2021
+# the 2019 record is an NP - is this worth even including?
+# I say impute these records/changes later.
+
+##### Export this
+
 write.csv(
   demo,
   '01_data_cleaning/out/demo_postcombine.csv',
