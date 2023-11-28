@@ -602,3 +602,344 @@ ggplot() +
     panel.background = element_blank()
   )
 
+###### ####################################
+###### ####################################
+###### ####################################
+###### ####################################
+###### ####################################
+###### ####################################
+###### ####################################
+###### ####################################
+###### ####################################
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(lme4)
+
+rm(list = ls())
+
+# Inverse logit wrapper
+ilogit = function(x) (1+exp(-x))^(-1)
+
+# Read in demography data
+demo = read.csv('01_data_cleaning/out/demo_imputed_survival.csv')
+
+head(demo)
+nrow(demo)
+
+# Add a "flowering" column
+# Check to make sure this works
+demo %>%
+  mutate(flowering = case_when(
+    No.umbels > 0 ~ TRUE,
+    !No.umbels ~ FALSE,
+    is.na(No.umbels) ~ FALSE,
+    .default = NA
+  )
+) %>%
+  distinct(No.umbels, flowering, surv)
+# Looks good.
+
+# Add column to data frame
+demo = demo %>%
+  mutate(
+    flowering = case_when(
+      No.umbels > 0 ~ TRUE,
+      !No.umbels ~ FALSE,
+      is.na(No.umbels) ~ FALSE,
+      .default = NA
+    )
+  )
+
+# Attach this year's flowering to prev year's demographic data
+demo.flower = merge(
+  # x is year of flowering
+  # here: need *surviving* plants only
+  # also want flowering column
+  x = demo %>%
+    filter(surv) %>%
+    select(Year, plantid, Plot, trt, flowering, demo.note, proc.note, edited),
+  # y is previous year's data
+  # do this by adding 1 to year (will allow matching)
+  # give *only* the plants that have size measurements
+  # NOTE: this will cut out some plants from analysis if we don't have their
+  # size in the previous year
+  y = demo %>%
+    mutate(Year = Year + 1) %>%
+    filter(!is.na(No.leaves) & !is.na(Leaf.length) & No.leaves > 0) %>%
+    mutate(size.prev = log(No.leaves * Leaf.length)) %>%
+    select(Year, plantid, size.prev, flowering, demo.note, proc.note, edited),
+  all = FALSE, by = c("Year", "plantid"), suffixes = c("", ".prev")
+) %>%
+  mutate(Plot = factor(Plot))
+
+# Look at this subcase to make sure we got this right
+demo %>% filter(grepl('1411', plantid))
+demo.flower %>% filter(grepl('1411', plantid))
+
+head(demo.flower)
+nrow(demo.flower)
+
+# Read in climate data
+clim = read.csv('01_data_cleaning/out/climate_summary.csv')
+
+head(clim)
+str(clim)
+
+# Fix last freeze date (convert to numeric)
+clim = clim %>%
+  mutate(last.freeze = as.numeric(as.Date(last.freeze)) - as.numeric(as.Date('2019-12-31'))) %>%
+  # let's standardize some of these
+  mutate(across(-Year, ~ (. - mean(., na.rm = TRUE)) / sd(., na.rm = TRUE)))
+
+clim.lag = merge(
+  clim,
+  clim %>% mutate(Year = Year + 1),
+  all.x = TRUE, all.y = TRUE, by = 'Year', suffixes = c('', '.prev')
+)
+
+head(clim.lag)
+tail(clim.lag)
+
+clim.lag %>% filter(Year %in% 2023)
+
+# Merge these together
+# demo.fl.clim = merge(x = demo.flower, y = clim.lag, by = 'Year')
+
+# ACTUALLY for simplicity let's not include lags yet...
+demo.fl.clim = merge(x = demo.flower, y = clim, by = 'Year')
+
+nrow(demo.fl.clim)
+# Good
+
+demo.fl.clim %>% filter(Year %in% 2022) %>% head()
+# Looks right to me, mostly
+
+table(demo.fl.clim$flowering) # wow... it's 50-50
+table(demo.fl.clim$flowering.prev)
+with(demo.fl.clim, table(flowering, flowering.prev))
+# wow... that's a lot on the diagonal
+# lots of plants that are repeat-flowerers
+table(demo.fl.clim$Year)
+# remember - 2016 size data is suspect
+# in fact... maybe just take it out? has potential to influence year effects
+
+demo.fl.clim = demo.fl.clim %>% filter(Year > 2017)
+
+#####
+##### Before fitting models, do plots
+#####
+
+ggplot(demo.fl.clim, aes(x = size.prev, y = flowering)) +
+  geom_point(position = position_jitter(height = 0.1), alpha = 0.5) +
+  facet_wrap(~ Year)
+# certainly looks like it varies by year...
+
+#####
+##### Try fitting models
+#####
+
+### Null model
+f_0 = glmer(
+  formula = flowering ~ (1 | Plot / plantid),
+  data = demo.fl.clim,
+  family = 'binomial'
+)
+
+summary(f_0)
+
+### Size
+f_s = glmer(
+  formula = flowering ~ size.prev + (1 | Plot / plantid),
+  data = demo.fl.clim,
+  family = 'binomial'
+) 
+
+summary(f_s)
+AIC(f_0, f_s)
+
+### Size + flowering
+f_s.f = glmer(
+  formula = flowering ~ size.prev + flowering.prev + (1 | Plot / plantid),
+  data = demo.fl.clim,
+  family = 'binomial'
+) 
+# argh.... singularity
+# should I remove the plant-level random effect?
+
+f_s.f = glmer(
+  formula = flowering ~ size.prev + flowering.prev + (1 | Plot),
+  data = demo.fl.clim,
+  family = 'binomial'
+) 
+# yeah that does it
+# argh... guess we're flying without an individual-level random effect!
+
+summary(f_s.f)
+AIC(f_0, f_s, f_s.f)
+
+### Size + flowering + year
+f_s.f.y = glmer(
+  formula = flowering ~ size.prev + flowering.prev + (1 | Year) + (1 | Plot),
+  data = demo.fl.clim,
+  family = 'binomial'
+) 
+
+summary(f_s.f.y)
+AIC(f_s.f.y, f_s.f)
+# Oh yes - keep year effects
+
+### Treatment effects?
+f_s.f.y.t = glmer(
+  formula = flowering ~ size.prev + flowering.prev + trt + (1 | Year) + (1 | Plot),
+  data = demo.fl.clim,
+  family = 'binomial'
+) 
+
+summary(f_s.f.y.t) # haha
+AIC(f_s.f.y, f_s.f.y.t) # lmao
+
+### Now... I have so many climate variables...
+# let's just try a couple
+
+f_s.f.freeze = glmer(
+  formula = flowering ~ size.prev + flowering.prev + last.freeze + (1 | Plot),
+  data = demo.fl.clim,
+  family = 'binomial'
+)
+
+summary(f_s.f.freeze) # ooh that looks significant
+# (but in the opposite way I'd expect... freezing later means increased flowering?)
+
+AIC(f_s.f.freeze, f_s.f.y) # whoa but the AIC is HORRIBLE
+
+f_s.f.summertemp = glmer(
+  formula = flowering ~ size.prev + flowering.prev + summer_meanTemp + (1 | Plot),
+  data = demo.fl.clim,
+  family = 'binomial'
+)
+
+summary(f_s.f.summertemp) # also looks positive... warmer previous summer means more flowering?
+AIC(f_s.f.summertemp, f_s.f.y) # AIC here is better, but still...
+# (I mean... will a single term *ever* do as well as a year random effect?)
+
+f_s.f.earlyPrec = glmer(
+  formula = flowering ~ size.prev + flowering.prev + early_prec.sum + (1 | Plot),
+  data = demo.fl.clim,
+  family = 'binomial'
+)
+
+summary(f_s.f.earlyPrec) # once again... positive association
+# (wetter early season means... more flowering)
+# (why are all of these positive...)
+AIC(f_s.f.earlyPrec, f_s.f.y) # still not great
+
+# Okay... if we try fitting all combos here, I'm not convinced that any will
+# do nearly as well with AIC
+# how would we know which of the AICs was the worth keeping?
+#
+# although it looks like glmnet doesn't work with random effects...
+# (rats)
+# but... glmmLasso does!
+
+library(glmmLasso)
+
+l_s.f = glmmLasso(
+  fix = flowering ~ size.prev + as.factor(flowering.prev) +
+    early_prec.sum + early_minnTemp + last.freeze + 
+    grow_meanTemp + summer_meanTemp + winter_meanTemp,
+  rnd = list(Plot = ~ 1),
+  data = demo.fl.clim,
+  family = binomial(),
+  lambda = 50,
+  control = list(
+    index = c(NA, NA, 1, 2, 3, 4, 5, 6),
+    print.iter = TRUE
+  )
+)
+# that's a lot...
+
+l_s.f$coefficients
+# wow... did not expect that lmao
+
+test.lambdas = c(0.1, 0.5, 1, 5, 10, 50, 100, 500)
+
+mod.output = vector('list', length = length(test.lambdas))
+
+for (i in 1:length(test.lambdas)) {
+  mod.fit = glmmLasso(
+    fix = flowering ~ size.prev + as.factor(flowering.prev) +
+      early_prec.sum + early_minnTemp + last.freeze + 
+      grow_meanTemp + summer_meanTemp + winter_meanTemp,
+    rnd = list(Plot = ~ 1),
+    data = demo.fl.clim,
+    family = binomial(),
+    lambda = test.lambdas[i],
+    control = list(index = c(NA, NA, 1, 2, 3, 4, 5, 6))
+  )
+   mod.output[[i]] = mod.fit 
+}
+
+lapply(mod.output, function(x) x$coefficients) %>%
+  do.call(what = rbind) %>%
+  as.data.frame() %>%
+  mutate(lambda = test.lambdas) %>%
+  pivot_longer(-lambda, names_to = 'coef', values_to = 'coef.est') %>%
+  ggplot(aes(x = lambda, y = coef.est, group = coef)) +
+  geom_point() +
+  geom_line(aes(colour = coef %in% c('(Intercept)', 'size.prev', 'as.factor(flowering.prev)TRUE'))) +
+  scale_x_log10() +
+  theme(legend.position = 'none')
+
+# Okay... not nearly as helpful as I had been hoping!
+# annoyingly no deviance too...
+
+##### Try the Harmony approach...
+
+ranef.corrs = data.frame(
+  Year = row.names(ranef(f_s.f.y.t)$Year),
+  mod.ranef = unlist(ranef(f_s.f.y.t)$Year)
+) %>%
+  merge(y = clim)
+
+# feel like there's a way to do pairwise correlations with purrr...
+# actually I guess just a correlation matrix will work lol
+ranef.corrs[,-1] %>%
+  cor() %>%
+  round(2)
+# oh... summer and winter mean temperatures and are correlated...
+# so is growing season mean temp and winter mean temp
+# bleh
+# Best correlates with the year-level random effects are summer temp, early
+# season precip, and early season minimum temperature
+# (I don't like min temp as a predictor though! ugh.)
+
+ranef.corrs %>%
+  pivot_longer(-c(Year, mod.ranef), names_to = 'coef', values_to = 'coef.val') %>%
+  ggplot(aes(x = mod.ranef, y = coef.val, colour = coef)) +
+  geom_point(size = 3) +
+  facet_wrap(~ coef)
+# lmao with this few data points anything is possible
+
+f_s.f.earlyPrec = glmer(
+  formula = flowering ~ size.prev + flowering.prev + early_prec.sum + (1 | Plot),
+  data = demo.fl.clim,
+  family = 'binomial'
+)
+
+f_s.f.earlytemp = glmer(
+  formula = flowering ~ size.prev + flowering.prev + early_minnTemp + (1 | Plot),
+  data = demo.fl.clim,
+  family = 'binomial'
+)
+
+f_s.f.summertemp = glmer(
+  formula = flowering ~ size.prev + flowering.prev + summer_meanTemp + (1 | Plot),
+  data = demo.fl.clim,
+  family = 'binomial'
+)
+
+AIC(f_s.f.earlyPrec, f_s.f.earlytemp, f_s.f.summertemp, f_s.f.y)
+# yeah... lol.
+# seems like way possible overfitting though
