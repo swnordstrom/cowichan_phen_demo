@@ -410,3 +410,50 @@ write.csv(
 # wonder if I should also do some de-trending? does it matter???
 # z-scoring... would allow me to do polynomial tests...
 
+##### What does a PCA on all of these look like?
+# first... make sure that everything is in fact roughly normally distributed...
+
+head(clim.summ)
+
+clim.summ %>%
+  mutate(last.freeze = as.numeric(last.freeze)) %>%
+  pivot_longer(-Year, names_to = 'var', values_to = 'val') %>%
+  filter(!is.na(val)) %>%
+  ggplot() +
+  geom_density(aes(x = val)) +
+  facet_wrap(~ var, scales = 'free_x')
+# meh... not in love with this
+
+clim.summ %>%
+  mutate(last.freeze = as.numeric(last.freeze)) %>%
+  pivot_longer(-Year, names_to = 'var', values_to = 'val') %>%
+  filter(!is.na(val)) %>%
+  group_by(var) %>%
+  mutate(zval = (val - mean(val)) / sd(val)) %>%
+  ungroup() %>%
+  ggplot() +
+  geom_density(aes(x = zval)) +
+  facet_wrap(~ var)
+
+# kinda leptokurtotic? but could be much worse.
+
+clim.pca = clim.summ[complete.cases(clim.summ),] %>%
+  mutate(last.freeze = as.numeric(last.freeze)) %>%
+  select(-Year) %>%
+  prcomp(scale. = TRUE)
+
+summary(clim.pca)
+clim.pca$rotation %>% round(digits = 3)
+
+clim.pca.loadings = clim.pca$rotation %>%
+  as.data.frame() %>%
+  mutate(varb = row.names(.)) %>%
+  pivot_longer(-varb, names_to = 'pcaxis', values_to = 'loading') 
+
+clim.pca.loadings %>%
+  mutate(pcaxis = as.numeric(gsub('PC', '', pcaxis))) %>%
+  ggplot(aes(x = varb, y = pcaxis, fill = loading)) +
+  geom_tile() +
+  scale_fill_gradient2(low = 'blue', high = 'red', mid = 'white', midpoint = 0) +
+  scale_y_continuous(breaks = 1:10) +
+  theme(axis.text.x = element_text(angle = 90))
