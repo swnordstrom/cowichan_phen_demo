@@ -863,7 +863,8 @@ l_s.f = glmmLasso(
 l_s.f$coefficients
 # wow... did not expect that lmao
 
-test.lambdas = c(0.1, 0.5, 1, 5, 10, 50, 100, 500)
+# test.lambdas = c(0.1, 0.5, 1, 5, 10, 50, 100, 500)
+test.lambdas = 10^((-5:8)/3)
 
 mod.output = vector('list', length = length(test.lambdas))
 
@@ -884,16 +885,30 @@ for (i in 1:length(test.lambdas)) {
 lapply(mod.output, function(x) x$coefficients) %>%
   do.call(what = rbind) %>%
   as.data.frame() %>%
+  select(-`(Intercept)`) %>%
   mutate(lambda = test.lambdas) %>%
   pivot_longer(-lambda, names_to = 'coef', values_to = 'coef.est') %>%
-  ggplot(aes(x = lambda, y = coef.est, group = coef)) +
-  geom_point() +
-  geom_line(aes(colour = coef %in% c('(Intercept)', 'size.prev', 'as.factor(flowering.prev)TRUE'))) +
-  scale_x_log10() +
-  theme(legend.position = 'none')
+  ggplot(aes(x = log(lambda, base = 10), y = coef.est, group = coef)) +
+  geom_line(aes(colour = coef %in% c('(Intercept)', 'size.prev', 'as.factor(flowering.prev)TRUE')), size = 1.5) +
+  geom_point(size = 1.5) +
+  scale_x_reverse(breaks = (-1:3), labels = c(0.1, 1, 10, 100, 1000)) +
+  labs(x = 'lambda (penalization strength)', y = 'coefficient estimate') +
+  theme(legend.position = 'none', panel.background = element_blank())
+
+cbind(lambda = test.lambdas, bic = sapply(mod.output, function(x) x$bic)) %>% plot(type = 'l')
+# small lambda - BIC barely influenced
+# but it looks like there's an inflection at ~ lambda = 100
+
+mod.output[[which(test.lambdas == 100)]]
+# these are all non-zero...
+# although two are effectively zero?
+
+sapply(mod.output, function(x) x$bic)
+sapply(mod.output, function(x) x$bic) %>% plot(type = 'l')
 
 # Okay... not nearly as helpful as I had been hoping!
-# annoyingly no deviance too...
+
+# I guess cross validation would probably be ideal here...
 
 ##### Try the Harmony approach...
 
