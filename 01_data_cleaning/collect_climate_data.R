@@ -1,3 +1,6 @@
+# Script for initial assessment and compiling/aggregating raw climate data.
+# The climate data was compiled by Jenna - currently backed up on Dropbox.
+
 library(ggplot2)
 library(dplyr)
 library(tidyr)
@@ -11,7 +14,7 @@ clim.hr = read.csv('00_raw_data/climate/cgop_weather_hourly.csv')
 ##### Look at hourly data frame
 
 head(clim.hr) # nice!
-nrow(clim.hr) #wow!
+nrow(clim.hr) # wow!
 str(clim.hr)
 
 length(unique(clim.hr$Time))
@@ -47,7 +50,6 @@ clim.dy %>% group_by(Year) %>% summarise(n = n()) # wow!
 clim.dy %>% filter(Year %in% 2023) %>% tail() 
 # yes
 
-# Oh well
 # Look at variables over time!
 clim.dy %>%
   pivot_longer(contains('Temp'), names_to = 'tempStat', values_to = 'value') %>%
@@ -143,6 +145,8 @@ clim.prec.month %>%
   ggplot(aes(x = Year + (Month-1)/12, y = total_precip)) +
   geom_point(aes(color = total_precip > 0)) +
   scale_colour_manual(values = c('red', 'black')) +
+  scale_x_continuous(breaks = 2013:2023) +
+  labs(x = 'Year', y = 'Cumulative precipitation') +
   theme(legend.position = 'none')
 # ah... there is a one in here!
 # (wonder if I can use order statistics to get an expected min of a lognormal...)
@@ -150,7 +154,8 @@ clim.prec.month %>%
 clim.prec.month %>%
   mutate(Year = factor(Year)) %>%
   ggplot(aes(x = Month, y = total_precip, group = Year)) +
-  geom_line(aes(colour = Year), linewidth = 0.5)
+  geom_line(aes(colour = Year), linewidth = 0.5) +
+  scale_x_continuous(breaks = 2*(1:6))
 
 # Precip regimes... looks like Nov-Jan is wet, Feb-Aug is dry, Sept-Oct starts
 # getting wet again
@@ -187,7 +192,7 @@ clim.dy %>%
 # - Last freeze date
 
 ### What is a "year"?
-# - Growing season fo year is April - June of current year (t)
+# - Growing season of year is April - June of current year (t)
 # - so, let year t be June 15 t-1 to June 14 t?
 # (should think about this in terms of recruitment... )
 
@@ -199,18 +204,29 @@ clim.dy %>%
 #   label = c('winter1', 'early', 'growing', 'summer', 'winter2')
 # )
 
+### Bin data together
+
+# I'll use the cut() function for this
+# First - define the breaks for the cut
+# these will be the start dates to each one of these time-windows
+
 cut.breaks = as.Date(
     c(paste0('2020-', c('01-01', '02-01', '04-15', '06-15', '09-01')), '2021-01-01'),
     format = '%Y-%m-%d'
   )
 
-# Test out cuts
+# Test out cuts on the jDate column of our dataset
 cut(clim.dy$jDate, breaks = cut.breaks, right = FALSE)
+# Do any of the
 sum(is.na(cut(clim.dy$jDate, breaks = cut.breaks, right = FALSE)))
 # looks like this will work...
 
+# Bin dates into time windows (but keep everything else as needed)
 clim.summ = clim.dy %>%
+  # Convert year, month and day to numeric (for filtering)
   mutate(across(c(Year, Month, Day), as.numeric)) %>%
+  # Get only dates in windows with all days present (and having data) in data
+  # frame
   filter(
     # all data in 2014-2022
     Year %in% 2014:2022 | 
@@ -219,25 +235,40 @@ clim.summ = clim.dy %>%
     # Data before June 15 in 2023
     (Year %in% 2023 & Month < 6) | (Year %in% 2023 & Month %in% 6 & Day %in% 1:14)
   ) %>%
-  mutate(date.pd = cut(jDate, breaks = cut.breaks, right = FALSE)) %>%
+  # Add the date period (window) using cut()
+  mutate(period.start = cut(jDate, breaks = cut.breaks, right = FALSE)) %>%
+  # Add some text labels to each window
+  # (cut() above will just assign the date - not super legible)
   merge(y = data.frame(
-    date.pd  = cut.breaks,
+    period.start = cut.breaks,
+    # (I don't think winter3 will be assigned to anything...)
     pd.label = c('winter1', 'early', 'grow', 'summer', 'winter2', 'winter3')
-  )
-) %>%
-  select(-date.pd) %>%
+    )
+  ) %>%
+  # Change the `date.pd` column to be in the proper year
+  mutate(period.start = as.Date(paste0(Year, gsub('2020', '', period.start)))) %>%
+  # Assign summer and winter to the successive year
   mutate(Year = Year + as.logical(pd.label %in% c('summer', 'winter2', 'winter3'))) %>%
-  mutate(pd.label = gsub('\\d', '', pd.label)) #%>%
+  # get rid of numeral after winter[123] to make a single 'winter' label
+  # and change the start date for winter to be consistent for all groups
+  mutate(pd.label = gsub('\\d', '', pd.label)) %>%
+  group_by(Year, pd.label) %>%
+  mutate(period.start = min(period.start)) %>%
+  ungroup()
 
-# should I do detrending?
+# Check period labels and start dates
+clim.summ %>% distinct(Year, pd.label, period.start) %>% print(n = nrow(.))
 
+# Get 
 clim.summ = merge(
   clim.summ %>%
-    group_by(Year, pd.label) %>%
+    group_by(Year, pd.label, period.start) %>%
     summarise(
+      # Means of each temperature measure
       meanTemp = mean(AveTemp_C),
-      maxxTemp = max(maxTemp_C),
-      minnTemp = min(minTemp_C),
+      maxxTemp = mean(maxTemp_C),
+      minnTemp = mean(minTemp_C),
+      # Sum of precipitation
       prec.sum = sum(total_precip_mm)
     ) %>%
     ungroup(),
@@ -251,11 +282,17 @@ clim.summ = merge(
 head(clim.summ)
 nrow(clim.summ)
 
-clim.summ = clim.summ %>%
+# Arrange by period start so these are in chrono order
+clim.summ = clim.summ %>% arrange(period.start)
+
+# Make a wide version of this data frame for evaluating correlations
+clim.wide = clim.summ %>%
+  # (the window start dates aren't necessary)
+  select(-period.start) %>%
   pivot_longer(c(prec.sum, contains("Temp")), names_to = "stat", values_to = "statVal") %>%
   pivot_wider(names_from = c(pd.label, stat), values_from = statVal)
 
-clim.corr.df = clim.summ[complete.cases(clim.summ),] %>%
+clim.corr.df = clim.wide[complete.cases(clim.wide),] %>%
   select(-Year) %>%
   mutate(last.freeze = as.numeric(last.freeze)) %>%
   cor() %>%
@@ -268,7 +305,7 @@ clim.corr.df %>%
   geom_tile(aes(alpha = abs(corr), fill = corr)) +
   scale_fill_gradient2(low = 'blue', high = 'red', mid = 'white', midpoint = 0) +
   theme(axis.text.x = element_text(angle = 90), legend.position = 'none')
-# interesting...
+# interesting... temperatures highly correlated - not surprising
 
 clim.corr.df %>%
   filter(vara != varb) %>%
@@ -282,7 +319,7 @@ clim.corr.df %>%
   arrange(desc(abs(corr))) %>%
   print(n = nrow(.))
 
-clim.summ %>%
+clim.wide %>%
   ggplot(aes(x = grow_meanTemp, y = grow_prec.sum)) +
   geom_label(aes(label = Year))
 # whoa...
@@ -308,8 +345,13 @@ clim.corr.df %>%
   geom_tile(aes(alpha = abs(corr), fill = corr)) +
   scale_fill_gradient2(low = 'blue', high = 'red', mid = 'white', midpoint = 0) +
   theme(axis.text.x = element_text(angle = 90), legend.position = 'none')
-# growing season precipitation - super high correlations with other growing season indicators
-# some weak stuff with summer and winter precip
+# early season - weak pos. correlation with temperature (makes sense? warmer
+#   temp means less snow, more rain?)
+# growing season - super strong *negative* correlations with growing season
+#   (and positive correlation with last freeze date...)
+#   also some negative correlation with winter? autocorrelation?
+# summer - strong-ish negative correlation with temperatures
+# winter - strong-ish negative correlation with temperatures...
 
 clim.corr.df %>%
   filter(grepl('prec\\.sum', vara)) %>%
@@ -340,19 +382,20 @@ clim.corr.df %>%
   filter(corr < 1) %>%
   arrange(desc(abs(corr))) %>%
   print(n = nrow(.))
-# precip and mean temp ~ 0.4
+# precip and mean temp ~ 0.6!
 # max temp... might as well include in here
 # mean and min are super correlated... so maybe
-# precip and min, which is ~0.34?
+# precip and min, which is ~0.3?
 
 clim.corr.df %>%
   filter(grepl('winter', vara) & grepl('winter', varb)) %>%
   filter(corr < 1) %>%
   arrange(desc(abs(corr))) %>%
   print(n = nrow(.))
-# precip and min fairly correlated
-# max and mean fairly correlated
-# maybe just mean (not sure if others are meaningful)
+# temperatures all pretty correlated,
+# precip correlated with max (makes sense)
+# not correlated with mean or min?
+# mean and precip?
 
 clim.corr.df %>%
   filter(grepl('last', vara)) %>%
@@ -379,28 +422,31 @@ clim.corr.df %>%
 # summer measures are correlated which is annoying
 # last freeze date corelated with winter temperature, which kinda makes sense
 
-clim.summ %>%
+clim.wide %>%
   ggplot(aes(x = summer_meanTemp, y = summer_prec.sum)) +
   geom_label(aes(label = Year))
 # 2014 an outlier from an otherwise obvious trend
 # ugh
 
-clim.summ %>%
+clim.wide %>%
   ggplot(aes(x = winter_meanTemp, y = last.freeze)) +
   geom_label(aes(label = Year))
 # interesting... much weaker pattern here
 
-# Subset out relevant variables
-clim.subs = clim.summ %>%
-  select(Year, last.freeze, early_prec.sum, early_minnTemp,
-         grow_meanTemp, summer_meanTemp, winter_meanTemp)
+# (Old code when I was subsetting variables - note this was on a different
+# version of df that was entirely in wide form and was missing period start
+# dates)
+# # Subset out relevant variables
+# clim.subs = clim.summ %>%
+#   select(Year, last.freeze, early_prec.sum, early_minnTemp,
+#          grow_meanTemp, summer_meanTemp, winter_meanTemp)
+# 
+# head(clim.subs)
+# tail(clim.subs)
 
-head(clim.subs)
-tail(clim.subs)
-
-# Export for now
+# Export it
 write.csv(
-  clim.subs,
+  clim.summ,
   row.names = FALSE,
   '01_data_cleaning/out/climate_summary.csv'
 )
@@ -415,7 +461,7 @@ write.csv(
 
 head(clim.summ)
 
-clim.summ %>%
+clim.wide %>%
   mutate(last.freeze = as.numeric(last.freeze)) %>%
   pivot_longer(-Year, names_to = 'var', values_to = 'val') %>%
   filter(!is.na(val)) %>%
@@ -424,7 +470,7 @@ clim.summ %>%
   facet_wrap(~ var, scales = 'free_x')
 # meh... not in love with this
 
-clim.summ %>%
+clim.wide %>%
   mutate(last.freeze = as.numeric(last.freeze)) %>%
   pivot_longer(-Year, names_to = 'var', values_to = 'val') %>%
   filter(!is.na(val)) %>%
@@ -437,7 +483,7 @@ clim.summ %>%
 
 # kinda leptokurtotic? but could be much worse.
 
-clim.pca = clim.summ[complete.cases(clim.summ),] %>%
+clim.pca = clim.wide[complete.cases(clim.wide),] %>%
   mutate(last.freeze = as.numeric(last.freeze)) %>%
   select(-Year) %>%
   prcomp(scale. = TRUE)
