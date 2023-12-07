@@ -80,34 +80,60 @@ head(demo.flower)
 nrow(demo.flower)
 
 # Read in climate data
-clim = read.csv('01_data_cleaning/out/climate_summary.csv')
-
+clim = read.csv('01_data_cleaning/out/climate_summary.csv') %>%
+  # fix freeze date column (change to numeric)
+  mutate(last.freeze = as.numeric(as.Date(last.freeze)) - as.numeric(as.Date('2019-12-31'))) %>%
+  # center variables at mean
+  group_by(pd.label) %>%
+  mutate(across(contains('Temp'), ~ (. - mean(., na.rm = TRUE)))) %>%
+  mutate(prec.sum = prec.sum - mean(prec.sum, na.rm = TRUE)) %>%
+  ungroup() %>%
+  # center last freeze date at some neutral date... like 90
+  mutate(last.freeze = last.freeze - 90)
+  
 head(clim)
 str(clim)
 
-# Fix last freeze date (convert to numeric)
-clim = clim %>%
-  mutate(last.freeze = as.numeric(as.Date(last.freeze)) - as.numeric(as.Date('2019-12-31'))) %>%
-  # let's standardize some of these
-  mutate(across(-Year, ~ (. - mean(., na.rm = TRUE)))) # / sd(., na.rm = TRUE)))
+# We would expect flowering probabilities to probably be influenced by the 12
+# months previous to ~April...
+# E.g., in year 2020, we would expect growing season 2020 (?), early season
+# 2020, winter 2019/2020, and summer 2019 to influence flowering probabilities
+# Maybe also 2019 growing season too? might be a good idea to add this as
+# 'pgrow' for 'previous growing season'...
 
-clim.lag = merge(
+rbind(
   clim,
-  clim %>% mutate(Year = Year + 1),
-  all.x = TRUE, all.y = TRUE, by = 'Year', suffixes = c('', '.prev')
+  clim %>% filter(pd.label %in% 'grow') %>% mutate(Year = Year + 1, pd.label = 'pgrow')
+) %>%
+  arrange(Year, period.start)
+# looks good!
+
+clim.merge = rbind(
+  clim,
+  clim %>% filter(pd.label %in% 'grow') %>% mutate(Year = Year + 1, pd.label = 'pgrow')
 )
 
-head(clim.lag)
-tail(clim.lag)
+# For merging, we want a wide-version of data frame
+# can then go through and subset relevant columns
 
-clim.lag %>% filter(Year %in% 2023)
+clim.merge = clim.merge %>%
+  # the window start dates aren't necessary
+  # also remove the last.freeze column (for now) because it makes things difficult
+  select(-c(period.start, last.freeze)) %>%
+  pivot_longer(c(prec.sum, contains("Temp")), names_to = "stat", values_to = "statVal") %>%
+  pivot_wider(names_from = c(pd.label, stat), values_from = statVal) %>%
+  merge(y = clim %>% filter(!pd.label %in% 'pgrow') %>% distinct(Year, last.freeze)) %>%
+  select(
+    Year, last.freeze, grow_meanTemp, early_prec.sum, early_minnTemp,
+    winter_prec.sum, winter_meanTemp, summer_meanTemp, pgrow_meanTemp
+  )
 
-# Merge these together
-# demo.fl.clim = merge(x = demo.flower, y = clim.lag, by = 'Year')
+clim.merge
+# looks okay to me!
 
-# ACTUALLY for simplicity let's not include lags yet...
-demo.fl.clim = merge(x = demo.flower, y = clim, by = 'Year')
+demo.fl.clim = merge(x = demo.flower, y = clim.merge, by = 'Year')
 
+head(demo.fl.clim)
 nrow(demo.fl.clim)
 # Good
 
@@ -170,10 +196,9 @@ mod.fit.test = function(mod.formula, data.split) {
 mod.fit.test('flowering ~ size.prev + (1 | Plot / plantid)', demo.fl.split[[1]])
 sapply(demo.fl.split, mod.fit.test, mod.formula = 'flowering ~ size.prev + (1 | Plot / plantid)') %>%
   mean()
-# singularity issue... ctfo man!
 sapply(demo.fl.split, mod.fit.test, mod.formula = 'flowering ~ size.prev + flowering.prev + (1 | Plot / plantid)') %>%
   mean()
-# damn dude
+# welp... singularities
 # okay well probably get rid of plant-level random effects
 
 sapply(demo.fl.split, mod.fit.test, mod.formula = 'flowering ~ size.prev + (1 | Plot)') %>%
@@ -208,7 +233,7 @@ f_sf = glmer(
   family = 'binomial'
 )
 
-AIC(f_sf, f_s.f, f_s, f_0)
+AIC(f_sf, f_s.f, f_s, f_0) %>% mutate(daic = AIC - min(AIC))
 
 f_s.f.t = glmer(
   formula = flowering ~ size.prev + flowering.prev + trt + (1 | Year) + (1 | Plot),
@@ -236,10 +261,12 @@ f_st.ft = glmer(
 
 AIC(f_s.f.t, f_st.f, f_s.ft, f_st.ft, f_s.f) %>% mutate(daic = AIC - min(AIC))
 # interesting...
+# effects of flowering very by treatment?
 
 summary(f_s.ft)
-# really looks like an effect of irrigation only...
-# (but the effect is positive)
+# so experimental treatments have lower flowering probabilities if they did not
+# flower last year
+# but it looks like flowering previously negates that?
 
 ##### Anyway let's now try fitting some models...
 
@@ -517,3 +544,68 @@ demo.fl.clim %>%
 # and the differences here seem to be in two years (2020, 2021), which kinda have sparse data
 # and some of the discrepancy comes in a zone of extrapolation...
 
+############################################################
+##### Jennifer's suggestion of pulling out new recruits...
+
+# Get demo that has all years (incl. 2016)
+demo.fl.dupe = merge(x = demo.flower, y = clim.merge, by = 'Year')
+
+nrow(demo.fl.dupe)
+
+demo.fl.dupe = demo.fl.dupe %>%
+  arrange(plantid, Year) %>%
+  mutate(first.obs = !duplicated(plantid))
+
+table(demo.fl.dupe$first.obs)
+
+demo.fl.dupe %>%
+  ggplot(aes(x = Year, y = size.prev, group = first.obs)) +
+  geom_point(
+    aes(colour = flowering, shape = first.obs), 
+    size = 2, alpha = 0.75,
+    position = position_jitterdodge(jitter.width = 0.1, dodge.width = 0.5)
+  )
+# hmm...
+# new recruits are definitely smaller, although in some years they are smaller than others
+
+# Let's try fitting models now with only the already-observed plants
+
+demo.fl.dupe = demo.fl.dupe %>%
+  filter(!first.obs) %>%
+  select(-first.obs)
+
+nrow(demo.fl.dupe)
+head(demo.fl.dupe)
+table(demo.fl.dupe$Year) # we lost a year
+table(demo.fl.dupe$flowering)
+
+d_0 = glmer(
+  formula = flowering ~ (1 | Year) + (1 | Plot),
+  data = demo.fl.dupe,
+  family = 'binomial'
+)
+
+d_s = glmer(
+  formula = flowering ~ size.prev + (1 | Year) + (1 | Plot),
+  data = demo.fl.dupe,
+  family = 'binomial'
+)
+
+d_s.f = glmer(
+  formula = flowering ~ size.prev + flowering.prev + (1 | Year) + (1 | Plot),
+  data = demo.fl.dupe,
+  family = 'binomial'
+)
+
+d_sf = glmer(
+  formula = flowering ~ size.prev * flowering.prev + (1 | Year) + (1 | Plot),
+  data = demo.fl.dupe,
+  family = 'binomial'
+)
+
+AIC(d_0, d_s, d_s.f, d_sf)
+# qualitatively similar to above
+
+summary(d_s.f)
+# still a positive effect
+# coefficients are very similar
