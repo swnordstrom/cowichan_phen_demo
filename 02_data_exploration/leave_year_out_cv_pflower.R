@@ -277,28 +277,36 @@ forms = c(
   'flowering ~ size.prev + flowering.prev * trt + early_minnTemp + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + grow_meanTemp + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + summer_meanTemp + (1 | Plot)',
+  'flowering ~ size.prev + flowering.prev * trt + winter_prec.sum + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + winter_meanTemp + (1 | Plot)',
+  'flowering ~ size.prev + flowering.prev * trt + pgrow_meanTemp + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + (trt | Year) + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + last.freeze * trt + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + early_prec.sum * trt + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + early_minnTemp * trt + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + grow_meanTemp * trt + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + summer_meanTemp * trt + (1 | Plot)',
+  'flowering ~ size.prev + flowering.prev * trt + winter_prec.sum * trt + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + winter_meanTemp * trt + (1 | Plot)',
+  'flowering ~ size.prev + flowering.prev * trt + pgrow_meanTemp * trt + (1 | Plot)',
   'flowering ~ flowering.prev * trt + (size.prev | Year) + (1 | Plot)',
   'flowering ~ size.prev * last.freeze + flowering.prev * trt + (1 | Plot)',
   'flowering ~ size.prev * early_prec.sum + flowering.prev * trt + (1 | Plot)',
-  'flowering ~ size.prev * early_minnTemp + flowering.prev * trt + early_minnTemp + (1 | Plot)',
+  'flowering ~ size.prev * early_minnTemp + flowering.prev * trt + (1 | Plot)',
   'flowering ~ size.prev * grow_meanTemp + flowering.prev * trt + (1 | Plot)',
   'flowering ~ size.prev * summer_meanTemp + flowering.prev * trt + (1 | Plot)',
+  'flowering ~ size.prev * winter_prec.sum + flowering.prev * trt + (1 | Plot)',
   'flowering ~ size.prev * winter_meanTemp + flowering.prev * trt + (1 | Plot)',
+  'flowering ~ size.prev * pgrow_meanTemp + flowering.prev * trt + (1 | Plot)',
   'flowering ~ size.prev * trt + flowering.prev * trt + (1 | Year) + (1 | Plot)',
   'flowering ~ size.prev * last.freeze * trt + flowering.prev * trt + (1 | Plot)',
   'flowering ~ size.prev * early_prec.sum * trt + flowering.prev * trt + (1 | Plot)',
   'flowering ~ size.prev * early_minnTemp * trt + flowering.prev * trt + early_minnTemp + (1 | Plot)',
   'flowering ~ size.prev * grow_meanTemp * trt + flowering.prev * trt + (1 | Plot)',
   'flowering ~ size.prev * summer_meanTemp * trt + flowering.prev * trt + (1 | Plot)',
-  'flowering ~ size.prev * winter_meanTemp * trt + flowering.prev * trt + (1 | Plot)'
+  'flowering ~ size.prev * winter_meanTemp * trt + flowering.prev * trt + (1 | Plot)',
+  'flowering ~ size.prev * winter_prec.sum * trt + flowering.prev * trt + (1 | Plot)',
+  'flowering ~ size.prev * pgrow_meanTemp * trt + flowering.prev * trt + (1 | Plot)'
 )
 
 # form.scores = vector(mode = 'double', length = length(forms))
@@ -319,6 +327,7 @@ data.frame(form.scores) %>%
   pivot_longer(-form, names_to = 'holdout', values_to = 'score') %>%
   ggplot(aes(x = form, y = score, group = holdout)) +
   geom_line(aes(colour = holdout))
+# whoa!
 
 # data.frame(score = form.scores) %>% mutate(score.delt = score - min(score))
 # interesting...
@@ -471,6 +480,16 @@ demo.fl.clim %>%
   ) +
   facet_wrap(flowering.prev ~ trt)
 # Not such a clear relationship here with early precipitation
+
+# Previous year's growing season
+demo.fl.clim %>%
+  ggplot(aes(x = size.prev, y = pgrow_meanTemp)) +
+  geom_point(
+    aes(colour = flowering), 
+    size = 3, alpha = 0.5, position = position_jitter(height = 0.05)
+  ) +
+  facet_wrap(flowering.prev ~ trt)
+# also does not look very strong
 
 # Kinda want to see if the ranges of previous flowering and size overlap?
 # maybe the flowering previous is just an effect of size?
