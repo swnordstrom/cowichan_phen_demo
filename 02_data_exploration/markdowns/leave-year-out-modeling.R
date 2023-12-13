@@ -23,11 +23,11 @@
 #' adapting this to our project, I will first note that I think this project is
 #' not inferential at all. In fact, the papers states that if you have more than
 #' a handful of candidate models to evaluate, then you are not performing an
-#' inferential analysis. This leaves us with exploratory analysis. I would argue
-#' that because the project includes an experimental design to measure drought
-#' conditions, that the project is suited to predict conditions under changing
-#' precipitation regimes. In this case, it may make more sense to keep an eye
-#' towards predictive analysis.
+#' inferential analysis. This leaves us with exploratory or predictive analysis.
+#' I would argue that because the project includes an experimental design to
+#' measure drought conditions, that the project is suited to predict conditions
+#' under changing precipitation regimes. In this case, it may make more sense to
+#' keep an eye towards predictive analysis.
 #' 
 #' Another issue identified in a climate-demography working group is
 #' "flickering" of predictors, i.e., that adding additional years or data to a
@@ -41,15 +41,16 @@
 #' involves splitting the dataset into training and testing sets; the testing
 #' dataset can be all observations in one year, whereas the training dataset is
 #' the data from all remaining years. Note that one shortcoming of this is that
-#' temporal autocorrelation among years is thus ignored by this model (Roberts
-#' et al. 2017, Ecography, makes this argument). We then can measure in some way
-#' the performance of a model in predicting the response in the held-out year.
-#' This procedure can be repeated for all of the years in the dataset and
-#' averaged across held-out years to get a sense of which predictors, on
-#' average, are best at predicting held-out years in the dataset. Tredennick et
-#' al. (2021) use a similar approach on 20 years of data (i.e., the model is fit
-#' 20 times, each time with only 19 years of data, and with each one of those 20
-#' models, they evalutate how well it predicts the held-out year).
+#' temporal autocorrelation among years is thus ignored by this procedure
+#' (Roberts et al. 2017, Ecography, makes this argument). We then can measure in
+#' some way the performance of a model in predicting the response in the
+#' held-out year. This procedure can be repeated for all of the years in the
+#' dataset and averaged across held-out years to get a sense of which
+#' predictors, on average, are best at predicting held-out years in the dataset.
+#' Tredennick et al. (2021) use a similar approach on 20 years of data (i.e.,
+#' the model is fit 20 times, each time with only 19 years of data, and with
+#' each one of those 20 models, they evalutate how well it predicts the held-out
+#' year).
 #' 
 #' I will implement this approach below. I'll do this on the probability of
 #' flowering. In the markdown file I won't include the code to set up the data,
@@ -57,7 +58,7 @@
 #' tidyverse packages (`dplyr`, `tidyr`, and `ggplot2`) and will fit models in
 #' `lme4`.
 
-#+ r setup, include = FALSE, message = FALSE, warning = FALSE, echo = FALSE
+#+ r setup, message = FALSE, warning = FALSE, echo = FALSE
 
 library(ggplot2)
 library(dplyr)
@@ -66,6 +67,9 @@ library(lme4)
 
 # Clear namespace
 rm(list = ls())
+
+# Set wd for markdown
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 
 # Load in demographic data
 # (survival is imputed here)
@@ -178,10 +182,10 @@ length(unique(demo.fl.clim$plantid))
 #' use this to find a model structure for non-climate related terms to include
 #' in the models looking for climate effects. I'll use AIC to evaluate these
 #' models. *Note: I'm not sure if this is the best way to evaluate these models
-#' against each other.* This step seems exploratory. In Tredennick et al.
-#' (2021), they perform exploratory analysis by doing null hypothesis
-#' significance testing and then correcting for multiple comparisons. That
-#' approach may be valid as well.
+#' against each other at this particular stage.* This step seems exploratory. In
+#' Tredennick et al. (2021), they perform exploratory analysis by doing null
+#' hypothesis significance testing and then correcting for multiple comparisons.
+#' That approach may be valid as well.
 #' 
 #' I'll do this step on the full dataset because we're not trying to predict
 #' data for missing years in this step, just to get additional variables that
@@ -383,7 +387,6 @@ forms = c(
   'flowering ~ size.prev + flowering.prev * trt + (1 | Year) + (1 | Plot) + summer_meanTemp',
   'flowering ~ size.prev + flowering.prev * trt + (1 | Year) + (1 | Plot) + pgrow_meanTemp',
   # Models with size-by-climate interactions
-  # (Null model will have size.prev slope varying by year)
   'flowering ~ flowering.prev * trt + (size.prev | Year) + (1 | Plot)', 
   'flowering ~ size.prev * last.freeze + flowering.prev * trt + (1 | Year) + (1 | Plot)',
   'flowering ~ size.prev * grow_meanTemp + flowering.prev * trt + (1 | Year) + (1 | Plot)',
@@ -394,8 +397,6 @@ forms = c(
   'flowering ~ size.prev * summer_meanTemp + flowering.prev * trt + (1 | Year) + (1 | Plot)',
   'flowering ~ size.prev * pgrow_meanTemp + flowering.prev * trt + (1 | Year) + (1 | Plot)',
   # Models with treatment-by-climate interactions
-  # # (Null model will have trt slope varying by year)
-  # 'flowering ~ size.prev + flowering.prev * trt + (trt | Year) + (1 | Plot)', 
   'flowering ~ size.prev + flowering.prev * trt + trt * last.freeze + (1 | Year) + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + trt * grow_meanTemp + (1 | Year) + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + trt * early_prec.sum + (1 | Year) + (1 | Plot)',
@@ -405,8 +406,6 @@ forms = c(
   'flowering ~ size.prev + flowering.prev * trt + trt * summer_meanTemp + (1 | Year) + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt + trt * pgrow_meanTemp + (1 | Year) + (1 | Plot)',
   # Models with flowering-by-treatment-by-climate interactions
-  # # (Null model will have trt*flowering slope varying by year)
-  # 'flowering ~ size.prev + (flowering.prev * trt | Year) + (1 | Plot)', 
   'flowering ~ size.prev + flowering.prev * trt * last.freeze + (1 | Year) + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt * grow_meanTemp + (1 | Year) + (1 | Plot)',
   'flowering ~ size.prev + flowering.prev * trt * early_prec.sum + (1 | Year) + (1 | Plot)',
@@ -430,13 +429,17 @@ for (i in 1:length(forms)) {
   )
 }
 
-# Distribution of the model scores
-hist(rowMeans(form.scores))
+# Distribution of the model scores across all of the formulas described above
+hist(
+  rowMeans(form.scores),
+  xlab = 'Mean model score',
+  main = 'Mean scores (across holdout years) for each formula'
+)
 
 # Look at the best performing models
 data.frame(
-  form  = forms,
-  score = round(rowMeans(form.scores), 4)
+  score = round(rowMeans(form.scores), 4),
+  form  = forms
 ) %>%
   arrange(score) %>%
   head(8)
@@ -447,8 +450,8 @@ data.frame(
 #' performing models all feature growing season temperature in the previous
 #' year. Note that this near arrangement where the best performing models
 #' feature the same sets of predictors is *not* guaranteed to happen. But, when
-#' it does happen, it suggests that there may be predictive power in the
-#' predictor.
+#' it does happen, it suggests that there may be predictive power in that
+#' particular variable.
 #' 
 #' To get coefficients, let's fit the models with summer temperature on the
 #' whole dataset. We'll fit all of the mdoels for assessment.
@@ -502,7 +505,7 @@ summary(f_s.fts)
 #' Let's plot some of these model fits against the raw data to see how they differ from each other.
 #' 
 
-#+ r, plot model fits, echo = FALSE
+#+ r plot model fits, echo = FALSE
 
 summ.temp.predictions = expand.grid(
   size.prev = c(5:50)/10,
@@ -546,3 +549,5 @@ demo.fl.clim %>%
 #' 
 #' It does look, though, like the differences mostly arise in areas where there
 #' is no data!
+
+
