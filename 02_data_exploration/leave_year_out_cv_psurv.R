@@ -87,12 +87,12 @@ demo.surv %>%
 clim = read.csv('01_data_cleaning/out/climate_summary.csv') %>%
   # fix freeze date column (change to numeric)
   mutate(last.freeze = as.numeric(as.Date(last.freeze)) - as.numeric(as.Date('2019-12-31'))) %>%
-  # center variables at mean
+  # center temperature and precip variables at mean
   group_by(pd.label) %>%
   mutate(across(contains('Temp'), ~ (. - mean(., na.rm = TRUE)))) %>%
-  mutate(prec.sum = prec.sum - mean(prec.sum, na.rm = TRUE)) %>%
+  mutate(across(contains('prec.sum'), ~ (. - mean(., na.rm = TRUE)) / 100 )) %>%
   ungroup() %>%
-  # center last freeze date at some neutral date... like 90
+  # center last freeze date at some neutral-ish date
   mutate(last.freeze = last.freeze - 90)
 
 
@@ -214,30 +214,28 @@ demo.sv.split = data.splitter(demo.surv.cl)
 str(demo.sv.split)
 length(demo.sv.split)
 
-mod.fit.test = function(mod.formula, data.split) {
+fit.split.model = function(dfs, mod.formula) {
   
-  try(
+  try( 
     mod <- glmer(
       formula = mod.formula,
-      data = data.split$train,
-      family = 'binomial'
+      family = 'binomial',
+      data = dfs$train,
+      control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
     )
   )
   
-  if (exists('mod')) {
-    pred = predict(mod, newdata = data.split$test, re.form = NA)
-    
-    mod.score = mean(abs(data.split$test$surv - ilogit(pred)))
-    
-    if (!length(summary(mod)$fitMsgs)) { return(mod.score)
-    } else return(NA)
-  } else return(NA)
-  
+  # NOTE: here, we're doing the predictions including the plot-level random effects.
+  if (exists('mod')) { 
+    mod.pred  = predict(mod, newdata = dfs$test, re.form = ~ (1 | Plot)) %>% ilogit()
+    mod.score = mean((dfs$test$surv - mod.pred))^2
+    return(mod.score)
+  } else { return(NA) }
 }
 
 sapply(
   demo.sv.split, 
-  mod.fit.test, 
+  fit.split.model, 
   mod.formula = 'surv ~ size.prev + (1 | Year) + (1 | Plot)'
 )
 # cool
@@ -263,14 +261,14 @@ forms = c(
   'surv ~ size.prev + flowering + winter_meanTemp + (1 | Plot)',
   'surv ~ size.prev + flowering + winter_prec.sum + (1 | Plot)',
   'surv ~ size.prev + flowering + pgrow_meanTemp + (1 | Plot)',
-  'surv ~ size.prev + (trt | Year) + (1 | Plot)',
   'surv ~ size.prev + last.freeze * trt + (1 | Plot)',
   'surv ~ size.prev + early_prec.sum * trt + (1 | Plot)',
   'surv ~ size.prev + early_minnTemp * trt + (1 | Plot)',
   'surv ~ size.prev + grow_meanTemp * trt + (1 | Plot)',
   'surv ~ size.prev + summer_meanTemp * trt + (1 | Plot)',
   'surv ~ size.prev + winter_meanTemp * trt + (1 | Plot)',
-  'surv ~ size.prev + flowering + (trt | Year) + (1 | Plot)',
+  'surv ~ size.prev + winter_prec.sum * trt + (1 | Plot)',
+  'surv ~ size.prev + pgrow_meanTemp * trt + (1 | Plot)',
   'surv ~ size.prev + flowering + last.freeze * trt + (1 | Plot)',
   'surv ~ size.prev + flowering + early_prec.sum * trt + (1 | Plot)',
   'surv ~ size.prev + flowering + early_minnTemp * trt + (1 | Plot)',
@@ -279,7 +277,6 @@ forms = c(
   'surv ~ size.prev + flowering + winter_meanTemp * trt + (1 | Plot)',
   'surv ~ size.prev + flowering + winter_prec.sum * trt + (1 | Plot)',
   'surv ~ size.prev + flowering + pgrow_meanTemp * trt + (1 | Plot)',
-  'surv ~ (trt + size.prev | Year) + (1 | Plot)',
   'surv ~ size.prev * last.freeze + (1 | Plot)',
   'surv ~ size.prev * early_prec.sum + (1 | Plot)',
   'surv ~ size.prev * early_minnTemp + (1 | Plot)',
@@ -296,12 +293,14 @@ form.scores = matrix(ncol = length(demo.sv.split), nrow = length(forms))
 for (form in 1:length(forms)) {
   form.scores[form,] = sapply(
     X = demo.sv.split,
-    FUN = mod.fit.test,
+    FUN = fit.split.model,
     mod.formula = forms[form]
   )
+  print(form)
 }
-# as expected, many convergence issues
-# many singularities!!
+# got singularity issues on all models (except for [1]) when year random effect was included
+# I'm not sure why - this worked for the probability of flowering model
+# convergence warning on final formula...
 
 form.scores
 # but... still got scores...
@@ -313,8 +312,8 @@ data.frame(form.scores) %>%
   geom_line(aes(colour = holdout))
 
 apply(form.scores, 1, mean) %>% (function(x) x - min(x))
-# wow... these are all very, very similar...
-# (probably because survival is so high...)
+# these are pretty similar
+# although there are two years that get biffed a few times...
 
 forms[order(rowSums(form.scores))]
 # interesting...
@@ -379,12 +378,23 @@ demo.surv.cl %>%
   facet_wrap(~ trt)
 # actually... maybe?
 
+demo.surv.cl %>%
+  ggplot(aes(x = size.prev, y = winter_prec.sum)) +
+  geom_point(
+    aes(colour = surv, alpha = surv), 
+    position = position_jitter(height = 0.05), 
+    size = 2
+  ) +
+  scale_alpha_manual(values = c(1, 0.5)) +
+  facet_wrap(~ trt)
+# hmm... having trouble seeing an effect here...
+
 ### Make a raw data plot
 
 surv.year.plot = demo.surv.cl %>%
   mutate(surv = as.numeric(surv)) %>%
-  ggplot(aes(x = size.prev, y = surv)) +
-  geom_point(aes(colour = trt), position = position_jitter(height = 0.1), size = 3) +
+  ggplot(aes(x = size.prev)) +
+  geom_point(aes(y = surv, colour = trt), position = position_jitter(height = 0.1), size = 3) +
   scale_colour_manual(values = c('black', 'red', 'blue')) +
   facet_wrap(~ paste(Year, trt), ncol = 3)
 
@@ -392,33 +402,34 @@ surv.year.plot = demo.surv.cl %>%
 
 surv.year.fl.plot = demo.surv.cl %>%
   mutate(surv = as.numeric(surv)) %>%
-  ggplot(aes(x = size.prev, y = surv)) +
-  geom_point(aes(colour = trt), position = position_jitter(height = 0.1), size = 3) +
+  ggplot(aes(x = size.prev)) +
+  geom_point(aes(y = surv, colour = trt), position = position_jitter(height = 0.1), size = 3) +
   scale_colour_manual(values = c('black', 'red', 'blue')) +
   facet_wrap(~ paste(Year, trt, flowering), ncol = 6)
 # imbalance in here
 
 ### Get model predictions
 
-s_s.f.wint = glmer(
-  formula = surv ~ size.prev + flowering + winter_meanTemp + (1 | Plot),
+s_s.f.wp = glmer(
+  formula = surv ~ size.prev + flowering + winter_prec.sum + (1 | Plot),
   data = demo.surv.cl,
   family = 'binomial'
 )
 
-s_s.wint = glmer(
-  formula = surv ~ size.prev + winter_meanTemp + (1 | Plot),
+s_s.wp = glmer(
+  formula = surv ~ size.prev + winter_prec.sum + (1 | Plot),
   data = demo.surv.cl,
   family = 'binomial'
 )
 
-s_swint = glmer(
-  formula = surv ~ size.prev * winter_meanTemp + (1 | Plot),
+s_s.wpt = glmer(
+  formula = surv ~ size.prev + winter_prec.sum * trt + (1 | Plot),
   data = demo.surv.cl,
   family = 'binomial'
 )
 
-AIC(s_s.f.wint, s_s.wint, s_swint) # hmm..
+AIC(s_s.f.wp, s_s.wp, s_s.wpt) # hmm..
+# flowering + winter precip seems to perform best
 
 summary(s_s.f.wint)
 summary(s_s.wint)
@@ -430,44 +441,53 @@ winter.preds = expand.grid(
   size.prev = (5:50)/10,
   flowering = c(TRUE, FALSE)
 ) %>%
-  merge(y = demo.surv.cl %>% distinct(Year, winter_meanTemp)) %>%
+  merge(y = demo.surv.cl %>% distinct(Year, winter_prec.sum)) %>%
   mutate(
-    pred.f = predict(s_s.f.wint, newdata = ., re.form = NA) %>% ilogit(),
-    pred.s.w = predict(s_s.wint, newdata = ., re.form = NA) %>% ilogit(),
-    pred.sw  = predict(s_swint,  newdata = ., re.form = NA) %>% ilogit()
-  )
+    pred.s.f.wp = predict(s_s.f.wp, newdata = ., re.form = NA) %>% ilogit(),
+    pred.s.wp = predict(s_s.wp, newdata = ., re.form = NA) %>% ilogit(),
+    pred.s.wpt  = predict(s_s.wpt,  newdata = ., re.form = NA) %>% ilogit()
+  ) %>%
+  pivot_longer(contains('pred.'), names_to = 'model', values_to = 'prediction') %>%
+  mutate(model = gsub('pred\\.', '', model))
 
 surv.year.plot +
   geom_line(
-    data = winter.preds,
-    aes(x = size.prev, y = pred.s.w),
-    colour = 'gray55'
-  ) +
-  geom_line(
-    data = winter.preds,
-    aes(x = size.prev, y = pred.sw),
-    colour = 'gray55', linetype = 2
+    data = winter.preds %>% filter(!grepl('f', model)),
+    aes(y = prediction, group = model, linetype = model)
   )
-# Only differences are in the left tail
-# (go with the simpler model here)
+# Slight differences in the left tail (where we have evidence of only a few plants)
 
 surv.year.fl.plot +
   geom_line(
     data = winter.preds,
-    aes(x = size.prev, y = pred.s.w),
-    colour = 'gray55'
-  ) +
-  geom_line(
-    data = winter.preds,
-    aes(x = size.prev, y = pred.sw),
-    colour = 'gray55', linetype = 2
-  ) +
-  geom_line(
-    data = winter.preds,
-    aes(x = size.prev, y = pred.f),
-    colour = 'gray55', linetype = 3
+    aes(y = prediction, group = model, linetype = model)
   )
-# eh I don't think there's a lot of support for flowering effects here
+# not loving the flowering-separate models; few observations to support differences...
+
+summary(s_s.f.wp)
+summary(s_s.wp)
+summary(s_s.wpt)
+# whole lotta n.s. terms in the treatment-wp model
+# (slight possibility that wp only has effets on the drought and irrigation models...)
+
+winter.extrap.preds = expand.grid(
+  size.prev = (5:50)/10,
+  winter_prec.sum = -1:2
+) %>%
+  mutate(pred = predict(s_s.wp, newdata = ., re.form = NA) %>% ilogit())
+
+demo.surv.cl %>%
+  mutate(surv = as.numeric(surv)) %>%
+  ggplot(aes(x = size.prev)) +
+  geom_point(
+    aes(y = surv),
+    position = position_jitter(height = 0.1), size = 2, alpha = 0.5
+  ) +
+  geom_line(
+    data = winter.extrap.preds,
+    aes(y = pred, group = winter_prec.sum, colour = winter_prec.sum)
+  )
+
 
 ### Try growing season models and their fits...
 
