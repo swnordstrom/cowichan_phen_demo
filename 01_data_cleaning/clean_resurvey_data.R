@@ -201,7 +201,7 @@ proc22 %>%
 proc23$survey.date = as.Date(proc23$survey.date, format = '%m/%d/%Y')
 
 # there is a record with date = NA (no other info in record - remove)
-proc23 = proc22 %>% filter(!is.na(survey.date))
+proc23 = proc23 %>% filter(!is.na(survey.date))
 
 proc23 %>% 
   group_by(survey.date, plot) %>%
@@ -371,11 +371,11 @@ proc21 %>%
 # (looking at these... not super closely but it looks like yes,
 # and they are NAs because they "stopped checking, dead > 2 weeks")
 
-proc21 %>%
-  group_by(plantid) %>%
-  summarise(na.fl = all(is.na(contains('no.')))) %>%
-  group_by(any.fl) %>%
-  summarise(n = n())
+# proc21 %>%
+#   group_by(plantid) %>%
+#   summarise(na.fl = all(is.na(contains('no.')))) %>%
+#   group_by(any.fl) %>%
+#   summarise(n = n())
 
 proc21 %>%
   group_by(plantid) %>%
@@ -472,8 +472,8 @@ flower21 = proc21 %>%
   ungroup()
 
 # Number of plants (thus far)
-length(unique(phen21$plantid))
-with(phen21, table(plot, survey.period))
+length(unique(proc21$plantid))
+with(proc21, table(plot, survey.period))
 
 phen21 = flower21 %>%
   group_by(plantid, plot, tag) %>%
@@ -581,6 +581,25 @@ phen.all = merge(x = phen.all, y = exclude.plantids) %>%
   # Arrange columns (for export)
   arrange(year, plot, tag)
 
+
+# Merge the start days for each year and incorporate actual date in
+phen.all = merge(
+  x = phen.all,
+  y = data.frame(
+    year = 2021:2023,
+    min.date = c(
+      as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
+      as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
+      as.numeric(min(proc23$survey.date) - as.Date('2023-01-01'))
+    )
+  )
+) %>%
+  mutate(
+    init.doy = min.date + (fl.init - 1) * 7,
+    fina.doy = min.date + (fl.fina - 1) * 7
+  ) %>%
+  select(-min.date) %>%
+  rename(init.wk = fl.init, fina.wk = fl.fina)
 
 # Export to csv
 write.csv(
