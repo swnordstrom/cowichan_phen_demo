@@ -492,6 +492,31 @@ head(phen21)
 
 with(phen21, table(plot, fl.init))
 
+flower21 %>%
+  select(-c(no.closed, no.unfurling)) %>%
+  mutate(incl.dead = rowSums(across(contains('no.')))) %>%
+  group_by(plantid) %>%
+  mutate(
+    all.incr = diff(c(0, incl.dead)),
+    flo.incr = diff(c(0, no.dead + no.eaten))
+  ) %>%
+  arrange(plantid)
+# ah... should assume that if a plant skips from closed/unfurling to dead that it didn't flower
+
+ind.flw.phen21 = flower21 %>%
+  arrange(survey.date) %>%
+  select(-c(no.closed, no.unfurling)) %>%
+  mutate(incl.dead = rowSums(across(contains('no.')))) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    all.incr = diff(c(0, incl.dead)),
+    dea.incr = diff(c(0, no.dead + no.eaten)),
+    flo.incr = all.incr - dea.incr
+  ) %>%
+  filter(flo.incr > 0) %>%
+  uncount(flo.incr) %>%
+  select(plantid, plot, survey.period)
+
 ### 2022
 
 flower22 = proc22 %>%
@@ -527,6 +552,20 @@ head(phen22)
 
 with(phen22, table(plot, fl.init))
 
+ind.flw.phen22 = flower22 %>%
+  arrange(survey.date) %>%
+  select(-c(no.buds, no.pods)) %>%
+  mutate(incl.dead = rowSums(across(contains('no.')))) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    all.incr = diff(c(0, incl.dead)),
+    dea.incr = diff(c(0, no.dead + no.eaten)),
+    flo.incr = all.incr - dea.incr
+  ) %>%
+  filter(flo.incr > 0) %>%
+  uncount(flo.incr) %>%
+  select(plantid, plot, survey.period)
+
 ### 2023
 
 flower23 = proc23 %>%
@@ -559,6 +598,20 @@ phen23 = flower23 %>%
   )
 
 head(phen23)
+
+ind.flw.phen23 = flower23 %>%
+  arrange(survey.date) %>%
+  select(-c(no.buds, no.pods)) %>%
+  mutate(incl.dead = rowSums(across(contains('no.')))) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    all.incr = diff(c(0, incl.dead)),
+    dea.incr = diff(c(0, no.dead + no.eaten)),
+    flo.incr = all.incr - dea.incr
+  ) %>%
+  filter(flo.incr > 0) %>%
+  uncount(flo.incr) %>%
+  select(plantid, plot, survey.period)
 
 ##### Combine all data frames together (remember to add year)
 
@@ -601,12 +654,49 @@ phen.all = merge(
   select(-min.date) %>%
   rename(init.wk = fl.init, fina.wk = fl.fina)
 
-# Export to csv
+# Do the same for the individual-flowering one
+
+ind.phen.all = rbind(
+  # Bind everything together
+  ind.flw.phen21 %>% mutate(year = 2021),
+  ind.flw.phen22 %>% mutate(year = 2022),
+  ind.flw.phen23 %>% mutate(year = 2023)
+) %>%
+  merge(y = exclude.plantids) %>%
+  # Use the "exclude" column to remove these
+  filter(!exclude) %>%
+  # Remove unnecessary column
+  select(-exclude) %>%
+  # Arrange columns (for export)
+  arrange(year, plot) %>%
+  # Merge to add approx. survey date
+  merge(
+    y = data.frame(
+      year = 2021:2023,
+      min.date = c(
+        as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
+        as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
+        as.numeric(min(proc23$survey.date) - as.Date('2023-01-01'))
+      )
+    )
+  ) %>%
+  mutate(init.doy = min.date + (survey.period - 1) * 7) %>%
+  select(-min.date)
+
+# Export to csvs
+
 write.csv(
   phen.all,
   '01_data_cleaning/out/phenology_all_cleaned.csv',
   row.names = FALSE
 )
+
+write.csv(
+  ind.phen.all,
+  '01_data_cleaning/out/phenology_all_ind_cleaned.csv',
+  row.names = FALSE
+)
+
 
 #####
 # In future: might want to add eaten or premature death and being eaten to these
