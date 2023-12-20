@@ -3,6 +3,8 @@ library(dplyr)
 library(tidyr)
 library(lme4)
 
+rm(list = ls())
+
 phen = merge(
   x = read.csv('01_data_cleaning/out/phenology_all_cleaned.csv'),
   y = read.csv('00_raw_data/plot_treatments.csv')
@@ -146,7 +148,92 @@ summary(d_t)$coefficients %>%
 
 # but maybe I could look just at start dates for individual umbels?
 
-# ### First, some housekeeping
+###################################
+###################################
+###################################
+
+rm(list = ls())
+
+phen = merge(
+  x = read.csv('01_data_cleaning/out/phenology_all_ind_cleaned.csv'),
+  y = read.csv('00_raw_data/plot_treatments.csv')
+)
+
+head(phen)
+
+phen.mod = phen %>%
+  mutate(tagplot = gsub('\\_\\d{1,2}[A-Z]', '', plantid)) %>%
+  mutate(init.doy = init.doy - round(mean(init.doy)))
+
+head(phen.mod)
+nrow(phen.mod)
+
+d_0 = lmer(
+  formula = init.doy ~ (1 | plot / tagplot) + (1 | year),
+  data = phen.mod
+)
+
+summary(d_0)
+
+d_t = lmer(
+  formula = init.doy ~ trt + (1 | plot / tagplot) + (1 | year),
+  data = phen.mod
+)
+
+summary(d_t)
+
+
+anova(d_t, d_0)
+# still significant, which is cool...
+# here though mean effect of irrigation is positive... although this is 
+
+phen.preds = expand.grid(
+  year = 2021:2023,
+  trt  = c('control', 'drought', 'irrigated')
+) %>%
+  mutate(
+    pred.0 = predict(d_t, newdata = ., re.form = ~ 0),
+    pred.y = predict(d_t, newdata = ., re.form = ~ (1 | year))
+  )
+
+phen.preds %>%
+  mutate(year = factor(year)) %>%
+  ggplot(aes(x = trt, colour = trt)) +
+  geom_point(aes(y = pred.0), size = 5, shape = 21) +
+  geom_point(
+    aes(y = pred.y, shape = year),
+    size = 3,
+    position = position_dodge(width = 0.5)
+  ) +
+  scale_colour_manual(values = c('black', 'red', 'blue'))
+
+d_pi.0 = bootMer(
+  d_t, nsim = 1000,
+  FUN = function(x) predict(x, newdata = phen.preds, re.form = ~ 0),
+  seed = 405
+)
+# extremely slow for some reason...
+
+dim(d_ci.0$t)
+
+d_ci.0 = bootMer(
+  d_t, nsim = 1000, predict, re.form = NULL,
+  seed = 22901
+)
+# but this has different dimension than the new data frame... ugh
+
+phen.preds %>%
+  cbind(. , t(apply(d_pi.0$t, 2, function(x) quantile(x, c(0.025, 0.975))))) %>%
+  mutate(year = factor(year)) %>%
+  ggplot(aes(x = trt, colour = trt)) +
+  geom_segment(aes(xend = trt, y = `2.5%`, yend = `97.5%`)) +
+  geom_point(aes(y = pred.0), size = 5) +
+  scale_colour_manual(values = c('black', 'red', 'blue'))
+# oh... lmao, damn wtf
+
+# hmm...
+
+# ### some housekeeping
 # 
 # # The demo.seed is upstream of the imputed survival data frame I've been using
 # # It's possible that some plantids changed when doing the survival imputing
