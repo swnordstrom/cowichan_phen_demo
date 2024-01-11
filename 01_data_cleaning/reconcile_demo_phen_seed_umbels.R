@@ -1,3 +1,24 @@
+#################################################################################
+# Script for combining and reconciling plant ids across datasets for recruitment
+# estimation combining together these datasets:
+# - demography (2021-2023) using the imputed survival dataset
+#   (using this dataset because it's the one with the most processing)
+# - seed set data per-umbel
+#   (note this was reconciled with an *older* version of demography data)
+# - phenology data per-umbel (a cleaned version)
+# - the multiple umbel dataset (a cleaned version, with only 2021-2023)
+# This script currently is only reconciling plantids among datasets - the
+# corrected version is stored in a new `finalid` column.
+# Once that's done I'll combine all four datasets into a single CSV for running
+# some models of recruitment
+# SN - init 9 Jan 2024
+# #### Notes:
+# - outstanding unreconciled issues, or other issues to be fixed, were flagged
+# with the string UNSOLVED - I need to go back to these at some point
+# in particular are there missing entries from plot 4, year 2022 in phen+/seed
+# - how to handle prematurely dead umbels? ugh.
+#################################################################################
+
 library(ggplot2)
 library(dplyr)
 library(tidyr)
@@ -127,7 +148,7 @@ demo %>% filter(grepl('223[08]', plantid))
 # no evidence of plant 2238 in demo
 phen %>% filter(grepl('223[08]', plantid))
 # must have been a misentry
-phen = phen %>% mutate(finalid = gsub('2238', '2230', plantid))
+phen = phen %>% mutate(finalid = gsub('2238', '2230', finalid))
 
 # 3 3039_13       TRUE  FALSE FALSE TRUE
 demo %>% filter(grepl('3039', plantid))
@@ -143,49 +164,380 @@ demo %>% filter(grepl('3076', plantid)) # tag is not in any demo ids
 demo %>% filter(grepl('3076', proc.note))
 demo %>% filter(grepl('3076', demo.note))
 # ah... tag misentry in phen
-phen = phen %>% mutate(finalid = grepl('3076', '3706', finalid))
+phen = phen %>% mutate(finalid = gsub('3076', '3706', finalid))
 
 # 5 3143_9_140.95 TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('3143', plantid))
+phen %>% filter(grepl('3143', plantid))
+seed %>% filter(grepl('3143', plantid.seed))
+demo %>% filter(grepl('140\\.95', plantid))
+mumb %>% filter(grepl('140\\.95', plantid))
+demo = demo %>% mutate(finalid = gsub('140\\.95', '14T', finalid))
+mumb = mumb %>% mutate(finalid = gsub('140\\.95', '14T', finalid))
+
 # 6 3151_3        FALSE FALSE TRUE  FALSE
+phen %>% filter(grepl('3151', plantid))
+demo %>% filter(grepl('3151', plantid)) # nope, diff plant
+demo %>% filter(grepl('3151', demo.note))
+demo %>% filter(grepl('3151', proc.note)) # nothing here...
+demo %>% filter(Year %in% 2022, grepl('\\_3\\_', plantid))
+demo %>% filter(grepl('7537', plantid)) # nope, not this one
+demo %>% filter(grepl('3651', plantid)) # not this one...
+seed %>% filter(year %in% 2022, grepl('\\_3', plantid.seed))
+# (solved below!)
+
 # 7 3164_13       TRUE  TRUE  FALSE TRUE 
+demo %>% filter(grepl('3164', plantid)) # looks tag misread?
+phen %>% filter(grepl('3614', plantid))
+demo %>% filter(grepl('3614\\_13', plantid)) # yep - it's this one
+phen = phen %>% mutate(finalid = gsub('3614\\_13', '3164_13', finalid))
+phen %>% filter(grepl('3614', plantid))
+phen %>% filter(grepl('3614', finalid)) # good - fixed
+
 # 8 3164_6        TRUE  TRUE  FALSE TRUE 
+phen %>% filter(grepl('3164', plantid))
+demo %>% filter(grepl('3164\\_6', plantid)) # some tag chicanery here
+phen %>% filter(grepl('3789', plantid)) # and there it is
+phen = phen %>% mutate(finalid = gsub('3789\\_6', '3164\\_6', finalid))
+phen %>% filter(grepl('3789', finalid)) # fixed
+phen %>% filter(grepl('3164\\_6', finalid)) # fixed
+
 # 9 3183_9_130.19 TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('130\\.19', plantid))
+phen %>% filter(grepl('3183', plantid)) # hmm...
+phen %>% filter(year %in% 2022, grepl('\\_9$', plantid)) # uh...?
+phen %>% filter(grepl('\\_9\\_', plantid)) # super strange...
+seed %>% filter(grepl('\\_9\\_', plantid.seed)) # also strange...
+# so there are no plants from plot 9 in phen or seed aside from this one?
+# weird
+
 # 10 3296_7        TRUE  TRUE  FALSE TRUE 
 # 11 3298_7        FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('3296', plantid))
+phen %>% filter(grepl('3298', plantid)) # there it is
+# change it in all years?
+phen = phen %>% mutate(finalid = gsub('3298\\_7', '3296_7', finalid))
+phen %>% filter(grepl('3296\\_7', finalid))
+
 # 12 3321_4        TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('3321', plantid))
+phen %>% filter(grepl('3321', plantid))
+phen %>% filter(year %in% 2022, grepl('\\_4$', plantid)) # hmm...
+phen %>% 
+  filter(year %in% 2022, grepl('\\_4$', plantid)) %>%
+  group_by(plantid) %>%
+  filter(n() == 2) # hmm...
+all.plantids %>%
+  filter(Year %in% 2022, !demo) %>%
+  filter(grepl('3182\\_4', plantid) | grepl('3730\\_4', plantid) | grepl('7545\\_4', plantid))
+# cool... all of these are missing.
+# not sure which it is
+####### UNSOLVED #######
+
 # 13 3363_14       FALSE FALSE TRUE  FALSE
 # 14 3367_14       TRUE  TRUE  FALSE TRUE 
+demo %>% filter(grepl('3363', plantid))
+demo %>% filter(grepl('3367', plantid))
+phen %>% filter(grepl('3363', plantid))
+seed %>% filter(grepl('3363', plantid.seed))
+phen = phen %>% mutate(finalid = gsub('3363', '3367', finalid))
+phen %>% filter(grepl('3363', finalid))
+phen %>% filter(grepl('3367', finalid)) # fixed
+
 # 15 3379_14       FALSE TRUE  TRUE  FALSE
+phen %>% filter(grepl('3379', plantid))
+demo %>% filter(grepl('3379', plantid)) # interesting - here in 2023
+seed %>% filter(grepl('3379', plantid.seed))
+# ah... listed as having no umbels in 2022...
+####### UNSOLVED #######
+####### need to change umbel count in demo (is NA, should be 1)
+
 # 16 3389_13       FALSE FALSE FALSE TRUE 
+mumb %>% filter(grepl('3389', plantid))
+phen %>% filter(grepl('3481', plantid))
+mumb = mumb %>% mutate(finalid = gsub('3389', '3481', finalid))
+
 # 17 3456_6        TRUE  FALSE FALSE FALSE
+demo %>% filter(grepl('3456', plantid))
+phen %>% filter(grepl('7587', plantid))
+all.plantids %>% filter(grepl('7587', plantid))
+# change in demo
+demo = demo %>% mutate(finalid = gsub('3456', '7587', finalid))
+demo %>% filter(grepl('3456', finalid))
+demo %>% filter(grepl('7587', finalid))
+
 # 18 3469_14       TRUE  TRUE  TRUE  FALSE
-# 19 3481_13       TRUE  TRUE  TRUE  FALSE
+mumb %>% filter(grepl('3469', plantid)) # it's here in 2023
+demo %>% filter(grepl('3469', plantid))
+# hmm... okay might not need changing?
+
+# 19 3481_13       TRUE  TRUE  TRUE  FALSE # fixed above
+
 # 20 3495_14       TRUE  TRUE  FALSE TRUE 
+demo %>% filter(grepl('3495', plantid))
+# okay... no notes suggesting other tags...
+phen %>% filter(grepl('3495', plantid)) # it's here in 2023
+demo %>% filter(Year %in% 2022, grepl('\\_14\\_1A', plantid))
+# wow that kinda sucks. nearly identical tags in the same location...
+demo %>% filter(grepl('\\_14\\_1A', plantid))
+# yeah that sucks
+# anyway
+# also there's no umbel diameter listed for the 2022 record (damn)
+phen %>% filter(grepl('3459', plantid)) # only two umbels are listed here (one clipped)
+# okay. I don't think this can be fixed.
+phen %>% filter(year %in% 2022, grepl('\\_14', plantid))
+
 # 21 3542_1        TRUE  TRUE  TRUE  FALSE
+demo %>% filter(grepl('3542', plantid), Year %in% 2022)
+demo %>% filter(grepl('3542', plantid)) # no notes about tags...
+mumb %>% filter(grepl('\\_1\\_', plantid), Year %in% 2022) %>% distinct(plantid)
+mumb %>% filter(grepl('\\_1\\_0I', plantid), Year %in% 2022) # nothing here
+mumb %>% filter(grepl('\\_1\\_[01238]I', plantid), Year %in% 2022)
+all.plantids %>% filter(Year %in% 2022, grepl('\\_1\\_', plantid), !demo, mumb)
+####### UNSOLVED #######
+# think it's just... not recorded. or data entry mistake?
+
 # 22 3555_4        TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('3555', plantid)) # no other tags
+phen %>% filter(grepl('3555', plantid)) # here in 2021
+seed %>% filter(grepl('3555', plantid.seed)) # here in 2021...
+all.plantids %>% filter(grepl('\\_4$', plantid), Year %in% 2022, phen)
+# maybe 3656...? no... that would have appeared below...
+####### UNSOLVED #######
+
 # 23 3558_13       TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('3558', plantid)) # no other tags
+phen %>% filter(grepl('3558', plantid))
+phen %>% filter(grepl('3769', plantid), year %in% 2022) # yep that's it
+mumb %>% filter(grepl('3769', plantid)) # sweet
+# only one umbel in 2021/2022 so no need to change mumb
+demo = demo %>% mutate(finalid = gsub('3558', '3769', finalid))
+
 # 24 3563_4        TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('3563', plantid)) # no other tags
+phen %>% filter(grepl('3563', plantid)) # not here at all...
+phen %>% filter(grepl('\\_4$', plantid)) %>% distinct(plantid, .keep_all = TRUE)
+seed %>% filter(grepl('3563', plantid.demo)) # nothing here...
+seed %>% filter(grepl('\\_4\\_', plantid.demo)) %>% distinct(plantid.demo, .keep_all = TRUE)
+# could it be 3656?
+demo %>% filter(grepl('3656', plantid), Year %in% 2022) # nope, that's here
+####### UNSOLVED #######
+
 # 25 3595_13       FALSE TRUE  FALSE FALSE
-# 26 3614_13       FALSE FALSE TRUE  FALSE
+seed %>% filter(grepl('3595', plantid.seed)) # ? should be here...
+demo %>% filter(grepl('3595', plantid))
+# ah... it's not listed as flowering in demo
+# although it's not in phen...
+phen %>% filter(grepl('3595', plantid)) # here in 2021
+phen %>% filter(grepl('\\_13$', plantid)) %>% distinct(plantid, .keep_all = TRUE)
+demo %>% filter(grepl('3593', plantid), Year %in% 2022) # nope, not mis-entered as 3593
+####### UNSOLVED #######
+####### go into demo and add flowering info to 3595_13 in 2022
+####### (although it has no phen... maybe I should use budding phen?)
+
+# 26 3614_13       FALSE FALSE TRUE  FALSE # should have been fixed above...
+phen %>% filter(grepl('3614', plantid))
+
 # 27 3634_4        TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('3634', plantid)) # probably not a tag fix... (14 leaves??)
+mumb %>% filter(grepl('3634', plantid)) # okay, good
+phen %>% filter(grepl('3634', plantid)) # here in 2021
+seed %>% filter(grepl('3634', plantid.demo)) # nothing
+seed %>% filter(grepl('\\_4\\_', plantid.demo), year %in% 2022)
+# ugh... not here?
+phen %>% filter(grepl('\\_4$', plantid), year %in% 2022)
+####### UNSOLVED #######
+
 # 28 3651_3        TRUE  TRUE  FALSE TRUE 
-# 29 3706_15       TRUE  TRUE  FALSE TRUE 
+demo %>% filter(grepl('3651', plantid)) # no other tag
+phen %>% filter(grepl('3651', plantid)) # 2023 only
+seed %>% filter(grepl('3651', plantid.demo)) # come on man...
+all.plantids %>% filter(Year %in% 2022, phen, !seed)
+# THAT'S IT! right?
+phen %>% filter(grepl('3151', plantid))
+demo %>% filter(grepl('3151\\_3', plantid)) # looks promising...
+seed %>% filter(grepl('3151\\_3', plantid.seed))
+phen = phen %>% mutate(finalid = gsub('3151\\_3', '3651_3', finalid))
+
+# 29 3706_15       TRUE  TRUE  FALSE TRUE  # possibly fixed above
+phen %>% filter(grepl('3706', finalid))
+
 # 30 3726_13       FALSE TRUE  TRUE  FALSE
+demo %>% filter(grepl('3726', plantid)) # nada
+seed %>% filter(grepl('3726', plantid.seed))
+demo %>% filter(grepl('\\_13\\_', plantid), Year %in% 2022, No.umbels %in% 1)
+demo %>% filter(grepl('3726', proc.note)) # tag was changed
+demo %>% filter(grepl('3039', plantid))
+demo = demo %>% mutate(finalid = gsub('3039', '3726', finalid))
+
 # 31 3735_4        TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('3735', plantid))
+demo %>% filter(grepl('3735', proc.note))
+demo %>% filter(grepl('3735', demo.note))
+phen %>% filter(grepl('\\_4$', plantid))
+####### UNSOLVED #######
+
 # 32 3750_4        TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('3750', plantid))
+demo %>% filter(grepl('3750', proc.note))
+demo %>% filter(grepl('3750', demo.note))
+phen %>% filter(grepl('\\_4$', plantid))
+# 3730? 7550?
+phen %>% filter(grepl('3730', plantid), year %in% 2022) # nope
+phen %>% filter(grepl('7550', plantid), year %in% 2022) # nope
+####### UNSOLVED #######
+
 # 33 3769_13       FALSE TRUE  TRUE  FALSE
+demo %>% filter(grepl('3769', plantid))
+demo %>% filter(grepl('3769', demo.note))
+demo %>% filter(grepl('3769', proc.note)) # fixed above
+
 # 34 3770_9        TRUE  FALSE FALSE TRUE 
+demo %>% filter(grepl('3770', plantid))
+phen %>% filter(grepl('3059', plantid))
+phen %>% filter(grepl('3770', plantid))
+seed %>% filter(grepl('3770', plantid.demo))
+seed %>% filter(grepl('3770', plantid.seed))
+####### UNSOLVED #######
+
 # 35 3782_1        FALSE TRUE  TRUE  FALSE
+demo %>% filter(grepl('3782', plantid)) # it's here in 2023
+# ahhh this was that weird pair
+demo %>% filter(grepl('3814', plantid))
+seed %>% filter(grepl('3782', plantid.seed))
+# but which of these is which
+# probably requires looking at the original datasheets
+####### UNSOLVED #######
+# (but solvable!)
+
 # 36 3789_6        FALSE FALSE TRUE  FALSE
+phen %>% filter(grepl('3789', plantid)) # already fixed
+
 # 37 3813_15       FALSE FALSE TRUE  FALSE
+phen %>% filter(grepl('3813', plantid))
+demo %>% filter(grepl('3813', proc.note))
+demo %>% filter(grepl('3813', demo.note))
+# plant is 3831
+demo %>% filter(grepl('3831', plantid))
+seed %>% filter(grepl('3831', plantid.seed))
+phen %>% filter(grepl('3813\\_15', plantid))
+# specifically 3831_15
+phen = phen %>% mutate(finalid = gsub('3813\\_15', '3831_15', finalid))
+phen %>% filter(grepl('3813\\_15', finalid)) # good
+phen %>% filter(grepl('3831\\_15', finalid)) # fixed
+
 # 38 3814_1        TRUE  TRUE  TRUE  FALSE
+demo %>% filter(grepl('3814', plantid))
+# this is the one from above
+# look at the original datasheets
+####### UNSOLVED #######
+# (but solvable!)
+
 # 39 3831_15       TRUE  TRUE  FALSE TRUE 
+phen %>% filter(grepl('3831', plantid)) # fixed above
+
 # 40 3866_7        TRUE  TRUE  FALSE TRUE 
+phen %>% filter(grepl('3866', plantid)) # 2021 record only
+demo %>% filter(grepl('3866', proc.note))
+demo %>% filter(grepl('3866', plantid)) # 3866 (ah.. is below)
+phen %>% filter(grepl('3886', plantid))
+phen = phen %>% mutate(finalid = gsub('3886', '3866', finalid))
+phen %>% filter(grepl('3886', finalid))
+
 # 41 3880_13       FALSE FALSE FALSE TRUE 
-# 42 3886_7        FALSE FALSE TRUE  FALSE
+mumb %>% filter(grepl('3880', plantid))
+# some confusion with 7537
+mumb %>% filter(grepl('7537', plantid)) # none here
+demo %>% filter(grepl('7537', plantid))
+phen %>% filter(grepl('7537', plantid))
+mumb = mumb %>% mutate(finalid = gsub('3880', '7537', finalid))
+
+# 42 3886_7        FALSE FALSE TRUE  FALSE # solved above
+
 # 43 5037_7        TRUE  TRUE  FALSE TRUE 
-# 44 5040_7        TRUE  TRUE  FALSE TRUE 
+demo %>% filter(grepl('5037', plantid))
+# note says no tracking phenology (death)
+
+# 44 5040_7        TRUE  TRUE  FALSE TRUE
+demo %>% filter(grepl('5040', plantid))
+# note says umbel is dead
+seed %>% filter(grepl('5040', plantid.seed))
+
 # 45 7526_1        FALSE TRUE  FALSE FALSE
 # 46 7536_1        TRUE  FALSE TRUE  TRUE 
-# 47 7537_13       TRUE  TRUE  TRUE  FALSE
+seed %>% filter(grepl('7526', plantid.seed)) # (lol? why did I do this)
+phen %>% filter(grepl('7536', plantid))
+demo %>% filter(grepl('7536', plantid))
+seed = seed %>% mutate(finalid = gsub('7526', '7536', finalid))
+seed %>% filter(grepl('7526', finalid))
+seed %>% filter(grepl('7536', finalid))
+
+# 47 7537_13       TRUE  TRUE  TRUE  FALSE # solved above
+
 # 48 7587_6        FALSE TRUE  TRUE  TRUE 
+demo %>% filter(grepl('7587', proc.note))
+demo %>% filter(grepl('7587', plantid))
+demo %>% filter(grepl('7587', finalid)) # fixed above
+
+
+##########
+### Re-combine these based on finalids
+##########
+
+all.plantids = rbind(
+  # Demo data
+  demo %>% 
+    distinct(finalid, Year) %>% 
+    mutate(source = 'demo', is.in = TRUE),
+  # Seed set data
+  seed %>% 
+    distinct(finalid, year) %>% 
+    mutate(source = 'seed', is.in = TRUE) %>% 
+    rename(Year = year),
+  # Phenology data
+  phen %>%
+    distinct(finalid, year) %>%
+    mutate(source = 'phen', is.in = TRUE) %>%
+    rename(Year = year),
+  # Umbel data
+  # NOTE: this dataset only contains *multiple* umbels
+  # so I will also add in the demo data for which there is one umbel and umbel
+  # measurements
+  mumb %>%
+    distinct(finalid, Year) %>%
+    mutate(source = 'mumb', is.in = TRUE),
+  demo %>%
+    filter(No.umbels %in% 1) %>%
+    distinct(finalid, Year) %>%
+    mutate(source = 'mumb', is.in = TRUE)
+) %>%
+  pivot_wider(
+    id_cols = c(finalid, Year), names_from = source, 
+    values_from = is.in, values_fill = FALSE
+  )
+
+head(all.plantids)
+nrow(all.plantids)
+
+all.plantids %>% 
+  filter(!(Year %in% 2022)) %>%
+  mutate(n.in = demo + seed + phen + mumb) %>%
+  group_by(n.in) %>%
+  summarise(n = n())
+# still quite bad, goodness
+
+all.plantids %>% 
+  mutate(n.in = demo + seed + phen + mumb) %>%
+  group_by(Year, n.in) %>%
+  summarise(n = n())
+
+### 2021: only a handful of plants here were included in phen
+# so, there shouldn't be any plants from 2021 that are not listed in the
+# phenology or seed set data
+# I'll remove these plants here
+
+all.plantids = all.plantids %>% filter(Year > 2021 | phen | seed)
+
+####################
+# Next - look at 2021? Or do all at once? That would be hundreds lol
+####################
