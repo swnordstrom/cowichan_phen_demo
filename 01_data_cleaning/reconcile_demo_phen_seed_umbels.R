@@ -531,13 +531,190 @@ all.plantids %>%
   group_by(Year, n.in) %>%
   summarise(n = n())
 
-### 2021: only a handful of plants here were included in phen
+### 2021: only a handful of plants here were included in seed
 # so, there shouldn't be any plants from 2021 that are not listed in the
-# phenology or seed set data
+# seed set data
 # I'll remove these plants here
 
-all.plantids = all.plantids %>% filter(Year > 2021 | phen | seed)
+all.plantids = all.plantids %>% filter(Year > 2021 | seed)
 
 ####################
-# Next - look at 2021? Or do all at once? That would be hundreds lol
+# Next - look at 2021
 ####################
+
+# all.plantids %>%
+#   filter(Year %in% 2021) %>%
+#   filter(!(demo & mumb & phen & seed)) %>%
+#   print(n = nrow(.))
+
+# 1 3135_12_7G   2021 TRUE  TRUE  TRUE  FALSE
+demo %>% filter(grepl('3135', plantid))
+mumb %>% filter(grepl('3135', plantid))
+# notes suggest that one of these two umbels was closed
+# so, remove from data?
+
+# 2 3143_9_14T   2021 TRUE  TRUE  TRUE  FALSE
+demo %>% filter(grepl('3143', plantid))
+mumb %>% filter(grepl('3143', plantid))
+# one umbel area is listed - other is closed
+# remove?
+
+# 3 3149_14_19A  2021 TRUE  TRUE  FALSE TRUE 
+demo %>% filter(grepl('3149', plantid))
+phen %>% filter(grepl('\\_14\\_', plantid), year %in% 2021)
+# ah... somehow coords got recoreded as '29' instead of '19'
+phen = phen %>% mutate(finalid = gsub('3149\\_14\\_29A', '3149_14_19A', finalid))
+phen %>% filter(grepl('\\_14\\_', plantid), year %in% 2021)
+
+# 4 3179_6_5E    2021 TRUE  TRUE  FALSE TRUE 
+phen %>% filter(grepl('\\_6\\_', finalid), year %in% 2021) %>% distinct(finalid) # that's a lot
+demo %>% filter(grepl('3179', plantid))
+# in 2022, tag was 3748
+phen %>% filter(grepl('3748', plantid)) # and there it is
+phen = phen %>% mutate(finalid = gsub('3748', '3179', finalid))
+phen %>% filter(grepl('3179', finalid)) # good
+
+# 5 3436_15_17H  2021 TRUE  TRUE  FALSE TRUE 
+demo %>% filter(grepl('3436', plantid))
+phen %>% filter(grepl('3436', plantid))
+phen %>% filter(grepl('3436\\_15\\_17H', plantid))
+# mis-entered coordinates
+phen = phen %>% mutate(finalid = gsub('3436\\_15\\_12H', '3436_15_17H', finalid))
+phen %>% filter(grepl('3436\\_15\\_17H', finalid))
+
+# 6 3453_7_0C    2021 TRUE  TRUE  TRUE  FALSE
+demo %>% filter(grepl('3453', plantid)) # no umbels... maybe died? also doesn't say SOS
+phen %>% filter(grepl('3453', plantid))
+seed %>% filter(grepl('3453', plantid.seed)) # only one is dead
+mumb %>% filter(grepl('3453', plantid)) # here in 2022
+mumb %>% filter(grepl('\\_7\\_', plantid), Year %in% 2021) # nobody else in plot 7, also not SOS (ugh)
+# maybe it was just never entered?
+####### UNSOLVED #######
+
+# 7 3567_1_3I    2021 TRUE  TRUE  TRUE  FALSE
+demo %>% filter(grepl('3567', plantid)) # only one umbel listed
+mumb %>% filter(grepl('3567', plantid)) # yep, here in 2022-23
+seed %>% filter(grepl('3567', plantid.seed)) # dead
+# guess it'll just get excluded
+
+# 8 3916_6_7C    2021 TRUE  TRUE  FALSE TRUE 
+demo %>% filter(grepl('3916', plantid)) # no other tags
+phen %>% filter(grepl('\\_6\\_', plantid), year %in% 2021) %>% distinct(plantid)
+# bet it's 3918
+phen %>% filter(grepl('3918', plantid))
+demo %>% filter(grepl('3918', plantid))
+phen = phen %>% mutate(finalid = gsub('3918', '3916', finalid))
+phen %>% filter(grepl('3916', finalid))
+
+# 9 3978_13_2F   2021 TRUE  TRUE  TRUE  FALSE
+demo %>% filter(grepl('3978', plantid)) # only one umbel diameter listed
+seed %>% filter(grepl('3978', plantid.seed)) # yes - it's dead
+
+# 10 3365_1_0J    2021 FALSE TRUE  TRUE  FALSE
+seed %>% filter(grepl('3365', plantid.seed))
+demo %>% filter(grepl('3365\\_1', plantid)) # listed as 
+# oh... it's listed as having zero umbels in 2021
+phen %>% filter(grepl('3365', plantid))
+####### UNSOLVED #######
+# check for a data entry error?
+
+# 11 3418_1_18E   2021 FALSE TRUE  TRUE  FALSE
+seed %>% filter(grepl('3418', plantid.seed), year %in% 2021)
+demo %>% filter(grepl('3418', plantid)) # coords mis-entered
+demo = demo %>% mutate(finalid = gsub('3418\\_1\\_18B', '3418_1_18E', finalid))
+demo %>% filter(grepl('3418\\_1\\_18E', finalid))
+
+# 12 3122_4_8J    2021 FALSE TRUE  TRUE  FALSE
+seed %>% filter(grepl('3122', plantid.seed))
+# it's listed as not flowering in 2021 demo (zero umbels)
+####### UNSOLVED #######
+# check for a data entry error?
+
+# 13 3555_4_11T   2021 FALSE TRUE  TRUE  FALSE
+demo %>% filter(grepl('3555', plantid)) # I changed the coord in processing
+demo = demo %>% mutate(finalid = gsub('3555\\_4\\_11J', '3555_4_11T', finalid))
+demo %>% filter(grepl('3555\\_4\\_11T', finalid))
+
+# 14 3488_5_13J   2021 FALSE TRUE  FALSE FALSE
+demo %>% filter(grepl('3488', plantid)) # just a coord issue
+mumb %>% filter(grepl('3488', plantid))
+phen %>% filter(grepl('3488', plantid)) # hmm... not sure what 2023 will look like
+seed %>% filter(grepl('3488', plantid.seed)) # missed in 2023?
+demo = demo %>% mutate(finalid = gsub('3488\\_5\\_15I', '3488_5_13J', finalid))
+mumb = mumb %>% mutate(finalid = gsub('3488\\_5\\_15I', '3488_5_13J', finalid))
+
+# 15 5045_5_13C   2021 FALSE TRUE  TRUE  FALSE
+demo %>% filter(grepl('5045', plantid))
+mumb %>% filter(grepl('5045', plantid)) # hmm...
+# actually maybe here change seed/phen instead of demo/mumb
+seed %>% filter(grepl('5045', plantid.seed))
+seed = seed %>% mutate(finalid = gsub('5045\\_5_13C', '5045_5_12B', finalid))
+phen %>% filter(grepl('5045', plantid))
+phen = phen %>% mutate(finalid = gsub('5045\\_5_13C', '5045_5_12B', finalid))
+
+##########
+### Re-combine these based on finalids, again
+##########
+
+all.plantids = rbind(
+  # Demo data
+  demo %>% 
+    distinct(finalid, Year) %>% 
+    mutate(source = 'demo', is.in = TRUE),
+  # Seed set data
+  seed %>% 
+    distinct(finalid, year) %>% 
+    mutate(source = 'seed', is.in = TRUE) %>% 
+    rename(Year = year),
+  # Phenology data
+  phen %>%
+    distinct(finalid, year) %>%
+    mutate(source = 'phen', is.in = TRUE) %>%
+    rename(Year = year),
+  # Umbel data
+  # NOTE: this dataset only contains *multiple* umbels
+  # so I will also add in the demo data for which there is one umbel and umbel
+  # measurements
+  mumb %>%
+    distinct(finalid, Year) %>%
+    mutate(source = 'mumb', is.in = TRUE),
+  demo %>%
+    filter(No.umbels %in% 1) %>%
+    distinct(finalid, Year) %>%
+    mutate(source = 'mumb', is.in = TRUE)
+) %>%
+  pivot_wider(
+    id_cols = c(finalid, Year), names_from = source, 
+    values_from = is.in, values_fill = FALSE
+  ) %>%
+  filter(Year > 2021 | seed)
+
+head(all.plantids)
+nrow(all.plantids)
+
+all.plantids %>% 
+  filter(!(Year %in% 2022)) %>%
+  mutate(n.in = demo + seed + phen + mumb) %>%
+  group_by(n.in) %>%
+  summarise(n = n())
+# better but not by much
+
+all.plantids %>% 
+  mutate(n.in = demo + seed + phen + mumb) %>%
+  group_by(Year, n.in) %>%
+  summarise(n = n())
+# A lot of 2023 to do. Probably coordinate issues (bleh)
+
+
+####################
+# Fix 2023
+####################
+
+all.plantids %>%
+  filter(Year %in% 2023) %>%
+  filter(!(demo & mumb & phen & seed)) %>%
+  arrange(finalid) %>%
+  print(n = nrow(.))
+# that's a lot
+# prune out the coords, there's gotta be a clever way to do this... maybe see if
+# any tag-plots show up multiple times?
