@@ -718,3 +718,134 @@ all.plantids %>%
 # that's a lot
 # prune out the coords, there's gotta be a clever way to do this... maybe see if
 # any tag-plots show up multiple times?
+
+all.plantids %>%
+  filter(Year %in% 2023) %>%
+  separate(finalid, into = c('tag', 'plot', 'coord'), sep = '_', remove = FALSE) %>%
+  select(-coord) %>%
+  unite(c(tag, plot), col = planttag, sep = "_") %>%
+  group_by(planttag) %>%
+  filter(n() > 2)
+# only two cases to worry about
+
+all.plantids %>%
+  filter(Year %in% 2023) %>%
+  separate(finalid, into = c('tag', 'plot', 'coord'), sep = '_', remove = FALSE) %>%
+  select(-coord) %>%
+  unite(c(tag, plot), col = planttag, sep = "_") %>%
+  arrange(planttag) %>% 
+  filter(!(demo & seed & phen & mumb))
+# jesus that's a lot
+
+all.plantids %>%
+  filter(Year %in% 2023) %>%
+  separate(finalid, into = c('tag', 'plot', 'coord'), sep = '_', remove = FALSE) %>%
+  select(-coord) %>%
+  unite(c(tag, plot), col = planttag, sep = "_") %>%
+  arrange(planttag) %>% 
+  filter(!(demo & seed & phen & mumb)) %>%
+  # Get rid of plants where there are two records and the plant-tag combo
+  # appears in every data set
+  group_by(planttag) %>%
+  filter(!(n() %in% 2 & any(demo) & any(seed) & any(phen) & any(mumb))) %>%
+  print(n = nrow(.))
+# jesus what is up with the seed and phen data in 2023
+
+seed %>% filter(year %in% 2023) %>% distinct(plantid.seed) %>% nrow()
+seed %>% 
+  filter(year %in% 2023) %>% 
+  distinct(plantid.seed, .keep_all = TRUE) %>% 
+  group_by(plot) %>%
+  summarise(n = n())
+phen %>% filter(year %in% 2023) %>% distinct(plantid) %>% nrow()
+demo %>% filter(Year %in% 2023, !is.na(No.umbels), No.umbels > 0) %>% nrow()
+# ah... ~150 plants in demo but not in phen
+# interesting
+# So I'll just focus on the plants in phen and seed?
+
+all.plantids %>%
+  filter(Year %in% 2023) %>%
+  separate(finalid, into = c('tag', 'plot', 'coord'), sep = '_', remove = FALSE) %>%
+  select(-coord) %>%
+  unite(c(tag, plot), col = planttag, sep = "_") %>%
+  arrange(planttag) %>% 
+  filter(!(demo & seed & phen & mumb)) %>%
+  # Get rid of plants where there are two records and the plant-tag combo
+  # appears in every data set
+  group_by(planttag) %>%
+  filter(!(n() %in% 2 & any(demo) & any(seed) & any(phen) & any(mumb))) %>%
+  ungroup() %>%
+  arrange(desc(seed), desc(phen), planttag) %>%
+  print(n = nrow(.))
+
+# 1 3125_5_2I     3125_5    2023 FALSE TRUE  TRUE  FALSE
+demo %>% filter(grepl('3125\\_5', plantid))
+phen %>% filter(grepl('3125\\_5', plantid))
+seed %>% filter(grepl('3125\\_5', plantid.seed))
+phen = phen %>% mutate(finalid = gsub('3125\\_5\\_2I', '3125_5_3I', finalid))
+seed = seed %>% mutate(finalid = gsub('3125\\_5\\_2I', '3125_5_3I', finalid))
+
+# 2 3368_15_14B   3368_15   2023 FALSE TRUE  TRUE  FALSE
+seed %>% filter(grepl('3368', plantid.seed))
+# I checked demo - plant has an all-NA record because it disappeared
+# no fix for this
+
+# 3 3391_13_8G    3391_13   2023 FALSE TRUE  TRUE  FALSE
+seed %>% filter(grepl('3391\\_13', plantid.seed))
+demo %>% filter(grepl('3391\\_13', plantid))
+phen = phen %>% mutate(finalid = gsub('3391\\_13\\_8G', '3391_13_7G', finalid))
+seed = seed %>% mutate(finalid = gsub('3391\\_13\\_8G', '3391_13_7G', finalid))
+
+# 4 3785_6_15H    3785_6    2023 FALSE TRUE  TRUE  FALSE
+seed %>% filter(grepl('3785', plantid.seed))
+demo %>% filter(grepl('3785', proc.note)) # lol? it's listed as no plant in 2023...
+phen %>% filter(grepl('3785', plantid)) # ?
+
+# 5 5849_7_1E     5849_7    2023 FALSE TRUE  TRUE  FALSE
+seed %>% filter(grepl('5849', plantid.seed)) # doesn't match with anything in demo...
+demo %>% filter(grepl('5049', plantid))
+mumb %>% filter(grepl('5049', plantid))
+seed = seed %>% mutate(finalid = gsub('5849', '5049', finalid))
+phen = phen %>% mutate(finalid = gsub('5849', '5049', finalid))
+
+# 6 7698_10_9D    7698_10   2023 TRUE  TRUE  TRUE  FALSE
+demo %>% filter(grepl('7698', plantid))
+mumb %>% filter(grepl('7[0-9]98', plantid))
+mumb = mumb %>% mutate(finalid = gusb('7598', '7698', finalid))
+
+# 7 3069_7_1B     3069_7    2023 FALSE TRUE  FALSE FALSE
+seed %>% filter(grepl('3069', plantid.seed))
+demo %>% filter(grepl('3069', plantid))
+phen %>% filter(grepl('3069', plantid)) # not in phen though...
+phen %>% filter(grepl('\\_7\\_[12][ABC]', plantid))
+# oh right... umbel is dead.. well even still
+seed = seed %>% mutate(finalid = gsub('3069\\_7\\_1B', '3069_7_1C', finalid))
+
+# 8 3297_15_11H   3297_15   2023 FALSE TRUE  FALSE FALSE
+# 9 3454_6_15I    3454_6    2023 FALSE TRUE  FALSE FALSE
+# 10 3518_3_16J    3518_3    2023 FALSE TRUE  FALSE FALSE
+# 11 3590_13_9B    3590_13   2023 FALSE TRUE  FALSE FALSE
+# 12 3636_7_3I     3636_7    2023 FALSE TRUE  FALSE FALSE
+# 13 5570_6_18H    5570_6    2023 FALSE TRUE  FALSE FALSE
+# 14 7519_5_3D     7519_5    2023 TRUE  TRUE  FALSE TRUE 
+# 15 3182_4_17H    3182_4    2023 FALSE FALSE TRUE  FALSE
+# 16 3192_1_11B    3192_1    2023 TRUE  FALSE TRUE  TRUE 
+# 17 3193_1_15A    3193_1    2023 FALSE FALSE TRUE  FALSE
+# 18 3424_1_12G    3424_1    2023 TRUE  FALSE TRUE  TRUE 
+# 19 3432_1_19A    3432_1    2023 TRUE  FALSE TRUE  TRUE 
+# 20 3463_14_6A    3463_14   2023 FALSE FALSE TRUE  FALSE
+# 21 3477_2_5C     3477_2    2023 FALSE FALSE TRUE  FALSE
+# 22 3519_2_8G     3519_2    2023 FALSE FALSE TRUE  FALSE
+# 23 3556_14_17I   3556_14   2023 FALSE FALSE TRUE  FALSE
+# 24 3688_7_6G     3688_7    2023 FALSE FALSE TRUE  FALSE
+# 25 3697_5_17H    3697_5    2023 FALSE FALSE TRUE  FALSE
+# 26 3763_1_12A    3763_1    2023 TRUE  FALSE TRUE  TRUE 
+# 27 3807_5_10I    3807_5    2023 FALSE FALSE TRUE  FALSE
+# 28 3850_1_17E    3850_1    2023 TRUE  FALSE TRUE  TRUE 
+# 29 3888_5_18J    3888_5    2023 FALSE FALSE TRUE  FALSE
+# 30 3896_5_10G    3896_5    2023 FALSE FALSE TRUE  FALSE
+# 31 3902_1_16I    3902_1    2023 FALSE FALSE TRUE  FALSE
+# 32 5770_6_18H    5770_6    2023 FALSE FALSE TRUE  FALSE
+# 33 7512_5_3D     7512_5    2023 FALSE FALSE TRUE  FALSE
+# 34 7543_5_6D     7543_5    2023 FALSE FALSE TRUE  FALSE
+# 35 7572_15_2I    7572_15   2023 FALSE FALSE TRUE  FALSE
