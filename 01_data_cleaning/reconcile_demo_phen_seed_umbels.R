@@ -811,7 +811,7 @@ phen = phen %>% mutate(finalid = gsub('5849', '5049', finalid))
 # 6 7698_10_9D    7698_10   2023 TRUE  TRUE  TRUE  FALSE
 demo %>% filter(grepl('7698', plantid))
 mumb %>% filter(grepl('7[0-9]98', plantid))
-mumb = mumb %>% mutate(finalid = gusb('7598', '7698', finalid))
+mumb = mumb %>% mutate(finalid = gsub('7598', '7698', finalid))
 
 # 7 3069_7_1B     3069_7    2023 FALSE TRUE  FALSE FALSE
 seed %>% filter(grepl('3069', plantid.seed))
@@ -822,30 +822,161 @@ phen %>% filter(grepl('\\_7\\_[12][ABC]', plantid))
 seed = seed %>% mutate(finalid = gsub('3069\\_7\\_1B', '3069_7_1C', finalid))
 
 # 8 3297_15_11H   3297_15   2023 FALSE TRUE  FALSE FALSE
+seed %>% filter(grepl('3297', plantid.seed))
+# clipped so probably not in demo won't be in phen
+
 # 9 3454_6_15I    3454_6    2023 FALSE TRUE  FALSE FALSE
+seed %>% filter(grepl('3454', plantid.seed)) # ah... missing from phen due to missing records?
+demo %>% filter(grepl('3454', plantid)) # hmm...
+# oh well, ignore
+
 # 10 3518_3_16J    3518_3    2023 FALSE TRUE  FALSE FALSE
+seed %>% filter(grepl('3518', plantid.seed), year %in% 2023)
+# wait... data entry error?
+# why are there two different plots listed here...
+demo %>% filter(grepl('3518', plantid))
+# three umbels, just like in seed
+# these are all listed as being in plot 6 and not 3
+# same with the multi-umbel dataset
+# must be a data entry error
+seed = seed %>% mutate(finalid = gsub('3518\\_3\\_16J', '3518_6_10I', finalid))
+
 # 11 3590_13_9B    3590_13   2023 FALSE TRUE  FALSE FALSE
+seed %>% filter(grepl('3590', plantid.seed))
+# listed as 'gone 4 jun'; it's flowering in demo but won't be in phen
+
 # 12 3636_7_3I     3636_7    2023 FALSE TRUE  FALSE FALSE
+seed %>% filter(grepl('3636', plantid.seed))
+# also listed as "gone" on 24 May
+
 # 13 5570_6_18H    5570_6    2023 FALSE TRUE  FALSE FALSE
+seed %>% filter(grepl('5570', plantid.seed))
+# there are no plants with tags starting with 55, so this is def an entry error
+demo %>% filter(grepl('\\_6\\_18[GH]', plantid), Year %in% 2023) # hmm... not liking this
+# not listed in processing or demo notes...
+####### UNSOLVED #######
+# check datasheets
+
 # 14 7519_5_3D     7519_5    2023 TRUE  TRUE  FALSE TRUE 
+seed %>% filter(grepl('7519', plantid.seed))
+# okay, I changed the tag at one point...
+phen %>% filter(grepl('7512', plantid))
+demo %>% filter(grepl('7519', plantid))
+demo %>% filter(grepl('7512', plantid))
+# ugh... okay going to assume 7512 was misentered as 7519
+phen = phen %>% mutate(finalid = gsub('7512\\_5\\_3D', '7519_5_3D', finalid))
+
 # 15 3182_4_17H    3182_4    2023 FALSE FALSE TRUE  FALSE
+phen %>% filter(grepl('3182', plantid))
+demo %>% filter(grepl('3182', plantid)) # not here in 2023...
+# I don't see evidence this anywhere
+# oh... listed as NA/NP in demo, disappeared...
+####### UNSOLVED #######
+# change in demo
+
 # 16 3192_1_11B    3192_1    2023 TRUE  FALSE TRUE  TRUE 
+demo %>% filter(grepl('3192', plantid))
+phen %>% filter(grepl('3192', plantid))
+# it's listed in seed in 2022
+# very weirdly I don't see any plants in 2023 in seed with an x-coord greater than 10
+# maybe they were left out from seed? or not entered?
+####### UNSOLVED #######
+
 # 17 3193_1_15A    3193_1    2023 FALSE FALSE TRUE  FALSE
+phen %>% filter(grepl('3193', plantid)) # maybe a misentry
+demo %>% filter(grepl('3193\\_1', plantid))
+# yep
+seed %>% filter(grepl('3193\\_1', plantid.seed)) # annoying
+phen = phen %>% mutate(finalid = gsub('3193\\_1\\_15A', '3193_1_16C', finalid))
+# still might not be in seed though (very strange)
+
 # 18 3424_1_12G    3424_1    2023 TRUE  FALSE TRUE  TRUE 
+phen %>% filter(grepl('3424\\_1\\_', plantid))
+demo %>% filter(grepl('3424\\_1\\_', plantid))
+mumb %>% filter(grepl('3424', plantid))
+seed %>% filter(grepl('3424', plantid.seed))
+# ah... again, a missing plant from plot 1, xcoord > 10
+####### UNSOLVED #######
+# check data entry... I wonder if these were just missed
+
 # 19 3432_1_19A    3432_1    2023 TRUE  FALSE TRUE  TRUE 
+# seems likely the same as above.,,
+phen %>% filter(grepl('3432\\_1\\_', plantid), year %in% 2023)
+demo %>% filter(grepl('3432\\_1\\_', plantid))
+# yep... just not here... lol
+####### UNSOLVED #######s
+
 # 20 3463_14_6A    3463_14   2023 FALSE FALSE TRUE  FALSE
+phen %>% filter(grepl('3463', plantid))
+demo %>% filter(grepl('3463', plantid)) # hmm... 
+# ah, it's listed for some reason as not flowering in 2023?
+demo %>% filter(grepl('\\_14\\_5B', plantid), Year %in% 2023) # nope
+####### UNSOLVED #######
+# but I will change the ID in phen to match the demo id at least
+phen = phen %>% mutate(finalid = gsub('3463\\_14\\_6A', '3463_14_5B', finalid))
+
 # 21 3477_2_5C     3477_2    2023 FALSE FALSE TRUE  FALSE
+phen %>% filter(grepl('3477', plantid))
+demo %>% filter(grepl('3477', plantid)) # ah... listed as dead,  zero seeds
+seed %>% filter(grepl('3477', plantid.seed))
+####### UNSOLVED #######
+# (add to seed?)
+
 # 22 3519_2_8G     3519_2    2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('3519', plantid)) # also listed as dead (broken stalk)
+seed %>% filter(grepl('3519', plantid.seed)) 
+####### UNSOLVED #######
+# add zero to seed
+
 # 23 3556_14_17I   3556_14   2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('3556', plantid))
+phen %>% filter(grepl('3556', plantid))
+# super weird
+seed %>% filter(grepl('3556', plantid.seed)) # not listed in seed for some reason...
+phen = phen %>% mutate(finalid = gsub('3556\\_14\\_17I', '3556_14_15H', finalid))
+seed %>% filter(grepl('\\_14\\_', plantid.seed), year %in% 2023) %>% distinct(plantid.seed)
+# again, no records from xcoord 10 or above (save for one at x = 10)
+####### UNSOLVED #######
+# data entry issue?
+
 # 24 3688_7_6G     3688_7    2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('3688', plantid)) # had flower but then disappeared
+####### UNSOLVED #######
+# add zero to seed
+
 # 25 3697_5_17H    3697_5    2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('3697', plantid)) # umbel is dead
+####### UNSOLVED #######
+# add zero to seed
+
 # 26 3763_1_12A    3763_1    2023 TRUE  FALSE TRUE  TRUE 
+demo %>% filter(grepl('3763', plantid))
+# ah... might be missing just because of high x-coord
+seed %>% filter(grepl('3763', plantid.seed))
+seed %>% filter(grepl('\\_1\\_1[0-9]', plantid.seed), year %in% 2023)
+####### UNSOLVED #######
+# data entry?
+
 # 27 3807_5_10I    3807_5    2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('3807', plantid)) # dead umbel
+####### UNSOLVED #######
+# add zero to seed
+
 # 28 3850_1_17E    3850_1    2023 TRUE  FALSE TRUE  TRUE 
+demo %>% filter(grepl('3850', plantid))
+# ah... once again, plot 1, xcoord 17
+####### UNSOLVED #######
+# check data entry
+
 # 29 3888_5_18J    3888_5    2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('3888', plantid))
+# dead umbel...
+####### UNSOLVED #######
+# add zero to seed?
+
 # 30 3896_5_10G    3896_5    2023 FALSE FALSE TRUE  FALSE
 # 31 3902_1_16I    3902_1    2023 FALSE FALSE TRUE  FALSE
 # 32 5770_6_18H    5770_6    2023 FALSE FALSE TRUE  FALSE
-# 33 7512_5_3D     7512_5    2023 FALSE FALSE TRUE  FALSE
+# 33 7512_5_3D     7512_5    2023 FALSE FALSE TRUE  FALSE # fixed above
 # 34 7543_5_6D     7543_5    2023 FALSE FALSE TRUE  FALSE
 # 35 7572_15_2I    7572_15   2023 FALSE FALSE TRUE  FALSE
