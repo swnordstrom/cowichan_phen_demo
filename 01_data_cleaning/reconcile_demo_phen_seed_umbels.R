@@ -230,9 +230,7 @@ phen %>%
 all.plantids %>%
   filter(Year %in% 2022, !demo) %>%
   filter(grepl('3182\\_4', plantid) | grepl('3730\\_4', plantid) | grepl('7545\\_4', plantid))
-# cool... all of these are missing.
-# not sure which it is
-####### UNSOLVED #######
+# demo sheet says no phen for this plant
 
 # 13 3363_14       FALSE FALSE TRUE  FALSE
 # 14 3367_14       TRUE  TRUE  FALSE TRUE 
@@ -250,7 +248,7 @@ demo %>% filter(grepl('3379', plantid)) # interesting - here in 2023
 seed %>% filter(grepl('3379', plantid.seed))
 # ah... listed as having no umbels in 2022...
 ####### UNSOLVED #######
-####### need to change umbel count in demo (is NA, should be 1)
+# phen says stalk was eaten; should do zero seeds...
 
 # 16 3389_13       FALSE FALSE FALSE TRUE 
 mumb %>% filter(grepl('3389', plantid))
@@ -880,7 +878,7 @@ phen %>% filter(grepl('3192', plantid))
 # it's listed in seed in 2022
 # very weirdly I don't see any plants in 2023 in seed with an x-coord greater than 10
 # maybe they were left out from seed? or not entered?
-####### UNSOLVED #######
+# (seeds were not counted here)
 
 # 17 3193_1_15A    3193_1    2023 FALSE FALSE TRUE  FALSE
 phen %>% filter(grepl('3193', plantid)) # maybe a misentry
@@ -896,15 +894,13 @@ demo %>% filter(grepl('3424\\_1\\_', plantid))
 mumb %>% filter(grepl('3424', plantid))
 seed %>% filter(grepl('3424', plantid.seed))
 # ah... again, a missing plant from plot 1, xcoord > 10
-####### UNSOLVED #######
 # check data entry... I wonder if these were just missed
+# (note to past self - yes, they were)
 
 # 19 3432_1_19A    3432_1    2023 TRUE  FALSE TRUE  TRUE 
 # seems likely the same as above.,,
 phen %>% filter(grepl('3432\\_1\\_', plantid), year %in% 2023)
 demo %>% filter(grepl('3432\\_1\\_', plantid))
-# yep... just not here... lol
-####### UNSOLVED #######s
 
 # 20 3463_14_6A    3463_14   2023 FALSE FALSE TRUE  FALSE
 phen %>% filter(grepl('3463', plantid))
@@ -936,8 +932,6 @@ seed %>% filter(grepl('3556', plantid.seed)) # not listed in seed for some reaso
 phen = phen %>% mutate(finalid = gsub('3556\\_14\\_17I', '3556_14_15H', finalid))
 seed %>% filter(grepl('\\_14\\_', plantid.seed), year %in% 2023) %>% distinct(plantid.seed)
 # again, no records from xcoord 10 or above (save for one at x = 10)
-####### UNSOLVED #######
-# data entry issue?
 
 # 24 3688_7_6G     3688_7    2023 FALSE FALSE TRUE  FALSE
 demo %>% filter(grepl('3688', plantid)) # had flower but then disappeared
@@ -954,8 +948,6 @@ demo %>% filter(grepl('3763', plantid))
 # ah... might be missing just because of high x-coord
 seed %>% filter(grepl('3763', plantid.seed))
 seed %>% filter(grepl('\\_1\\_1[0-9]', plantid.seed), year %in% 2023)
-####### UNSOLVED #######
-# data entry?
 
 # 27 3807_5_10I    3807_5    2023 FALSE FALSE TRUE  FALSE
 demo %>% filter(grepl('3807', plantid)) # dead umbel
@@ -965,8 +957,6 @@ demo %>% filter(grepl('3807', plantid)) # dead umbel
 # 28 3850_1_17E    3850_1    2023 TRUE  FALSE TRUE  TRUE 
 demo %>% filter(grepl('3850', plantid))
 # ah... once again, plot 1, xcoord 17
-####### UNSOLVED #######
-# check data entry
 
 # 29 3888_5_18J    3888_5    2023 FALSE FALSE TRUE  FALSE
 demo %>% filter(grepl('3888', plantid))
@@ -975,8 +965,206 @@ demo %>% filter(grepl('3888', plantid))
 # add zero to seed?
 
 # 30 3896_5_10G    3896_5    2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('3896', plantid))
+# dead umbel
+####### UNSOLVED #######
+# add zero to seed?
+
 # 31 3902_1_16I    3902_1    2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('3902', plantid)) # mismatch
+phen %>% filter(grepl('3902', plantid))
+seed %>% filter(grepl('3902\\_1', plantid.seed))
+phen = phen %>% mutate(finalid = gsub('3902\\_1\\_16I', '3902_1_15J', finalid))
+
 # 32 5770_6_18H    5770_6    2023 FALSE FALSE TRUE  FALSE
+# oh... lol
+demo %>% filter(grepl('5[57]70', plantid)) # nowhere in here
+seed %>% filter(grepl('5[57]70', plantid.seed))
+# okie dokie, here's the tag misread
+demo %>% filter(grepl('\\_6\\_1', plantid)) # I don't see anything in here...
+phen = phen %>% mutate(finalid = gsub('5770', '5570', finalid))
+phen %>% filter(grepl('5570', finalid))
+
 # 33 7512_5_3D     7512_5    2023 FALSE FALSE TRUE  FALSE # fixed above
+
 # 34 7543_5_6D     7543_5    2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('7543', plantid))
+# accidental human-induced premature death... so maybe ignore?
+# at least, it won't be in seed
+phen %>% filter(grepl('7543', plantid))
+phen = phen %>% mutate(finalid = gsub('7543\\_5\\_6D', '7543_5_6E', finalid))
+
 # 35 7572_15_2I    7572_15   2023 FALSE FALSE TRUE  FALSE
+demo %>% filter(grepl('7572', plantid)) # not here
+demo %>% filter(grepl('\\_15\\_[123][A-Z]', plantid), Year %in% 2023)
+# tag must have been modified at some point... not appearing in here though
+####### UNSOLVED #######
+
+####################################################
+####################################################
+# Start combining ##################################
+####################################################
+####################################################
+
+# Ope I guess I should reconcile the IDs across years
+# ugh!
+
+merge(
+  demo %>% 
+    select(Year, finalid) %>% 
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE) %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  seed %>%
+    distinct(finalid, .keep_all = TRUE) %>%
+    rename(Year = year) %>%
+    select(Year, finalid) %>%
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  by = c('Year', 'tagplot'), suffixes = c('.demo', '.seed')
+) %>%
+  filter(finalid.demo != finalid.seed, !(Year %in% 2022))
+# oh a good question... does any tagplot appear twice in a year?
+
+merge(
+  demo %>% 
+    select(Year, finalid) %>% 
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE) %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  seed %>%
+    distinct(finalid, .keep_all = TRUE) %>%
+    rename(Year = year) %>%
+    select(Year, finalid) %>%
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  by = c('Year', 'tagplot'), suffixes = c('.demo', '.seed')
+) %>%
+  group_by(tagplot, Year) %>%
+  filter(n() > 1)
+# just these two from 2023
+
+# NAs in umbel sizes
+
+de.um = merge(
+  x = demo %>% select(Year, Plot, trt, finalid, No.umbels, umbel.diam),
+  y = mumb %>%
+    group_by(Year, finalid) %>%
+    summarise(
+      n.umbel.diam = n(),
+      n.diam.na    = sum(is.na(umble.diameter)),
+      sum.diameter = sum(umble.diameter/2, na.rm = TRUE)
+    ),
+  by = c("Year", "finalid"), all.x = TRUE
+)
+
+head(de.um)
+nrow(de.um)
+
+# How many plants don't have an umbel diameter?
+de.um %>%
+  mutate(
+    umbel.status = case_when(
+      !(umbel.diam %in% 'SOS') & grepl('[0-9]', umbel.diam) ~ 'umbel.diam',
+      !is.na(sum.diameter) & sum.diameter > 0 ~ 'sum.diameter',
+      .default = 'other'
+    )
+  ) %>%
+  group_by(Year, umbel.status) %>%
+  summarise(n = n())
+# hmm... plenty of 'other's
+
+de.um %>%
+  mutate(
+    umbel.status = case_when(
+      !(umbel.diam %in% 'SOS') & grepl('[0-9]', umbel.diam) ~ 'umbel.diam',
+      !is.na(sum.diameter) & sum.diameter > 0 ~ 'sum.diameter',
+      .default = 'other'
+    )
+  ) %>%
+  filter(umbel.status %in% 'other')
+# a couple of cases where no umbel diameter was entered in demo,
+# very small number of cases where all of the recorded multi-umbels are NA
+
+# How many plants have an NA-umbel
+de.um %>% summarise(p.na.readings = mean(is.na(umbel.diam) | n.diam.na > 0, na.rm = TRUE))
+# about 25%... ugh
+
+de.um = de.um %>%
+  mutate(
+    demo.umbels = No.umbels,
+    mumb.umbels = n.umbel.diam,
+    diam.umbels = case_when(
+      !is.na(sum.diameter) ~ sum.diameter,
+      !(is.na(umbel.diam) | umbel.diam %in% 'SOS') ~ as.numeric(umbel.diam)/2,
+      .default = NA
+    ),
+    n.in.measure = case_when(
+      !is.na(sum.diameter) ~ n.umbel.diam - n.diam.na,
+      !(is.na(umbel.diam) | umbel.diam %in% 'SOS') ~ 1,
+      .default = NA
+    )
+  ) %>%
+  select(Year, finalid, Plot, trt, demo.umbels, mumb.umbels, diam.umbels, n.in.measure)
+# warning message in here...
+# not sure what is causing it. 
+
+# oh well
+# try to merge in seed set now?
+
+# first, how many NAs are there?
+seed %>% filter(is.na(no.seeds)) # three records with NAs here
+# annoyingly I can't find the data sheets... so I guess... take these out?
+
+de.um.sd = merge(
+  x = de.um,
+  y = seed %>%
+    group_by(Year = year, finalid) %>%
+    summarise(
+      no.seeds = sum(no.seeds),
+      n.seed.counts = sum(is.na(no.seeds)),
+      empty.us = sum(!no.seeds & !is.na(no.seeds))
+    ),
+  all.x = TRUE
+)
+
+head(de.um.sd)
+# ah right... 2021, most plants don't have seed etc. counts
+# ah well.
+
+# Finally, phen
+# any NAs?
+phen %>% filter(is.na(init.doy))
+# nope, which is cool
+
+dusp = merge(
+  x = de.um.sd,
+  y = phen %>% 
+    group_by(Year = year, finalid) %>%
+    summarise(
+      numb.phen = n(),
+      mean.phen = mean(init.doy)
+    ),
+  all.x = TRUE
+)
+
+head(dusp)
+nrow(dusp)
+# cool
+
+# Go through and remove extraneous 2021 plants
+
+dusp %>% filter(Year > 2021 | !is.na(no.seeds)) %>% nrow()
+
+dusp = dusp %>% filter(Year > 2021 | !is.na(no.seeds))
+
+head(dusp)
+
+dusp %>%
+  ggplot(aes(x = no.seeds, group = interaction(trt, Year), fill = trt)) +
+  geom_histogram() +
+  facet_wrap(~ Year)
+# oh yeah... 2022 doesn't have coords lmao
+
