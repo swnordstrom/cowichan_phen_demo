@@ -837,7 +837,8 @@ demo %>% filter(grepl('3518', plantid))
 # these are all listed as being in plot 6 and not 3
 # same with the multi-umbel dataset
 # must be a data entry error
-seed = seed %>% mutate(finalid = gsub('3518\\_3\\_16J', '3518_6_10I', finalid))
+seed = seed %>% mutate(finalid = gsub('3518\\_[36]\\_16J', '3518_6_10I', finalid))
+phen = phen %>% mutate(finalid = gsub('3518\\_6\\_16J', '3518_6_10I', finalid))
 
 # 11 3590_13_9B    3590_13   2023 FALSE TRUE  FALSE FALSE
 seed %>% filter(grepl('3590', plantid.seed))
@@ -1045,11 +1046,18 @@ merge(
   group_by(tagplot, Year) %>%
   filter(n() > 1)
 # just these two from 2023
+# and thanks to the work above we know that the IDs match, so we know which one is in seed
 
-# NAs in umbel sizes
+# do any of tag-plot combos appear for different plants in different years?
+# ugh... this is difficult to assess
+# the number of instances of this will be small... so I won't worry about this now
+# (this would be an issue if two different plants got assigned to the same tag-plot label, throwing different plants into the same random intercept)
+
+##### Here - combine the demo and umbel datasets
+### I won't change the IDs yet because all of the ID fields are present here
 
 de.um = merge(
-  x = demo %>% select(Year, Plot, trt, finalid, No.umbels, umbel.diam),
+  x = demo %>% select(Year, finalid, No.umbels, umbel.diam),
   y = mumb %>%
     group_by(Year, finalid) %>%
     summarise(
@@ -1062,6 +1070,7 @@ de.um = merge(
 
 head(de.um)
 nrow(de.um)
+table(de.um$Year) # good
 
 # How many plants don't have an umbel diameter?
 de.um %>%
@@ -1107,7 +1116,7 @@ de.um = de.um %>%
       .default = NA
     )
   ) %>%
-  select(Year, finalid, Plot, trt, demo.umbels, mumb.umbels, diam.umbels, n.in.measure)
+  select(Year, finalid, demo.umbels, mumb.umbels, diam.umbels, n.in.measure)
 # warning message in here...
 # not sure what is causing it. 
 
@@ -1116,55 +1125,113 @@ de.um = de.um %>%
 
 # first, how many NAs are there?
 seed %>% filter(is.na(no.seeds)) # three records with NAs here
-# annoyingly I can't find the data sheets... so I guess... take these out?
+# annoyingly I can't find the data sheets... so I guess... don't worry about these now
+# probably will get removed at some point before analysis anyway
 
-de.um.sd = merge(
-  x = de.um,
+##### Combine seed and phen data
+### These also should have consistent labels
+
+# Look for NAs in phen
+phen %>% filter(is.na(survey.period), is.na(init.doy))
+# none
+
+ph.sd = merge(
+  x = phen %>% 
+    group_by(Year = year, finalid) %>% 
+    summarise(
+      mean.doy = mean(init.doy),
+      n.phen = n()
+    ) %>%
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
   y = seed %>%
     group_by(Year = year, finalid) %>%
     summarise(
-      no.seeds = sum(no.seeds),
-      n.seed.counts = sum(is.na(no.seeds)),
-      empty.us = sum(!no.seeds & !is.na(no.seeds))
-    ),
-  all.x = TRUE
-)
+      n.seed.counts = sum(!is.na(no.seeds)),
+      n.empty = sum(!no.seeds & !is.na(no.seeds)),
+      total.seeds = sum(no.seeds),
+    ) %>%
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  by = c('Year', 'tagplot'), all.x = TRUE, all.y = TRUE, suffixes = c('.phen', '.seed')
+) %>%
+  mutate(
+    n.seed.counts = ifelse(is.na(n.seed.counts), 0, n.seed.counts),
+    n.phen = ifelse(is.na(n.phen), 0, n.phen)
+  )
 
-head(de.um.sd)
-# ah right... 2021, most plants don't have seed etc. counts
-# ah well.
+head(ph.sd)
+# how well often do our phenology counts match the seed observations
 
-# Finally, phen
-# any NAs?
-phen %>% filter(is.na(init.doy))
-# nope, which is cool
+ph.sd %>%
+  group_by(Year, n.phen, n.seed.counts) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = n.phen, y = n.seed.counts, fill = n, label = n)) +
+  geom_tile() +
+  geom_text(aes(colour = n.phen == n.seed.counts)) +
+  scale_fill_gradient(low = 'black', high = 'gray') +
+  guides(colour = 'none') +
+  facet_wrap(~ Year) +
+  theme(panel.background = element_blank())
+# okay... surprising number of cases where there are more seed counts than
+# phenology observations...
+
+##### Add in seed data now
+### But this is the step where we need to reconcile ID codings
+# I'll make a new column for the final ID, and assign that tot he 'finalid' if
+# it has only one record in demo for that year
+
+de.um = de.um %>%
+  separate(finalid, into = c('tag', 'plot', 'coord'), sep = '_', remove = FALSE) %>%
+  select(-coord) %>%
+  unite(c(tag, plot), col = 'tagplot')
+
+de.um %>% group_by(Year, tagplot) %>% filter(n() > 1)
+# only one duplicated ID
 
 dusp = merge(
-  x = de.um.sd,
-  y = phen %>% 
-    group_by(Year = year, finalid) %>%
-    summarise(
-      numb.phen = n(),
-      mean.phen = mean(init.doy)
-    ),
-  all.x = TRUE
+  x = de.um, y = ph.sd,
+  by = c('Year', 'tagplot'),
+  all.x = TRUE, all.y = TRUE
 )
 
 head(dusp)
 nrow(dusp)
-# cool
 
-# Go through and remove extraneous 2021 plants
-
-dusp %>% filter(Year > 2021 | !is.na(no.seeds)) %>% nrow()
-
-dusp = dusp %>% filter(Year > 2021 | !is.na(no.seeds))
-
-head(dusp)
+# Go in and remove duplicated demo in 2023
 
 dusp %>%
-  ggplot(aes(x = no.seeds, group = interaction(trt, Year), fill = trt)) +
-  geom_histogram() +
-  facet_wrap(~ Year)
-# oh yeah... 2022 doesn't have coords lmao
+  group_by(Year, tagplot) %>%
+  filter(n() > 1)
+# two plants here
 
+dusp = dusp %>%
+  group_by(Year, tagplot) %>%
+  filter(n() == 1 | finalid == finalid.phen) %>%
+  ungroup()
+
+# Add in tag and plot info
+
+dusp = dusp %>%
+  mutate(plot = gsub('[0-9]{4}\\_', '', tagplot)) %>%
+  merge(y = read.csv('00_raw_data/plot_treatments.csv'))
+
+# Evaluate
+dusp %>%
+  filter(!is.na(total.seeds)) %>%
+  ggplot(aes(x = total.seeds, group = interaction(trt, Year))) +
+  geom_histogram(aes(fill = trt), position = position_identity(), alpha = 0.5) +
+  scale_fill_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(trt ~ Year, scales = 'free_y')
+# not super interpretable
+# does look like there are a lot of failures in the drought treatments
+# distributions don't look super different
+
+# Export CSV
+write.csv(
+  dusp,
+  file = '01_data_cleaning/out/demo_seed_phen_combined.csv',
+  row.names = FALSE
+)
