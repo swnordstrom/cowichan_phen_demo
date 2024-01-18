@@ -577,3 +577,144 @@ ranef(m_d_d)$zi$plot %>%
 #####
 ##### also re-run above (one-umbel) but with diamter (log?) offset
 #####
+
+umb.seeds = read.csv('01_data_cleaning/out/demo_seed_phen_by_umbel_combined.csv') %>%
+  rename(n.seeds = no.seeds)
+
+head(umb.seeds)
+
+umb.seeds %>% filter(is.na(finalid))
+
+# For now, get only data where seed counts are given (lol) and phenology is present
+umb.seeds = umb.seeds %>% 
+  filter(!is.na(n.seeds), !is.na(mean.doy), !is.na(mean.doy)) %>%
+  mutate(phen.scaled = (mean.doy - round(mean(mean.doy))) / 7)
+
+head(umb.seeds)
+nrow(umb.seeds)
+length(unique(umb.seeds$tagplot))
+
+str(umb.seeds)
+
+### Some plots
+
+umb.seeds %>%
+  ggplot(aes(x = n.seeds, fill = trt)) +
+  geom_histogram() +
+  scale_fill_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(trt ~ Year)
+# lots of zeros.
+
+umb.seeds %>%
+  ggplot(aes(x = mean.doy, y = n.seeds, colour = trt)) +
+  geom_point(aes(shape = !n.seeds), position = position_jitter(width = 1/7)) +
+  scale_fill_manual(values = c('black', 'red', 'blue')) +
+  scale_shape_manual(values = c(19, 21)) +
+  facet_wrap(trt ~ Year)
+
+### Models
+
+# Null model
+m_0_0 = glmmTMB(
+  formula = n.seeds ~ (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+summary(m_0_0)
+
+# Phenology
+
+m_d_0 = glmmTMB(
+  formula = n.seeds ~ phen.scaled + (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+m_d2_0 = glmmTMB(
+  formula = n.seeds ~ poly(phen.scaled, 2) + (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+m_0_d = glmmTMB(
+  formula = n.seeds ~ (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ phen.scaled + (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+m_0_d2 = glmmTMB(
+  formula = n.seeds ~ (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ poly(phen.scaled, 2) + (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+m_d_d = glmmTMB(
+  formula = n.seeds ~ phen.scaled + (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ phen.scaled + (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+) # this throws an error... why does this throw an error when nothing else does
+
+m_d2_d = glmmTMB(
+  formula = n.seeds ~ poly(phen.scaled, 2) + (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ phen.scaled + (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+m_d_d2 = glmmTMB(
+  formula = n.seeds ~ phen.scaled + (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ poly(phen.scaled, 2) + (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+m_d2_d2 = glmmTMB(
+  formula = n.seeds ~ poly(phen.scaled, 2) + (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ poly(phen.scaled, 2) + (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+AIC(m_0_0, m_d_0, m_d2_0, m_0_d, m_0_d2, m_d2_d, m_d_d2, m_d2_d2) %>%
+  mutate(daic = round(AIC - min(AIC), 2)) %>%
+  arrange(daic)
+# interesting!
+# shoot... might want m_d_d... which I took out because 
+# TO DO: finish the troubleshooting vignette
+
+summary(m_d2_d)
+summary(m_d_d2)
+
+
+m_d2.t_0 = glmmTMB(
+  formula = n.seeds ~ poly(phen.scaled, 2) + trt + (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+m_d2_t = glmmTMB(
+  formula = n.seeds ~ poly(phen.scaled, 2) + (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ trt + (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+m_d2.t_t = m_d2.t_0 = glmmTMB(
+  formula = n.seeds ~ poly(phen.scaled, 2) + trt + (1 | plot / tagplot) + (1 | Year),
+  ziformula = ~ trt + (1 | plot / tagplot) + (1 | Year),
+  family  = 'nbinom2',
+  data = umb.seeds
+)
+
+AIC(m_d2.t_0, m_d2_t, m_d2.t_t, m_d2_0) %>%
+  mutate(daic = round(AIC - min(AIC), 2))
+# no treatment effect
+
