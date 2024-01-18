@@ -1235,3 +1235,53 @@ write.csv(
   file = '01_data_cleaning/out/demo_seed_phen_combined.csv',
   row.names = FALSE
 )
+
+##### Exporting another version where there is one row per umbel *from seed count data*
+
+ph.sd.by.umbel = merge(
+  x = phen %>% 
+    group_by(Year = year, finalid) %>% 
+    summarise(
+      mean.doy = mean(init.doy),
+      n.phen = n()
+    ) %>%
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  y = seed %>%
+    rename(Year = year) %>%
+    select(Year, finalid, no.seeds) %>%
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  by = c('Year', 'tagplot'), all.x = TRUE, all.y = TRUE, suffixes = c('.phen', '.seed')
+)
+
+head(ph.sd.by.umbel)
+
+dusp.u = merge(
+  x = de.um, y = ph.sd.by.umbel,
+  by = c('Year', 'tagplot'),
+  all.x = TRUE, all.y = TRUE
+)
+
+dusp.u = dusp.u %>%
+  group_by(Year, tagplot) %>%
+  # filter(length(unique(finalid)) > 1)
+  filter(length(unique(finalid)) == 1 | finalid == finalid.phen) %>%
+  ungroup()
+
+head(dusp.u)
+nrow(dusp.u)
+
+dusp.u = dusp.u %>%
+  mutate(plot = gsub('[0-9]{4}\\_', '', tagplot)) %>%
+  merge(y = read.csv('00_raw_data/plot_treatments.csv'))
+
+nrow(dusp.u)
+
+write.csv(
+  dusp.u,
+  file = '01_data_cleaning/out/demo_seed_phen_by_umbel_combined.csv',
+  row.names = FALSE
+)
