@@ -685,18 +685,193 @@ ind.phen.all = rbind(
 
 # Export to csvs
 
-write.csv(
-  phen.all,
-  '01_data_cleaning/out/phenology_all_cleaned.csv',
-  row.names = FALSE
-)
-
-write.csv(
-  ind.phen.all,
-  '01_data_cleaning/out/phenology_all_ind_cleaned.csv',
-  row.names = FALSE
-)
+# write.csv(
+#   phen.all,
+#   '01_data_cleaning/out/phenology_all_cleaned.csv',
+#   row.names = FALSE
+# )
+# 
+# write.csv(
+#   ind.phen.all,
+#   '01_data_cleaning/out/phenology_all_ind_cleaned.csv',
+#   row.names = FALSE
+# )
 
 
 #####
 # In future: might want to add eaten or premature death and being eaten to these
+# and the future is NOW (17 jan 2024)
+
+# Here: get mean date of *bud* initiation
+# Also get number dead and eaten
+
+# 2021 data
+buds21 = proc21 %>%
+  arrange(survey.date) %>%
+  mutate(no.umbels = no.closed + no.unfurling + no.partial + no.flat + no.open + no.olp + no.seeding) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    live.diff = diff(c(0, no.umbels)),
+    lost.diff = diff(c(0, no.dead + no.eaten))
+  ) %>%
+  filter(!is.na(no.umbels)) %>%
+  summarise(
+    mean.bud.window = mean(ifelse(live.diff < 0, 0, live.diff) * survey.period),
+    n.lost = max(no.eaten + no.dead),
+    n.total = max(no.umbels + no.eaten + no.dead)
+  ) %>%
+  ungroup()
+
+nrow(buds21)
+
+# 2022 data
+buds22 = proc22 %>%
+  mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
+  arrange(plantid, survey.date) %>%
+  mutate(no.umbels = no.buds + no.pods + no.flowers + no.flp + no.seeding) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    live.diff = diff(c(0, no.umbels)),
+    lost.diff = diff(c(0, no.dead + no.eaten + no.broken))
+  ) %>%
+  summarise(
+    mean.bud.window = mean(ifelse(live.diff < 0, 0, live.diff) * survey.period),
+    n.lost = max(no.eaten + no.dead + no.broken),
+    n.total = max(no.umbels + no.broken +  no.eaten + no.dead)
+  ) %>%
+  ungroup()
+
+# 2023 data
+
+buds23 = proc23 %>%
+  mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
+  arrange(plantid, survey.date) %>%
+  mutate(no.umbels = no.buds + no.pods + no.flowers + no.flp + no.seeding) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    live.diff = diff(c(0, no.umbels)),
+    lost.diff = diff(c(0, no.dead + no.eaten + no.broken))
+  ) %>%
+  summarise(
+    mean.bud.window = mean(ifelse(live.diff < 0, 0, live.diff) * survey.period),
+    n.lost = max(no.eaten + no.dead + no.broken),
+    n.total = max(no.umbels + no.broken +  no.eaten + no.dead)
+  ) %>%
+  ungroup()
+
+# Bind it all together
+
+buds.all = rbind(
+  # Bind everything together
+  buds21 %>% mutate(year = 2021),
+  buds22 %>% mutate(year = 2022),
+  buds23 %>% mutate(year = 2023)
+) %>%
+  merge(y = exclude.plantids) %>%
+  # Use the "exclude" column to remove these
+  filter(!exclude) %>%
+  # Remove unnecessary column
+  select(-exclude) %>%
+  # Arrange columns (for export)
+  arrange(year, plot) %>%
+  # Merge to add approx. survey date
+  merge(
+    y = data.frame(
+      year = 2021:2023,
+      min.date = c(
+        as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
+        as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
+        as.numeric(min(proc23$survey.date) - as.Date('2023-01-01'))
+      )
+    )
+  ) %>%
+  mutate(init.doy = min.date + (mean.bud.window - 1) * 7) %>%
+  select(-min.date)
+
+# oh wait I want individual level budding
+
+ind.bud21 = proc21 %>%
+  arrange(survey.date) %>%
+  # Convert NAs to zeros %>%
+  mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
+  # get number of non-dead umbels per plant per day
+  mutate(no.umbels = no.closed + no.unfurling + no.partial + no.flat + no.open + no.olp + no.seeding) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    new = diff(c(0, no.umbels)),
+    lost = diff(c(0, no.dead + no.eaten))
+  ) %>%
+  select(plantid, plot, survey.date, survey.period, new, lost) %>%
+  pivot_longer(c(new, lost), names_to = 'varb', values_to = 'count') %>%
+  # change negative numbers to zeros for uncounting
+  mutate(count = ifelse(count < 0, 0, count)) %>%
+  uncount(weight = count) %>%
+  arrange(plantid)
+
+# looks good to me
+
+ind.bud22 = proc22 %>%
+  mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
+  arrange(plantid, survey.date) %>%
+  mutate(no.umbels = no.buds + no.pods + no.flowers + no.flp + no.seeding) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    new = diff(c(0, no.umbels)),
+    lost = diff(c(0, no.dead + no.eaten + no.broken))
+  ) %>%
+  select(plantid, plot, survey.date, survey.period, new, lost) %>%
+  pivot_longer(c(new, lost), names_to = 'varb', values_to = 'count') %>%
+  # change negative numbers to zeros for uncounting
+  mutate(count = ifelse(count < 0, 0, count)) %>%
+  uncount(weight = count) %>%
+  arrange(plantid)
+
+ind.bud23 = proc23 %>%
+  mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
+  arrange(plantid, survey.date) %>%
+  mutate(no.umbels = no.buds + no.pods + no.flowers + no.flp + no.seeding) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    new = diff(c(0, no.umbels)),
+    lost = diff(c(0, no.dead + no.eaten + no.broken))
+  ) %>%
+  select(plantid, plot, survey.date, survey.period, new, lost) %>%
+  pivot_longer(c(new, lost), names_to = 'varb', values_to = 'count') %>%
+  # change negative numbers to zeros for uncounting
+  mutate(count = ifelse(count < 0, 0, count)) %>%
+  uncount(weight = count) %>%
+  arrange(plantid)
+
+ind.buds.all = rbind(
+  ind.bud21 %>% mutate(year = 2021),
+  ind.bud22 %>% mutate(year = 2022),
+  ind.bud23 %>% mutate(year = 2023)
+) %>%
+  merge(y = exclude.plantids) %>%
+  # Use the "exclude" column to remove these
+  filter(!exclude) %>%
+  # Remove unnecessary column
+  select(-exclude) %>%
+  # Arrange columns (for export)
+  arrange(year, plot) %>%
+  # Merge to add approx. survey date
+  merge(
+    y = data.frame(
+      year = 2021:2023,
+      min.date = c(
+        as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
+        as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
+        as.numeric(min(proc23$survey.date) - as.Date('2023-01-01'))
+      )
+    )
+  ) %>%
+  mutate(init.doy = min.date + (survey.period - 1) * 7) %>%
+  select(-min.date)
+
+table(ind.buds.all$init.doy)
+
+# write.csv(
+#   ind.buds.all,
+#   file = '01_data_cleaning/out/phenology_buds_deaths_all.csv',
+#   row.names = FALSE
+# )
