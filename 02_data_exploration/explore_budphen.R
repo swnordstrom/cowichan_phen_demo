@@ -65,7 +65,7 @@ buds.all = buds.all %>%
 buds.new = buds.all %>% filter(varb %in% 'new')
 
 # Get a data frame with mean budding day and total number of good/dead umbels
-budday.deaths = buds.new %>%
+budday.deaths = buds.all %>%
   group_by(tagplot, year, plot, trt) %>%
   summarise(
     n.total.buds = sum(varb %in% 'new'),
@@ -77,11 +77,7 @@ budday.deaths = buds.new %>%
 
 # Check - are there any plants that have more dead umbels than total ones?
 any(budday.deaths$n.dead > budday.deaths$n.total.buds)
-# rats
-budday.deaths %>% filter(n.dead > n.total.buds)
-# my dataset is whack... something wrong in the way I'm assessing deaths
-
-# str(yy.budday.deaths)
+# nope = good!
 
 ##### Mean date of budding - analysis
 
@@ -103,5 +99,91 @@ summary(p_t)
 anova(p_t, p_0)
 # well... okay cool, likelihood ratio test suggests an effect of drought on budding phen
 
+predict(
+  object = p_t,
+  newdata = data.frame(trt = c('control', 'drought', 'irrigated')),
+  type = 'response',
+  re.form = ~ 0,
+  allow.new.levels = TRUE
+)
+
+# so ~3 days sooner under drought, ~2 days later under irrigation
+
 ##### Date of budding vs. likelihood of bud mortality
-# ... need to clean dataset
+
+budday.deaths %>%
+  mutate(p.dead = n.dead / n.total.buds) %>%
+  ggplot(aes(x = mean.doy, y = p.dead)) +
+  geom_point(aes(colour = trt), size = 3) +
+  scale_colour_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(~ year)
+
+d_0 = glmmTMB(
+  cbind(n.dead, n.total.buds - n.dead) ~ (1 | plot / tagplot) + (1 | year),
+  data = budday.deaths,
+  family = 'binomial'
+)
+
+summary(d_0)
+
+d_t = glmmTMB(
+  cbind(n.dead, n.total.buds - n.dead) ~ trt + (1 | plot / tagplot) + (1 | year),
+  data = budday.deaths,
+  family = 'binomial'
+)
+
+summary(d_t)
+
+d_d = glmmTMB(
+  cbind(n.dead, n.total.buds - n.dead) ~ phen.scaled + (1 | plot / tagplot) + (1 | year),
+  data = budday.deaths,
+  family = 'binomial'
+)
+
+summary(d_d)
+
+anova(d_d, d_0) # looks like a significant effect of day
+anova(d_t, d_0) # not of treatment though lol
+
+d_d_t = glmmTMB(
+  cbind(n.dead, n.total.buds - n.dead) ~ phen.scaled + trt + (1 | plot / tagplot) + (1 | year),
+  data = budday.deaths,
+  family = 'binomial'
+)
+
+anova(d_d_t, d_d)
+# no effect of treatment, unless...
+
+d_dt = glmmTMB(
+  cbind(n.dead, n.total.buds - n.dead) ~ phen.scaled * trt + (1 | plot / tagplot) + (1 | year),
+  data = budday.deaths,
+  family = 'binomial'
+)
+
+anova(d_dt, d_d)
+# nope!
+# no treatment effect period
+
+# one more... does doy effect vary by year
+d_dy = glmmTMB(
+  cbind(n.dead, n.total.buds - n.dead) ~  (1 | plot / tagplot) + (phen.scaled | year),
+  data = budday.deaths,
+  family = 'binomial'
+)
+
+anova(d_dy, d_d)
+# whoa... cool, significant effect
+AIC(d_dy, d_d, d_0)
+
+# neat.
+
+summary(d_dy)
+# huh... okay how do I get the mean effect of phen.scaled out of here lol
+ranef(d_dy) # oh hell yeah
+ranef(d_dy)$cond$year
+# so... negative effect in 2021, weak neutral-ish effects in other years
+
+# In just the model with one overall effects
+summary(d_d)
+# one *week* of later budding decreases log-odds by -0.17, or, about 16%
+
