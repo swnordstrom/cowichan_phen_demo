@@ -1593,9 +1593,18 @@ phen.demo = merge(
     ungroup() %>%
     # Give me only the umbel budding/appearing dates (not the dead ones)
     filter(varb %in% 'new') %>%
-    select(Year = year, plantid, init.doy, finalid, n.lost.umbels, n.phen.umbels),
-  y = demo.demoprev %>% rename(n.demo.umbels = No.umbels),
-  by = c('Year', 'finalid'), suffixes = c('.phen', '.demo')
+    select(Year = year, plantid, init.doy, finalid, n.lost.umbels, n.phen.umbels) %>%
+    # Need to change finalid column to match 2022
+    # this is copied from code above
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  y = demo.demoprev %>% 
+    rename(n.demo.umbels = No.umbels) %>%
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  by = c('Year', 'tagplot'), suffixes = c('.phen', '.demo')
 ) %>%
   # Change the one previous umbel count to zero
   mutate(
@@ -1604,12 +1613,30 @@ phen.demo = merge(
 
 head(phen.demo)
 
-# Export this CSV
-write.csv(
-  phen.demo,
-  file = '01_data_cleaning/out/phen_demo_for_umbel_survival.csv',
-  row.names = FALSE
-)
+# Check for duplicate plantids
+
+phen.demo %>%
+  group_by(Year, tagplot) %>%
+  filter(length(unique(plantid.demo)) > 1)
+# right now (30 jan) only one duplicate plant - neat!
+
+phen.demo = phen.demo %>%
+  group_by(Year, tagplot) %>%
+  filter(length(unique(plantid.demo)) == 1 | plantid.demo == plantid.phen) %>%
+  ungroup() %>%
+  select(-contains('finalid'))
+
+nrow(phen.demo)
+table(phen.demo$Year)
+
+phen.demo
+
+# # Export this CSV
+# write.csv(
+#   phen.demo,
+#   file = '01_data_cleaning/out/phen_demo_for_umbel_survival.csv',
+#   row.names = FALSE
+# )
 
 ### Third: demo (above), phen, and seeds
 # - some thought should go in here...
