@@ -1462,3 +1462,156 @@ nrow(dusp.u)
 #   file = '01_data_cleaning/out/demo_seed_phen_by_umbel_combined.csv',
 #   row.names = FALSE
 # )
+
+####################################################
+# For possible analysis ############################
+####################################################
+
+# 29 Jan 2024
+# Thinking about the following analyses:
+# - Number of umbels per plant (possibly also umbel diameter per plant?)
+#   - want to test for phen and previous status (size, flowering) in here
+#   - would then require demo (2020 and later), phen
+# - Umbel probability of surviving/death
+#   - testing for phen
+#   - also maybe could merge with previou year's status?
+# - Seeds per (non-dead) umbel
+#   - need seeds, phen, probably demo?
+
+### First: demo
+# - want 2020 demo in here too... but didn't do any reconciliation here
+# - but I think we can use the finalIDs from processing to merge back in...
+
+demo.prev = read.csv('01_data_cleaning/out/demo_imputed_survival.csv') %>%
+  # want to match year column in this data frame to the next year in the
+  # processed demo frame
+  mutate(year.match = Year + 1) %>%
+  # get rid of plants that are before 2019 (we're matching 2021 and later)
+  filter(year.match > 2020) %>%
+  # remove the 'b's from plantids because I did this in the other df
+  mutate(plantid = gsub('b', '', plantid))
+
+head(demo)
+
+# Data set for part 1:
+demo.demoprev = merge(
+  x = demo %>% select(Year, finalid, plantid, No.umbels, Plot, trt),
+  y = demo.prev %>% 
+    select(
+      plantid, year.match, prev.umbels = No.umbels, 
+      prev.leaves = No.leaves, prev.length =  Leaf.length
+    ),
+  by.x = c('Year', 'plantid'), by.y = c('year.match', 'plantid'),
+  all.x = TRUE
+)
+
+head(demo.demoprev)
+
+# How many of these plants are missing a previous size?
+# Also how many have zero leaves...
+
+demo.demoprev %>%
+  mutate(
+    case = case_when(
+       is.na(prev.leaves) | is.na(prev.length) ~ 'missing.counts',
+       !prev.leaves ~ 'dead',
+       !is.na(prev.leaves) & !is.na(prev.length) ~ 'has.measures',
+       .default = 'other'
+    )
+  ) %>%
+  group_by(case) %>%
+  summarise(n = n())
+# mostly have measures
+# and no dead plants!
+
+demo.demoprev %>%
+  mutate(
+    case = case_when(
+      is.na(prev.leaves) | is.na(prev.length) ~ 'missing.counts',
+      !prev.leaves ~ 'dead',
+      !is.na(prev.leaves) & !is.na(prev.length) ~ 'has.measures',
+      .default = 'other'
+    )
+  ) %>%
+  group_by(Year, case) %>%
+  summarise(n = n()) %>%
+  pivot_wider(names_from = case, values_from = n)
+# Missing a lot of counts from 2020-2021
+# (ah... the incomplete sampling in 2020... rats)
+
+# What about umbel counts?
+demo.demoprev %>%
+  filter(!is.na(prev.leaves) & !is.na(prev.length)) %>%
+  group_by(prev.umbels) %>%
+  summarise(n = n())
+# one NA
+
+demo.demoprev %>% filter(!is.na(prev.leaves) & !is.na(prev.length) & is.na(prev.umbels))
+demo.prev %>% filter(grepl('3596', plantid))
+# no note here... I'm going to assume it didn't flower.
+
+# Okay well I can live with this I guess.
+
+# Filter out plants with missing measurements, add in 
+demo.demoprev.measurements = demo.demoprev %>%
+  # Filter out plants with missing records
+  filter(!is.na(prev.leaves) & !is.na(prev.length)) %>%
+  # Fix missing umbel count (assuming NA is zero)
+  mutate(prev.umbels = ifelse(is.na(prev.umbels), 0, prev.umbels)) %>% 
+  # Add helpful columns
+  mutate(
+    # Size in previous year
+    prev.size = log(prev.leaves * prev.length),
+    # Previously flowered
+    prev.flwd = prev.umbels > 0
+  )
+
+head(demo.demoprev.measurements)
+# Good
+nrow(demo.demoprev.measurements)
+# 962 observations
+
+# ah... for an analysis of umbel counts would we not just want every year...?
+
+### Second: demo (above) and phen
+# - This will be used for probability of umbel death ~ flowering time and other demo
+# - so will want to merge in demo.demoprev with other stuff
+#   BUT because we don't know if this model will require previous size... let's
+#   merge in the original (all plant) dataset rather than the one that has
+#   measurements filtered out.
+# - Also - want to merge all umbels data frame, correct?
+
+head(phen)
+
+phen.demo = merge(
+  x = phen %>%
+    group_by(year, finalid) %>%
+    mutate(
+      n.lost.umbels = sum(varb %in% 'lost'),
+      n.phen.umbels  = sum(varb %in% 'new')
+    ) %>%
+    ungroup() %>%
+    # Give me only the umbel budding/appearing dates (not the dead ones)
+    filter(varb %in% 'new') %>%
+    select(Year = year, plantid, init.doy, finalid, n.lost.umbels, n.phen.umbels),
+  y = demo.demoprev %>% rename(n.demo.umbels = No.umbels),
+  by = c('Year', 'finalid'), suffixes = c('.phen', '.demo')
+) %>%
+  # Change the one previous umbel count to zero
+  mutate(
+    prev.umbels = ifelse(is.na(prev.umbels) & !is.na(prev.leaves) & !is.na(prev.length), 0, prev.umbels)
+  )
+
+head(phen.demo)
+
+# Export this CSV
+write.csv(
+  phen.demo,
+  file = '01_data_cleaning/out/phen_demo_for_umbel_survival.csv',
+  row.names = FALSE
+)
+
+### Third: demo (above), phen, and seeds
+# - some thought should go in here...
+# - seed counts by individual umbel should be good... but will want to go through
+# and remove dead umbels and add non-dead empty umbels
