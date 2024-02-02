@@ -50,6 +50,11 @@ mumb = read.csv('01_data_cleaning/out/multi_umbel_clean.csv') %>%
   filter(Year > 2020) %>%
   mutate(finalid = plantid)
 
+# Remove some plants included in seed by mistake (processing error due to tag
+# multiplicity)
+
+seed = seed %>% filter(!plantid.demo %in% c('3185_2_7I', '3125_5_14C'))
+
 ### All plantids
 
 all.plantids = rbind(
@@ -1639,6 +1644,166 @@ phen.demo
 # )
 
 ### Third: demo (above), phen, and seeds
-# - some thought should go in here...
 # - seed counts by individual umbel should be good... but will want to go through
 # and remove dead umbels and add non-dead empty umbels
+# - should get plant-level summary for umbel phen
+
+seed.phen.demo = merge(
+  x = phen %>%
+  group_by(Year = year, finalid, varb) %>%
+  summarise(
+    n = n(),
+    mean.doy = mean(init.doy)
+  ) %>%
+  pivot_wider(names_from = varb, values_from = c(n, mean.doy), values_fill = 0) %>%
+  select(-mean.doy_lost) %>%
+  rename(
+    n.phen.umbel = n_new,
+    n.lost.umbel = n_lost,
+    mean.bud.day = mean.doy_new
+  ) %>%
+  separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+  select(-coord) %>%
+  unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  y = demo.demoprev %>% 
+    rename(n.demo.umbels = No.umbels) %>%
+    separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+    select(-coord) %>%
+    unite(c(tag, plot), col = 'tagplot', sep = '_'),
+  by = c('Year', 'tagplot'), suffixes = c('.phen', '.demo')
+) %>%
+  group_by(Year, plantid) %>%
+  filter(length(unique(finalid.demo)) == 1 | finalid.demo == finalid.phen) %>%
+  merge(
+    y = seed %>%
+      select(Year = year, finalid, no.seeds) %>%
+      separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
+      select(-coord) %>%
+      unite(c(tag, plot), col = 'tagplot', sep = '_'),
+    by = c('Year', 'tagplot'), suffixes = c('', '.seed'),
+    all.x = TRUE, all.y = TRUE
+  ) %>%
+  rename(finalid.seed = finalid)
+
+head(seed.phen.demo)
+nrow(seed.phen.demo)
+table(seed.phen.demo$Year)
+
+seed.phen.demo.check = seed.phen.demo %>%
+  group_by(Year, tagplot) %>%
+  mutate(
+    n.seeds = sum(no.seeds),
+    n.seed.umbel = sum(!is.na(no.seeds)),
+    n.seed.zeros = sum(!no.seeds & !is.na(no.seeds))
+  ) %>%
+  distinct(Year, tagplot, .keep_all = TRUE) %>%
+  ungroup() %>%
+  # mutate(
+  #   across(c(n.seed.zeros, n.phen.umbel, n.lost.umbel, n.demo.umbels), function(x) ifelse(is.na(x), 0, x))
+  # )
+  # # Take out plants with no matching phen or seed
+  filter(!is.na(n.phen.umbel) & !is.na(n.seed.umbel))
+
+nrow(seed.phen.demo.check)
+
+# Okay... now let's look at this...
+
+seed.phen.demo.check %>%
+  filter(n.seed.umbel > 0, n.phen.umbel > 0) %>%
+  group_by(n.phen.umbel, n.seed.umbel, Year) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = n.phen.umbel, y = n.seed.umbel, label = n)) +
+  geom_segment(aes(x = 0, xend = 12, y = 0, yend = 12), linetype = 2) +
+  geom_tile(aes(fill = n), alpha = 0.9) +
+  geom_text(aes(colour = n.phen.umbel == n.seed.umbel)) +
+  scale_fill_gradient(low = 'white', high = 'black') +
+  facet_wrap(~ Year) +
+  theme(panel.background = element_blank(), legend.position = 'bottom')
+# Below the dotted line: maybe dead umbel was not counted in seed
+# On dotted line: good
+# Above dotted line: these cases have been fixed (were cases where there were
+#   duplicated records due to merging with duplicated tags in a plot)
+
+# seed.phen.demo.check %>% filter(n.phen.umbel < n.seed.umbel)
+
+# seed.phen.demo %>%
+#   group_by(tagplot, Year) %>%
+#   filter(n() > mean(n.phen.umbel))
+# # looks like these are duplicated tagplots... this is fixable!
+# 
+# seed.phen.demo %>%
+#   group_by(Year, tagplot) %>%
+#   filter(length(unique(finalid.phen)) > 1 | length(unique(finalid.demo)) > 1)
+# same two plants - nice
+
+# fix the issue
+seed.phen.demo = seed.phen.demo %>%
+  group_by(Year, tagplot) %>%
+  filter(
+    (length(unique(finalid.phen)) == 1 & length(unique(finalid.demo)) == 1) | 
+    (finalid.phen == finalid.demo)
+  ) %>%
+  ungroup()
+
+# Let's look at zero seed plants and umbel plants
+seed.phen.demo.check %>%
+  # Remove plants missing from one dataset
+  filter(n.phen.umbel > 0 & n.seed.umbel > 0) %>%
+  mutate(
+    count.compare = case_when(
+      n.phen.umbel == n.seed.umbel ~ 'counts match',
+      n.phen.umbel > n.seed.umbel ~ 'more in phen',
+      n.phen.umbel < n.seed.umbel ~ 'more in seed'
+    )
+  ) %>%
+  group_by(n.lost.umbel, n.seed.zeros, count.compare) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = n.lost.umbel, y = n.seed.zeros, label = n)) +
+  geom_segment(aes(x = 0, xend = 6, y = 0, yend = 6), linetype = 2) +
+  geom_tile(aes(fill = n), alpha = 0.9) +
+  geom_text(aes(colour = n.lost.umbel == n.seed.zeros)) +
+  scale_fill_gradient(low = 'white', high = 'black') +
+  facet_wrap(~ count.compare) +
+  theme(panel.background = element_blank())
+
+# Counts match, same number of zeros: think we're good here
+# Counts match, more zeros in seed: umbels not fertilized (good)
+# Counts match, more zeros in phen: problems? [fixed below]
+# More umbels in phen, more zeros in seed than phen: assume the extra heads in
+#   phen did not fail, and the extra zeros in phen are from non-fertilization
+# More umbels in phen, same number of zeros: non-fertilized umbels probably not
+#   appearing as zeros in seed
+# More umbels in phen, more zeros in phen: failed umbels likely not in phen
+
+# What is going on here...
+seed.phen.demo %>%
+  group_by(Year, tagplot) %>%
+  mutate(
+    n.seeds = sum(no.seeds),
+    n.seed.umbel = sum(!is.na(no.seeds)),
+    n.seed.zeros = sum(!no.seeds & !is.na(no.seeds))
+  ) %>%
+  ungroup() %>%
+  filter(n.seed.umbel == n.phen.umbel, n.lost.umbel > n.seed.zeros)
+# The one plant in here... 3190_10, 2022, looks like some data entry mistake
+# plant recorded as dead after seeding... maybe seeds are premature?
+# check data sheet
+
+# Fix discrepancy above
+seed.phen.demo = seed.phen.demo %>%
+  mutate(n.lost.umbel = ifelse(tagplot %in% '3190_10' & Year %in% 2022, 1, n.lost.umbel))
+
+# Fix another data entry mistake - case that's just a missed week in phen that
+# won't certainty in when buds budded
+seed.phen.demo = seed.phen.demo %>%
+  mutate(n.phen.umbel = ifelse(tagplot %in% '3493_15' & Year %in% 2022, 2, n.phen.umbel))
+
+# Okay: case-by-case breakdown
+# - Counts match, same number of zeros: do nothing, assume zero counts are correct
+# - Counts match, more zeros in seeed than phen: assume extra zeros are umbels that 
+#   just didn't get fertilized; i.e., do nothing
+# - More umbels in phen, same number of zeros: assume the missing phen umbels are failed (add)
+# - More umbels in phen, more zeros in seed: these cases *should* be individually fixed
+# - More umbels in phen, more lost umbels than zeros: need to add failed umbels into 
+#   phen as zeros
+
