@@ -68,9 +68,9 @@ head(proc23$plantid)
 
 # Initialize a data frame of plantids to exclude
 exclude.plantids = rbind(
-  data.frame(plantid = unique(proc21$plantid)),
-  data.frame(plantid = unique(proc22$plantid)),
-  data.frame(plantid = unique(proc23$plantid))
+  data.frame(plantid = unique(proc21$plantid)) %>% mutate(year = 2021),
+  data.frame(plantid = unique(proc22$plantid)) %>% mutate(year = 2022),
+  data.frame(plantid = unique(proc23$plantid)) %>% mutate(year = 2023)
 ) %>%
   mutate(exclude = FALSE)
 
@@ -137,11 +137,11 @@ proc21 %>%
 
 # exclude 3108_13_12G - 15 day gap between "closed" and "flat"
 exclude.plantids = exclude.plantids %>%
-  mutate(exclude = case_when(plantid %in% '3108_13_12G' ~ TRUE, .default = exclude))
+  mutate(exclude = case_when(plantid %in% '3108_13_12G' & year %in% 2021 ~ TRUE, .default = exclude))
 
 # exclue 3485_15_3A - 13 day gap between "unfurling" and "partial"
 exclude.plantids = exclude.plantids %>%
-  mutate(exclude = case_when(plantid %in% '3485_15_3A' ~ TRUE, .default = exclude))
+  mutate(exclude = case_when(plantid %in% '3485_15_3A' & year %in% 2021  ~ TRUE, .default = exclude))
 
 # Fix mistakes in data entry
 proc21 = proc21 %>%
@@ -152,7 +152,11 @@ proc21 = proc21 %>%
     no.dead = ifelse(tag %in% 3396 & plot %in% 13 & survey.date %in% as.Date('2021-05-20'), 0, no.dead),
     no.seeding = ifelse(tag %in% 3396 & plot %in% 13 & survey.date %in% as.Date('2021-05-20'), 1, no.seeding),
     # a dead plant was not listed for 3065 (although probably doesn't matter...)
-    no.dead = ifelse(tag %in% 3065 & plot %in% 15 & survey.date %in% as.Date('2021-05-27'), 1, no.dead)
+    no.dead = ifelse(tag %in% 3065 & plot %in% 15 & survey.date %in% as.Date('2021-05-27'), 1, no.dead),
+    # seeding umbel not entered for 3567
+    no.seeding = ifelse(tag %in% 3567 & plot %in% 1 & survey.date %in% as.Date('2021-5-27'), 2, no.seeding),
+    # missing a plant on this day for 3298 (3296 but that is fixed later)...
+    no.open = ifelse(tag %in% 3298 & plot %in% 7 & survey.date %in% as.Date('2021-05-20'), 1, no.open)
   )
 
 
@@ -231,9 +235,11 @@ proc22 = proc22 %>%
     no.broken = ifelse(plantid %in% '3122_4' & survey.date > as.Date('2022-05-31'), 1, no.broken),
     # this must be a recording mistake - two seeding plants observed before and after
     no.seeding = ifelse(plantid %in% '3122_4' & survey.date %in% as.Date('2022-06-14'), 2, no.seeding),
-    # seeding umbel mistakenly entered as dead
+    # seeding umbel mistakenly entered as dead, also going to propagate forward the eaten plant
     no.seeding = ifelse(plantid %in% '3151_3' & survey.date %in% as.Date('2022-06-07'), 1, no.seeding),
     no.dead = ifelse(plantid %in% '3151_3' & survey.date %in% as.Date('2022-06-07'), 0, no.dead),
+    # 3151_1 - going to propagate forward the eaten bud
+    no.eaten = ifelse(plantid %in% '3151_1' & survey.date > as.Date('2022-04-25'), 1, no.eaten),
     # mistakenly did not record dead plant
     no.dead = ifelse(plantid %in% '3187_13' & survey.date %in% as.Date('2022-06-14'), 1, no.dead),
     # mistake - plant was eaten, never seeded
@@ -246,8 +252,27 @@ proc22 = proc22 %>%
     # did not enter a dead umbel here
     no.dead = ifelse(plantid %in% '3978_13' & survey.date %in% as.Date('2022-06-14'), 1, no.dead),
     # didn't enter a dead umbel here
-    no.dead = ifelse(plantid %in% '7537_13' & survey.date %in% as.Date('2022-06-14'), 1, no.dead)
+    no.dead = ifelse(plantid %in% '7537_13' & survey.date %in% as.Date('2022-06-14'), 1, no.dead),
+    # data entry mistake here - no flp on 5/31 for plant 7591_4
+    no.flp = ifelse(plantid %in% '7591_4' & survey.date %in% as.Date('2022-05-31'), 0, no.flp),
+    # data entry mistake - there's a question mark by the seeding and it isn't seen in subsq weeks
+    no.seeding = ifelse(plantid %in% '3642_13' & survey.date %in% as.Date('2022-05-08'), 0, no.seeding),
+    # data entry mistake - two seeding plants, neither dead...
+    no.seeding = ifelse(plantid %in% '3185_2' & survey.date %in% as.Date('2022-06-21'), 2, no.seeding),
+    no.dead = ifelse(plantid %in% '3185_2' & survey.date %in% as.Date('2022-06-21'), 0, no.dead),
+    # data sheet has this as a three/two - makes more sense as a three
+    no.flowers = ifelse(plantid %in% '3485_15' & survey.date %in% as.Date('2022-05-16'), 3, no.flowers),
+    # this is driving me insane... why did they do this
+    no.flp = ifelse(plantid %in% '1411_4' & survey.date %in% as.Date('2022-05-08'), 1, no.flp),
+    # mis-entry - 1F, 1FLP, 1S (f missed) - tag is really 2230 but this gets fixed later
+    no.flowers = ifelse(plantid %in% '2238_4' & survey.date %in% as.Date('2022-05-31'), 1, no.flowers),
+    # mis-entry - didn't enter a dead plant...
+    no.dead = ifelse(plantid %in% '3182_4' & survey.date %in% as.Date('2022-05-31'), 1, no.dead)
   )
+
+# Plant 3345 in plot 6 - records are a messy disaster here. I don't trust them. Exclude
+exclude.plantids = exclude.plantids %>%
+  mutate(exclude = ifelse(plantid %in% '3345_6' & year %in% 2022, TRUE, exclude))
 
 ### 2023 data
 proc23$survey.date = as.Date(proc23$survey.date, format = '%m/%d/%Y')
@@ -312,6 +337,10 @@ proc23 = proc23 %>%
     no.buds = ifelse(tag %in% 3431 & plot %in% 13 & survey.date %in% as.Date('2023-05-04'), 2, no.buds),
     # 
   )
+
+# Exclude 3481_15 - stem got clipped, records are hard to parse out...
+exclude.plantids = exclude.plantids %>%
+  mutate(exclude = ifelse(grepl('3481\\_15', plantid) & year %in% 2023, TRUE, exclude))
 
 ##### Multiple records in the same survey period: why would this happen?
 
@@ -464,7 +493,7 @@ proc21 %>%
 # Just this one plant - I say remove it because that missing record is *right*
 # where the partial date should be
 exclude.plantids = exclude.plantids %>%
-  mutate(exclude = ifelse(plantid %in% '3563_4_12S', TRUE, exclude))
+  mutate(exclude = ifelse(plantid %in% '3563_4_12S' & year %in% 2021 , TRUE, exclude))
 
 ###
 
@@ -800,7 +829,8 @@ nrow(buds21)
 buds22 = proc22 %>%
   mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
   arrange(plantid, survey.date) %>%
-  mutate(no.umbels = no.buds + no.pods + no.flowers + no.flp + no.seeding) %>%
+  # note: NOT counting pods
+  mutate(no.umbels = no.buds + no.flowers + no.flp + no.seeding) %>%
   group_by(plantid, plot) %>%
   mutate(
     live.diff = diff(c(0, no.umbels)),
@@ -818,7 +848,8 @@ buds22 = proc22 %>%
 buds23 = proc23 %>%
   mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
   arrange(plantid, survey.date) %>%
-  mutate(no.umbels = no.buds + no.pods + no.flowers + no.flp + no.seeding) %>%
+  # note: NOT counting pods
+  mutate(no.umbels = no.buds + no.flowers + no.flp + no.seeding) %>%
   group_by(plantid, plot) %>%
   mutate(
     live.diff = diff(c(0, no.umbels)),
@@ -885,7 +916,8 @@ ind.bud21 = proc21 %>%
 ind.bud22 = proc22 %>%
   mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
   arrange(plantid, survey.date) %>%
-  mutate(no.umbels = no.buds + no.pods + no.flowers + no.flp + no.seeding) %>%
+  # NOTE: pods removed
+  mutate(no.umbels = no.buds + no.flowers + no.flp + no.seeding) %>%
   group_by(plantid, plot) %>%
   mutate(
     new = diff(c(0, no.umbels + no.dead + no.eaten + no.broken)),
@@ -901,6 +933,7 @@ ind.bud22 = proc22 %>%
 ind.bud23 = proc23 %>%
   mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
   arrange(plantid, survey.date) %>%
+  # NOTE: pods removed
   mutate(no.umbels = no.buds + no.pods + no.flowers + no.flp + no.seeding) %>%
   group_by(plantid, plot) %>%
   mutate(
