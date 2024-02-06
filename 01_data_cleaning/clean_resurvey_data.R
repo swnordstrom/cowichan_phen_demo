@@ -267,12 +267,85 @@ proc22 = proc22 %>%
     # mis-entry - 1F, 1FLP, 1S (f missed) - tag is really 2230 but this gets fixed later
     no.flowers = ifelse(plantid %in% '2238_4' & survey.date %in% as.Date('2022-05-31'), 1, no.flowers),
     # mis-entry - didn't enter a dead plant...
-    no.dead = ifelse(plantid %in% '3182_4' & survey.date %in% as.Date('2022-05-31'), 1, no.dead)
+    no.dead = ifelse(plantid %in% '3182_4' & survey.date %in% as.Date('2022-05-31'), 1, no.dead),
+    # mis-entry - FLP erroneously entered as one
+    no.flp = ifelse(plantid %in% '3364_4' & survey.date %in% as.Date('2022-05-31'), 2, no.flp),
+    # mis-entry - entered the data from the row above, there is no flowering umbel here this day
+    no.flowers = ifelse(plantid %in% '3730_4' & survey.date %in% as.Date('2022-05-31'), 0, no.flowers),
+    # mis-entry - entered the data from the row above, there is no seeding umbel on this date 
+    # but there is an FLP
+    no.flowers = ifelse(plantid %in% '7545_4' & survey.date %in% as.Date('2022-05-31'), 0, no.flowers),
+    no.seeding = ifelse(plantid %in% '7545_4' & survey.date %in% as.Date('2022-05-31'), 0, no.seeding),
+    no.flp = ifelse(plantid %in% '7545_4' & survey.date %in% as.Date('2022-05-31'), 1, no.flp),
+    # mis-entries for two days for this plant - "two" got put in wrong field
+    no.flp = ifelse(plantid %in% '7550_4' & survey.date %in% as.Date('2022-05-31'), 1, no.flp),
+    no.seeding = ifelse(plantid %in% '7550_4' & survey.date %in% as.Date('2022-06-07'), 2, no.seeding),
+    # data recorded as a question mark... come on man that's so not helpful
+    # going to assume it's a bud because pollen shedding would be conspicuous
+    no.buds = ifelse(plantid %in% '3988_5' & survey.date %in% as.Date('2022-05-16'), 1, no.buds),
+    # data is not recorded clearly but it's two FLP not one
+    no.flp = ifelse(plantid %in% '5021_5' & survey.date %in% as.Date('2022-05-16'), 2, no.flp),
+    # okay... two FLP/Dead (????) plants one week, then one dead+seeding the next week...
+    # going to say that it was seeding the week it was missed (but they all died the next week)
+    no.seeding = ifelse(plantid %in% '3070_6' & survey.date %in% as.Date('2022-06-14'), 2, no.seeding),
+    # dead umbels were not recorded one week (come on man)
+    no.dead = ifelse(plantid %in% '3319_6' & survey.date %in% as.Date('2022-06-14'), 2, no.dead),
+    # mis-entries - flower got mis-entered as a pod on may 8, then number of
+    # flowers got mis-recorded on may 25
+    no.flowers = ifelse(plantid %in% '3630_6' & survey.date %in% as.Date('2022-05-08'), 1, no.flowers),
+    no.pods = ifelse(plantid %in% '3630_6' & survey.date %in% as.Date('2022-05-08'), 0, no.pods),
+    no.flowers = ifelse(plantid %in% '3630_6' & survey.date %in% as.Date('2022-05-25'), 2, no.flowers),
+    # mis-entry - two dead umbels mis-recorded as three
+    no.dead = ifelse(plantid %in% '3126_13' & survey.date %in% as.Date('2022-06-14'), 2, no.dead),
+    # there's a question mark next to this bud record... going to assume it was
+    # a mistaken field ID because it isn't seen again
+    no.buds = ifelse(plantid %in% '3143_13' & survey.date %in% as.Date('2022-05-08'), 0, no.buds),
+    # plant was missed two consecurtive weeks then found eaten... the zeros
+    # cause the diff() to assume it's a new bud but it isn't;
+    # going to assume it was eaten that first survey it wasn't seen
+    no.eaten = ifelse(plantid %in% '3367_13' & survey.date %in% as.Date(c('2022-05-16', '2022-05-25')), 1, no.eaten),
+    # mis-entry - one dead umbel mis-recorded as one
+    no.seeding = ifelse(plantid %in% '3421_13' & survey.date %in% as.Date('2022-06-24'), 1, no.seeding),
+    # mis-entry - didn't record flowering plant for some reason
+    no.flowers = ifelse(plantid %in% '3428_13' & survey.date %in% as.Date('2022-05-25'), 1, no.flowers),
+    # missing week means seeding plant was not recorded and diff() treats plants as different
+    no.seeding = ifelse(plantid %in% '3705_13' & survey.date %in% as.Date('2022-06-14'), 1, no.seeding),
+    # 3021... has to be a mistake on 5/16... but what is the truth?
+    # god this data is such fucking garbage in some places
+    # it's a 3 on the datasheet but it only can be consistent with the other data if it's a 1
+    no.flowers = ifelse(plantid %in% '3021_15' & survey.date %in% as.Date('2022-05-16'), 1, no.flowers),
+    # 3083... none of this shit makes any sense. god fucking damnit, what were these people thiinking
+    # going to assume that the pods are buds
+    no.buds = ifelse(plantid %in% '3083_15' & survey.date %in% as.Date('2022-05-16'), 2, no.buds),
+    no.pods = ifelse(plantid %in% '3083_15' & survey.date %in% as.Date('2022-05-16'), 2, no.pods),
+    # 2 on datasheet mis-entered as a 3
+    no.seeding = ifelse(plantid %in% '3423_15' & survey.date %in% as.Date('2022-06-23'), 2, no.seeding),
+    # 2 on datasheet mis-entered as a 3
+    no.seeding = ifelse(plantid %in% '3892_15' & survey.date %in% as.Date('2022-06-14'), 2, no.seeding)
   )
 
-# Plant 3345 in plot 6 - records are a messy disaster here. I don't trust them. Exclude
 exclude.plantids = exclude.plantids %>%
-  mutate(exclude = ifelse(plantid %in% '3345_6' & year %in% 2022, TRUE, exclude))
+  # Plant 3345 in plot 6 - records are a messy disaster here. I don't trust them. Exclude
+  mutate(exclude = ifelse(plantid %in% '3345_6' & year %in% 2022, TRUE, exclude)) %>%
+  # Plant 3196 - note says "likely missed", data is inconsistent
+  mutate(exclude = ifelse(plantid %in% '3196_13' & year %in% 2022, TRUE, exclude)) %>%
+  # Plant 3430 - not surveyed one critical week, so possible issues
+  mutate(exclude = ifelse(plantid %in% '3430_14' & year %in% 2022, TRUE, exclude)) %>%
+  # Plant 3426 - again, just total fucking garbage
+  mutate(exclude = ifelse(plantid %in% '3426_15' & year %in% 2022, TRUE, exclude)) %>%
+  # Plant 3740 - note says this plant's records include a different plant (3403)
+  # but there IS no 3403 in plot 15, only in plot 7
+  # what the absolute fuck is going on in this data? christ what a fucking disaster
+  mutate(exclude = ifelse(plantid %in% '3403_15' & year %in% 2022, TRUE, exclude)) %>%
+  # Plant 3755 - pulled out, records unclear, seems likely missed true bud date
+  mutate(exclude = ifelse(plantid %in% '3755_15' & year %in% 2022, TRUE, exclude)) %>%
+  # Plant 3848 - missed one week, true flowering date unknown...
+  mutate(exclude = ifelse(plantid %in% '3848_15' & year %in% 2022, TRUE, exclude)) %>%
+  # Plant 3863 - WHY ARE YOU PUTTING QUESTION MARKS IN HERE - TAKE THE TIME TO
+  # FIGURE OUT WHAT THE DATA ACTUALLY IS. I can't impute it because the true
+  # flowering date isn't known
+  mutate(exclude = ifelse(plantid %in% '3863_15' & year %in% 2022, TRUE, exclude))
+
 
 ### 2023 data
 proc23$survey.date = as.Date(proc23$survey.date, format = '%m/%d/%Y')
@@ -335,12 +408,76 @@ proc23 = proc23 %>%
     # plant 3431 - buds entered as dead
     no.dead = ifelse(tag %in% 3431 & plot %in% 13 & survey.date < as.Date('2023-05-25'), 0, no.dead),
     no.buds = ifelse(tag %in% 3431 & plot %in% 13 & survey.date %in% as.Date('2023-05-04'), 2, no.buds),
-    # 
+    # 3163 - note says eaten but didn't enter it in 'no.eaten' field...
+    no.eaten = ifelse(tag %in% 3163 & plot %in% 1 & survey.date %in% as.Date('2023-05-24'), 1, no.eaten),
+    # 3005 - why the heck are there four umbels listed here today...?
+    # going to assume it flowered on 5/15 because it was in late-stage flowering the next visit
+    no.buds = ifelse(tag %in% 3005 & plot %in% 6 & survey.date %in% as.Date('2023-05-15'), 0, no.buds),
+    no.flowers = ifelse(tag %in% 3005 & plot %in% 6 & survey.date %in% as.Date('2023-05-15'), 1, no.flowers),
+    # 3070 - dead plant not entered
+    no.dead = ifelse(tag %in% 3070 & plot %in% 6 & survey.date %in% as.Date('2023-05-15'), 1, no.dead),
+    # 3142 - assume can't find because dead
+    no.dead = ifelse(tag %in% 3142 & plot %in% 6 & survey.date %in% as.Date('2023-05-15'), 2, no.dead),
+    # 3374 - STOP WRITING QUESTION MARKS, THIS IS USELESS, DO YOUR JOB
+    # okay. assume the question mark is a dead plant.
+    no.dead = ifelse(tag %in% 3374 & plot %in% 6 & survey.date %in% as.Date('2023-05-10'), 1, no.dead),
+    # plant 3743 - data entry error... entered data from two rows above...
+    no.seeding = ifelse(tag %in% 3743 & plot %in% 6 & survey.date %in% as.Date('2023-06-08'), 0, no.seeding),
+    no.eaten = ifelse(tag %in% 3743 & plot %in% 6 & survey.date %in% as.Date('2023-06-08'), 0, no.eaten),
+    # plant 3955 - AHHHH THE QUESTION MARKS! DO YOUR JOB AND TAKE ACTUAL DATA
+    # okay 1? is probably a dead umbel, then we will add dead records for the other umbels
+    no.dead = ifelse(tag %in% 3955 & plot %in% 6 & survey.date %in% as.Date('2023-05-15'), 1, no.dead),
+    no.dead = ifelse(tag %in% 3955 & plot %in% 6 & survey.date %in% as.Date('2023-05-25'), 2, no.dead),
+    no.dead = ifelse(tag %in% 3955 & plot %in% 6 & survey.date %in% as.Date('2023-06-04'), 3, no.dead),
+    # plant 3069 - "yellow and wilted" okay so is it dead or not???? holy shit what are we doing here???
+    # yellow means at least it flowered, which we don't have a record for. maybe dying but not dead
+    no.flowers = ifelse(tag %in% 3069 & plot %in% 7 & survey.date %in% as.Date('2023-05-15'), 1, no.flowers),
+    # plant 5032 - makes sense if two - data sheet has two with someone scratching a 1 over it
+    no.flowers = ifelse(tag %in% 5032 & plot %in% 7 & survey.date %in% as.Date('2023-05-04'), 2, no.flowers),
+    # plant 5049 (tag erroneously entered as 5849) - stalk broken written in notes, not entered...
+    no.broken = ifelse(tag %in% 5849 & plot %in% 7 & survey.date %in% as.Date('2023-05-24'), 2, no.broken),
+    # plant 3422 - stem broken, but lost umbels not recorded...
+    no.broken = ifelse(tag %in% 3422 & plot %in% 12 & survey.date > as.Date('2023-05-10'), 1, no.broken),
+    # plant 3536 - assume that the bud died and was not recorded
+    no.dead = ifelse(tag %in% 3536 & plot %in% 12 & survey.date %in% as.Date('2023-05-25'), 1, no.dead),
+    # plant 3336 - a three was mis-recorded as a two
+    no.seeding = ifelse(tag %in% 3336 & plot %in% 13 & survey.date %in% as.Date('2023-05-25'), 3, no.seeding),
+    # plant 3390 - there are definitely three umbels listed on 5/15... assume one died and wasn't recorded
+    no.dead = ifelse(tag %in% 3390 & plot %in% 13 & survey.date %in% as.Date('2023-05-25'), 1, no.dead),
+    # plant 3978 - a one was mistakenly entered as a three
+    no.buds = ifelse(tag %in% 3978 & plot %in% 13 & survey.date %in% as.Date('2023-05-15'), 1, no.buds),
+    # plant 3980 - hated question mark, but in context it has to be a bud
+    no.buds = ifelse(tag %in% 3980 & plot %in% 13 & survey.date %in% as.Date('2023-05-15'), 1, no.buds),
+    # plant 3382 - another question mark... but no evidence of this umbel ever again
+    # going to just say that it died
+    no.dead = ifelse(tag %in% 3382 & plot %in% 14 & survey.date %in% as.Date('2023-05-15'), 1, no.dead),
+    # plant 3354 - bud recorded on datasheet on 15 may... but not listed as dead... ughh....
+    # I guess I should add the dead umbel.
+    no.dead = ifelse(tag %in% 3354 & plot %in% 15 & survey.date > as.Date('2023-05-15'), 5, no.dead),
+    # plant 3377 - 1 was mis-entered as a 2
+    no.flp = ifelse(tag %in% 3377 & plot %in% 15 & survey.date %in% as.Date('2023-05-26'), 1, no.flp),
+    # plant 3401 - again, a case where a bud was recorded and never seen again
+    # assume it died and just wasn't counted? ugh
+    no.dead = ifelse(tag %in% 3401 & plot %in% 15 & survey.date %in% as.Date('2023-05-26'), 1, no.dead),
+    no.dead = ifelse(tag %in% 3401 & plot %in% 15 & survey.date %in% as.Date('2023-06-04'), 2, no.dead),
+    # plant 3482 - another one of these stupid fucking buds. god this data is such shit
+    no.dead = ifelse(tag %in% 3482 & plot %in% 15 & survey.date %in% as.Date('2023-05-26'), 1, no.dead),
+    no.dead = ifelse(tag %in% 3482 & plot %in% 15 & survey.date %in% as.Date('2023-06-04'), 2, no.dead),
+    # plant 3706 (tag mis-entered as 3076, corrected later) - another one of these buds
+    # PEOPLE, IF YOU SEE SOMETHING ONE WEEK, CHECK TO SEE IF IT'S THERE THE NEXT WEEK
+    # YOU ARE CAUSING SO MANY PROBLEMS
+    no.dead = ifelse(tag %in% 3076 & plot %in% 15 & survey.date > as.Date('2023-05-15'), 1, no.dead)
   )
 
-# Exclude 3481_15 - stem got clipped, records are hard to parse out...
 exclude.plantids = exclude.plantids %>%
-  mutate(exclude = ifelse(grepl('3481\\_15', plantid) & year %in% 2023, TRUE, exclude))
+  # Exclude 3481_15 - stem got clipped, records are hard to parse out...
+  mutate(exclude = ifelse(grepl('3481\\_15', plantid) & year %in% 2023, TRUE, exclude)) %>%
+  # exclude 3687_1 - missed one week making flowering date uncertain
+  mutate(exclude = ifelse(plantid %in% '3867_1' & year %in% 2023, TRUE, exclude)) %>%
+  # exclude 3338_5 - STOP WRITING QUESTION MARKS, KEEP TRACK OF OBSERVED UMBELS
+  mutate(exclude = ifelse(plantid %in% '3338_5' & year %in% 2023, TRUE, exclude)) %>%
+  # exclude 3987_5 - went missing one week, came back with new stuff
+  mutate(exclude = ifelse(plantid %in% '3987_5' & year %in% 2023, TRUE, exclude))
 
 ##### Multiple records in the same survey period: why would this happen?
 
