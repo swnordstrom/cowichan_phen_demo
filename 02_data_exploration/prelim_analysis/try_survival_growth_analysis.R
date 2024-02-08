@@ -359,3 +359,48 @@ growth.data.base +
     inherit.aes = FALSE,
     aes(x = size.t, y = pred.size.tp1, group = trt, colour = trt)
   )
+
+
+########################################################
+# Can I make a kernel?
+
+growth.resid.sd = summary(g_s2t)$sigma
+
+kernels = expand.grid(
+  size.t = (95:505)/100,
+  size.tp1 = (95:505)/100,
+  trt = c('control', 'drought', 'irrigated')
+)
+
+kernels = kernels %>%
+  mutate(
+    p.survive = predict(
+      object = s_s,
+      newdata = .,
+      allow.new.levels = TRUE,
+      re.form = ~ 0,
+      type = 'response'
+    ),
+    exp.size.tp1 = predict(
+      object = g_s2t,
+      newdata = .,
+      allow.new.levels = TRUE,
+      re.form = ~ 0,
+      type = 'response'
+    )
+  )
+
+kernels = kernels %>%
+  mutate(
+    p.grow.size.tp1 = dnorm(x = size.tp1, mean = exp.size.tp1, sd = growth.resid.sd),
+    p.size.tp1 = p.grow.size.tp1 * p.survive
+  )
+
+ggkernel = ggplot(kernels, aes(x = size.t, y = size.tp1, fill = p.size.tp1))
+
+ggkernel +
+  geom_tile() +
+  scale_y_reverse() +
+  scale_fill_viridis_c() +
+  labs(x = 'Size in t', y = 'Size in t+1') +
+  facet_wrap(~ trt)
