@@ -1789,21 +1789,89 @@ seed.phen.demo %>%
 # plant recorded as dead after seeding... maybe seeds are premature?
 # check data sheet
 
-# Fix discrepancy above
-seed.phen.demo = seed.phen.demo %>%
-  mutate(n.lost.umbel = ifelse(tagplot %in% '3190_10' & Year %in% 2022, 1, n.lost.umbel))
+# Fix some data discrepancies/entry mistakes
+# NOTE: want to move this up in the script and do it on phen before merging
+# (otherwise these changes won't be in phen.demo)
 
-# Fix another data entry mistake - case that's just a missed week in phen that
-# won't certainty in when buds budded
 seed.phen.demo = seed.phen.demo %>%
-  mutate(n.phen.umbel = ifelse(tagplot %in% '3493_15' & Year %in% 2022, 2, n.phen.umbel))
+  # Fix discrepancy above
+  mutate(n.lost.umbel = ifelse(tagplot %in% '3190_10' & Year %in% 2022, 1, n.lost.umbel)) %>%
+  # Fix another data entry mistake - case that's just a missed week in phen that
+  # won't certainty in when buds budded
+  mutate(n.phen.umbel = ifelse(tagplot %in% '3493_15' & Year %in% 2022, 2, n.phen.umbel)) %>%
+  # assuming this bud that showed up for this plant was not an error... it is
+  # not recorded later, but if it is a mistake I'm not sure which it is
+  mutate(n.lost.umbel = ifelse(tagplot %in% '3005_6' & Year %in% 2022, 2, n.lost.umbel))
 
 # Okay: case-by-case breakdown
 # - Counts match, same number of zeros: do nothing, assume zero counts are correct
-# - Counts match, more zeros in seeed than phen: assume extra zeros are umbels that 
+# - Counts match, more zeros in seed than phen: assume extra zeros are umbels that 
 #   just didn't get fertilized; i.e., do nothing
 # - More umbels in phen, same number of zeros: assume the missing phen umbels are failed (add)
 # - More umbels in phen, more zeros in seed: these cases *should* be individually fixed
 # - More umbels in phen, more lost umbels than zeros: need to add failed umbels into 
-#   phen as zeros
+#   seed as zeros
+
+# Okay I've done what I can. Not going to do any more data scrubbing because it
+# will cause me to blow my fucking brains out.
+
+# note: there's still an issue with 3642_13... only two umbels listed on 
+
+# Now, to add the missing zeros...
+
+# How many data points are we starting with?
+nrow(seed.phen.demo)
+
+# How many zeros to add?
+seed.phen.demo %>%
+  # remove plants with no records in seed
+  filter(!is.na(no.seeds)) %>%
+  group_by(tagplot, Year) %>%
+  filter(n() < n.phen.umbel) %>%
+  summarise(n.diff = n.lost.umbel[1] - sum(!no.seeds)) %>%
+  ungroup() %>%
+  summarise(new.rows = sum(n.diff))
+# so should be ~28 rows added
+
+seed.phen.demo %>%
+  # remove plants with no records in seed
+  filter(!is.na(no.seeds)) %>%
+  group_by(tagplot, Year) %>%
+  filter(n() < n.phen.umbel) %>%
+  mutate(n.missing = n.lost.umbel - sum(!no.seeds)) %>%
+  distinct(tagplot, Year, .keep_all = TRUE) %>%
+  filter(n.missing > 0) %>%
+  uncount(n.missing) %>%
+  mutate(no.seeds = 0) %>%
+  nrow()
+
+# Add in additional zeros
+seed.phen.demo = rbind(
+  seed.phen.demo,
+  seed.phen.demo %>%
+    # remove plants with no records in seed
+    filter(!is.na(no.seeds)) %>%
+    # get number of plants to impute
+    group_by(tagplot, Year) %>%
+    filter(n() < n.phen.umbel) %>%
+    mutate(n.missing = n.lost.umbel - sum(!no.seeds)) %>%
+    # (need to to distinct() to make sure things are only copied once)
+    distinct(tagplot, Year, .keep_all = TRUE) %>%
+    filter(n.missing > 0) %>%
+    uncount(n.missing) %>%
+    # set seed count to zero for this 
+    mutate(no.seeds = 0)
+)
+
+nrow(seed.phen.demo)
+
+# I probably will want to go through and remove the zeros that are due to
+# premature death but I can do that in the script where modeling/analysis is
+# performed.
+
+# write.csv(
+#   seed.phen.demo,
+#   file = '01_data_cleaning/out/seed_phen_demo_combined.csv',
+#   row.names = FALSE
+# )
 
