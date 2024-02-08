@@ -9,6 +9,7 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(glmmTMB)
+library(cowplot)
 # library(lme4)
 
 # Clear namespace
@@ -23,8 +24,10 @@ demo = read.csv('01_data_cleaning/out/demo_imputed_survival.csv')
 phen.demo = read.csv('01_data_cleaning/out/phen_demo_for_umbel_survival.csv')
 
 # Phenology + demography + seed set
-# (not finished yet)
+seed.phen.demo.all = read.csv('01_data_cleaning/out/seed_phen_demo_combined.csv')
 
+# Budding phenology dataset
+phen = read.csv('01_data_cleaning/out/phenology_buds_deaths_all.csv')
 
 ##### Process data as needed
 
@@ -106,7 +109,7 @@ phen.demo.with.size = phen.demo %>%
   # Add a size column
   mutate(prev.size = log(prev.leaves * prev.length)) %>%
   # Center phenology
-  mutate(mean.doy = init.doy - round(mean(init.doy), 2))
+  mutate(mean.doy = init.doy - round(mean(init.doy)))
 
 head(phen.demo.with.size)
 
@@ -116,7 +119,7 @@ phen.demo = phen.demo %>%
     prev.umbels = ifelse(is.na(prev.umbels), 0, prev.umbels),
     prev.flower = prev.umbels > 0
   ) %>%
-  mutate(mean.doy = init.doy - round(mean(init.doy), 2))
+  mutate(mean.doy = init.doy - round(mean(init.doy)))
 
 ### Mean bud date against number of dead umbels
 umbel.failure = phen.demo %>%
@@ -131,6 +134,56 @@ umbel.failure.with.size = umbel.failure %>%
   mutate(prev.size = log(prev.length * prev.leaves))
 
 # Worth checking at some point if this is truly binomial
+
+### Seed + phen + demo
+
+# Get a restricted dataset
+seed.phen.demo = seed.phen.demo.all %>%
+  # Remove plants that are missing phen
+  filter(!is.na(mean.bud.day)) %>%
+  # Remove plants that are missing from seed
+  filter(!is.na(no.seeds)) %>%
+  # Add centered phen column
+  mutate(centered.phen = mean.bud.day - round(mean(mean.bud.day)))
+
+# Removing the lost umbels (which are accounted for in a different model)
+seed.phen.demo = rbind(
+  # All umbels with a non-zero number of seeds...
+  seed.phen.demo %>% filter(no.seeds > 0),
+  # and all umbels with zero seeds, but removing 
+  seed.phen.demo %>%
+    filter(!no.seeds) %>%
+    group_by(tagplot, Year) %>%
+    # mutate(n = 1:n()) %>%
+    filter((1:n()) > n.lost.umbel) %>%
+    ungroup()
+)
+
+nrow(seed.phen.demo)
+
+seed.phen.demo.size = seed.phen.demo %>%
+  filter(!is.na(prev.length) & !is.na(prev.leaves)) %>%
+  mutate(prev.size = log(prev.length * prev.leaves))
+
+nrow(seed.phen.demo.size)
+seed.phen.demo.size %>% distinct(Year, tagplot) %>% nrow()
+
+
+### Phen dataset
+# - we're reading in the original phen dataset before doing manipulations to correct for IDs
+# but otherwise I think the data is the same
+# so I'll just merge in IDs from the phen.demo dataset
+
+phen.tagplot = merge(
+  x = phen, y = phen.demo %>% distinct(tagplot, plantid.phen),
+  by.x = 'plantid', by.y = 'plantid.phen'
+) %>%
+  # Filter out only new umbels (i.e., buds)
+  filter(varb %in% 'new') %>%
+  select(-varb)
+
+head(phen.tagplot)
+nrow(phen.tagplot)
 
 ##### Fit models
 
@@ -278,8 +331,13 @@ AIC(nu_st_ft, nu_st_f, nu_s_ft, nu_s_f_t, nu_s_f) %>%
   mutate(daic = round(AIC - min(AIC), 2))
 # No treatment effects at all.
 
-# So final model based on this papears to be:
-# - 
+summary(nu_s_f)
+# So final model based on this appears to be:
+# - larger plants make mroe umbels
+# - plants that flowered last year *also* make more umbels
+
+# NOTE that I had convergence issues with the negative binomial based on this -
+# not sure if overdispersion is an issue here
 
 ### Umbel budding phenology
 
@@ -310,7 +368,7 @@ phen_s_t = glmmTMB(
 
 anova(phen_s_t, phen_t)
 # nothing here either
-# (I also tried an interactio)
+# (I also tried an interaction)
 # sweet!
 
 # Refit these with full datasets
@@ -326,7 +384,7 @@ phen_t = glmmTMB(
 )
 
 anova(phen_t, phen_0)
-# treatment effect is here, although it appears to be small...
+# phen effect is here
 
 summary(phen_t)
 # as before - drought means earlier flowering on average, irrigation means later
@@ -337,6 +395,7 @@ phen_t_f = glmmTMB(
   data = phen.demo,
 )
 
+anova(phen_t_f, phen_t)
 AIC(phen_t_f, phen_t)
 
 summary(phen_t_f)
@@ -416,12 +475,31 @@ uf_p_t = glmmTMB(
   data = umbel.failure
 )
 
-AIC(uf_0, uf_p, uf_t, uf_p_t) %>% mutate(daic = round(AIC - min(AIC), 2))
-# big ol' phen effect
+uf_p2 = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ poly(mean.phen, 2) +
+    (1 | Year) + (1 | Plot / tagplot),
+  family = 'binomial',
+  data = umbel.failure
+)
+
+uf_p2_t = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ poly(mean.phen, 2) + trt +
+    (1 | Year) + (1 | Plot / tagplot),
+  family = 'binomial',
+  data = umbel.failure
+)
+
+
+AIC(uf_0, uf_p, uf_t, uf_p_t, uf_p2, uf_p2_t) %>% 
+  mutate(daic = round(AIC - min(AIC), 2)) %>%
+  arrange(daic)
+# big ol' phen effect... quadratic or linear
 # no treatment effect lmao
 
 summary(uf_p)
 # Budding later means slightly higher chance of umbel success
+
+summary(uf_p2)
 
 # Check for a polynomial effect
 uf_p2 = glmmTMB(
@@ -434,3 +512,456 @@ uf_p2 = glmmTMB(
 anova(uf_p2, uf_p)
 # phew! no polynomial effects.
 
+### Seeds per umbel
+
+# First, look for effects of previous size
+s_0_size = glmmTMB(
+  no.seeds ~ (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo %>%
+    filter(!is.na(prev.leaves) & !is.na(prev.length)) %>%
+    mutate(prev.size = log(prev.leaves * prev.length)),
+  family = 'nbinom2'
+)
+
+s_s_size = glmmTMB(
+  no.seeds ~ prev.size + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo %>%
+    filter(!is.na(prev.leaves) & !is.na(prev.length)) %>%
+    mutate(prev.size = log(prev.leaves * prev.length)),
+  family = 'nbinom2'
+)
+
+anova(s_0_size, s_s_size)
+# god motherfucking damnit
+# that's insane.
+
+# Okay.
+# Run everything with previous size now I guess.
+# (ah... previous size is maybe picking up umbel size)
+
+s_s = glmmTMB(
+  no.seeds ~ prev.size + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo.size,
+  family = 'nbinom2'
+)
+
+summary(s_s)
+
+s_s_t = glmmTMB(
+  no.seeds ~ prev.size + trt + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo.size,
+  family = 'nbinom2'
+)
+
+s_st = glmmTMB(
+  no.seeds ~ prev.size * trt + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo.size,
+  family = 'nbinom2'
+)
+
+AIC(s_st, s_s_t, s_s) %>% mutate(daic = round(AIC - min(AIC), 2))
+# no direct treatment effects
+
+# Test for phenology
+
+s_s_p = glmmTMB(
+  no.seeds ~ centered.phen + prev.size + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo.size,
+  family = 'nbinom2'
+) 
+
+AIC(s_s, s_s_p)
+anova(s_s_p, s_s)
+summary(s_s_p)
+# negative slope - flowering later (higher day) means fewer seeds
+
+s_s_p2 = glmmTMB(
+  no.seeds ~ poly(centered.phen, 2) + prev.size + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo.size,
+  family = 'nbinom2'
+) 
+
+AIC(s_s, s_s_p, s_s_p2)
+summary(s_s_p2)
+# definitely not quadratic
+
+# Size-phen interaction...?
+
+s_sp = glmmTMB(
+  no.seeds ~ centered.phen * prev.size + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo.size,
+  family = 'nbinom2'
+) 
+
+AIC(s_sp, s_s_p) # sweet - no interaction
+
+# Maybe look for treatment-by-phen interactions...
+
+s_s_pt = glmmTMB(
+  no.seeds ~ centered.phen * trt + prev.size + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo.size,
+  family = 'nbinom2'
+) 
+
+AIC(s_s_pt, s_s_p) # no treatment effects # (also true if we just have fixed effect of phen)
+
+s_s_py = glmmTMB(
+  no.seeds ~ prev.size + (1 | Plot / tagplot) + (centered.phen | Year),
+  data = seed.phen.demo.size,
+  family = 'nbinom2'
+) 
+# NOTE: I tried size effects varying by year and there was a convergence issue
+
+AIC(s_s_py, s_s_p) # phen effect should not be varying by year
+
+# Best model is s_s_p
+
+summary(s_s_p)
+# - flowering on the ~average day is ~33 seeds/umbel
+# - one day later flowering causes a ~2% reduction in seed set...
+#   - flowering one week later causes a ~10% reduction in seed set
+# - effects of body size but these effects are difficult to interpret due to scale
+#   (one-unit change is ~14% change to seed set... but 80% of plants are within 2 units...s)
+
+#########################################################
+# Figure drafts
+#########################################################
+
+#################
+# Probability of flowering
+
+pr.flower.data.base = demo.for.flowering %>%
+  mutate(flowering.01 = as.numeric(flowering) + ifelse(prev.flower, .05, -.05)) %>%
+  ggplot(aes(x = prev.size, y = flowering.01, colour = trt, shape = prev.flower)) +
+  geom_point(position = position_jitter(height = 0.01)) +
+  scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
+  scale_shape_manual(
+    values = c(4, 1),
+    labels = c('prev. vegetative', 'prev. flowering'),
+    ''
+  ) +
+  facet_wrap(~ Year) +
+  labs(x = 'Previous size', y = 'Flowering') +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'top'
+  )
+
+# Model is pf_s_ft
+
+pr.flower.preds = expand.grid(
+  prev.size = (10:50)/10,
+  prev.flower = c(TRUE, FALSE),
+  trt = c('control', 'drought', 'irrigated')
+) %>%
+  mutate(
+    pred.prob = predict(
+      object = pf_s_ft,  newdata = ., 
+      re.form = ~ 0, allow.new.levels = TRUE, 
+      type = 'response'
+    )
+  )
+
+pr.flower.data.base +
+  geom_line(
+    data = pr.flower.preds,
+    inherit.aes = FALSE,
+    aes(
+      x = prev.size, y = pred.prob, 
+      group = interaction(trt, prev.flower),
+      colour = trt, linetype = prev.flower
+    )
+  ) +
+  scale_linetype_manual(
+    values = 2:1, 
+    labels = c('prev. vegetative', 'prev. flowering'),
+    ''
+  )
+
+
+#################
+# Number of umbels / plant
+
+# model is nu_s_f
+
+u.count.data.base = demo.for.umbel.counts %>%
+  ggplot(aes(x = prev.size, y = No.umbels, colour = trt, shape = prev.flower)) +
+  geom_point(position = position_jitter(height = 0.05)) +
+  scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
+  scale_shape_manual(
+    values = c(4, 1),
+    labels = c('prev. vegetative', 'prev. flowering'),
+    ''
+  ) +
+  labs(x = 'Previous size', y = 'Number of umbels') +
+  facet_wrap(~ Year) +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'top'
+  )
+
+u.count.data.base
+
+u.count.preds = expand.grid(
+  prev.size = (10:50)/10,
+  prev.flower = c(TRUE, FALSE)
+) %>%
+  mutate(
+    pred.umb = predict(
+      object = nu_s_f,  newdata = ., 
+      re.form = ~ 0, allow.new.levels = TRUE, 
+      type = 'response'
+    )
+  )
+
+u.count.data.base +
+  geom_line(
+    data = u.count.preds,
+    inherit.aes = FALSE,
+    aes(x = prev.size, y = pred.umb, linetype = prev.flower)
+  ) +
+  scale_linetype_manual(
+    values = 2:1, 
+    labels = c('prev. vegetative', 'prev. flowering'),
+    ''
+  ) +
+  scale_y_log10()
+
+#################
+# Probability of umbels failing
+
+# optimal model is uf_p - only has phenology effect
+
+u.succ.data.base = umbel.failure %>%
+  mutate(p.succ.umbel = (n.phen.umbels - n.lost.umbels) / n.phen.umbels) %>%
+  ggplot(aes(x = mean.phen, y = p.succ.umbel, colour = trt)) +
+  geom_point(aes(size = n.phen.umbels)) +
+  scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
+  scale_size_continuous('Number of umbels') +
+  scale_x_continuous(breaks = 10*(-3:3), labels = c('7 apr', '14 apr', '27 apr', '7 may', '17 may', '27 may', '6 jun')) +
+  labs(x = 'Day of budding', y = 'Probability of umbel success') +
+  facet_wrap(~ Year) +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'top'
+  )
+
+u.succ.data.base
+
+u.succ.pred = data.frame(
+  mean.phen = -25:30
+) %>%
+  mutate(
+    pred.prob = predict(
+      object = uf_p,
+      newdata = .,
+      type = 'response',
+      re.form = ~ 0,
+      allow.new.levels = TRUE
+    )
+  )
+
+u.succ.data.base +
+  geom_line(
+    data = u.succ.pred,
+    inherit.aes = FALSE,
+    aes(x = mean.phen, y = pred.prob)
+  )
+# Not amazingly compelling!
+
+#################
+# Seeds / reproductive umbel
+
+seed.set.base = seed.phen.demo.size %>%
+  ggplot(aes(x = centered.phen, y = no.seeds, colour = trt)) +
+  geom_point(size = 3) +
+  scale_colour_manual(values = c('black', 'red', 'blue', 'treatment')) +
+  labs(x = 'Phenology (centered, in days)', y = 'Number of seeds') +
+  facet_wrap(~ Year, ncol = 1) +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'top'
+  )
+
+seed.set.base
+
+seed.set.preds = expand.grid(
+  prev.size = c(2.7, 3.8, 4.6),
+  centered.phen = -20:30
+) %>%
+  mutate(
+    pred.seed = predict(
+      object = s_s_p,
+      newdata = .,
+      re.form = ~ 0,
+      type = 'response',
+      allow.new.levels = TRUE
+    )
+  )
+
+seed.set.base +
+  geom_line(
+    data = seed.set.preds %>% mutate(prev.size = factor(prev.size)),
+    inherit.aes = FALSE,
+    aes(
+      x = centered.phen, y = pred.seed, 
+      group = prev.size,
+      linetype = prev.size)
+  ) +
+  scale_linetype_manual(values = c(2, 1, 2))
+
+#################
+# Raw phenology plot
+# rows: years + treatments
+# y axis: day of year
+# (different data input...)
+
+phen.plot.data.base = phen.demo %>%
+  mutate(year.dodge = Year + -0.2 * as.numeric(trt %in% 'drought') + 0.2 * as.numeric(trt %in% 'irrigated')) %>%
+  ggplot(aes(x = mean.doy, y = year.dodge, colour = trt)) +
+  geom_point(position = position_jitter(height = 0.08, width = 2), size = 2) +
+  scale_colour_manual(values = c('black', 'red', 'blue')) +
+  # scale_y_reverse(breaks = 2020:2023, labels = c('overall', '2021', '2022', '2023')) +
+  scale_x_continuous(breaks = 10*(-3:3), labels = c('7 apr', '14 apr', '27 apr', '7 may', '17 may', '27 may', '6 jun')) +
+  # date column is centered in data frame such that 0 = may 7 (day 126)
+  # use as.Date(10*(-2:3) + 126) to get these
+  scale_y_continuous(breaks = 2020:2023, labels = c('overall', '2021', '2022', '2023')) +
+  labs(x = 'Day of year (centered)', y = '') +
+  theme(
+    legend.position = 'none',
+    panel.background = element_blank()
+  )
+
+phen.plot.data.base
+
+phen.predict = predict(
+  object = phen_t,
+  newdata = data.frame(trt = c('control', 'drought', 'irrigated')),
+  type = 'response',
+  se.fit = TRUE,
+  re.form = ~ 0,
+  allow.new.levels = TRUE
+) %>%
+  do.call(what = cbind) %>%
+  as.data.frame() %>%
+  mutate(trt = c('control', 'drought', 'irrigated')) %>%
+  mutate(fit.lb = fit - se.fit, fit.ub = fit + se.fit) %>%
+  mutate(year.dodge = 2020 + -0.2 * as.numeric(trt %in% 'drought') + 0.2 * as.numeric(trt %in% 'irrigated'))
+
+phen.plot.data.base +
+  geom_segment(
+    data = phen.predict,
+    inherit.aes = FALSE,
+    aes(x = fit.lb, xend = fit.ub, y = year.dodge, yend = year.dodge)
+  ) +
+  geom_point(
+    data = phen.predict,
+    inherit.aes = FALSE,
+    aes(x = fit, y = year.dodge, fill = trt),
+    size = 5, shape = 21
+  ) +
+  scale_fill_manual(values = c('black', 'red', 'blue')) 
+
+#########################################################
+# A single figure
+#########################################################
+
+# (a) Budding phenology
+
+pan.a = phen.demo %>%
+  # Manually dodge y-axis by treatment
+  mutate(year.dodge = Year + -0.2 * as.numeric(trt %in% 'drought') + 0.2 * as.numeric(trt %in% 'irrigated')) %>%
+  ggplot(aes(x = mean.doy, y = year.dodge, colour = trt)) +
+  # Plot raw data
+  geom_point(position = position_jitter(height = 0.04, width = 2), size = 1, alpha = 0.25) +
+  # Plot model predicted mean bud date
+  geom_point(
+    data = phen.predict,
+    inherit.aes = FALSE,
+    aes(x = fit, y = year.dodge, colour = trt),
+    size = 5
+  ) +
+  # Plot model prediction standard errors
+  geom_segment(
+    data = phen.predict,
+    inherit.aes = FALSE,
+    aes(x = fit.lb, xend = fit.ub, y = year.dodge, yend = year.dodge)
+  ) +
+  # Colour/fill aesthetics
+  scale_fill_manual(values = c('black', 'red', 'blue'), 'treatment') +
+  scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
+  scale_x_continuous(breaks = 10*(-3:3), labels = c('7 apr', '14 apr', '27 apr', '7 may', '17 may', '27 may', '6 jun')) +
+  # date column is centered in data frame such that 0 = may 7 (day 126)
+  # use as.Date(10*(-2:3) + 126) to get these
+  scale_y_continuous(breaks = 2020:2023, labels = c('overall', '2021', '2022', '2023')) +
+  labs(x = '', y = '') +
+  theme(
+    legend.position = 'none',
+    axis.text.x = element_text(angle = 90),
+    panel.background = element_blank()
+  )
+
+pan.a
+
+# (b) Umbel success
+
+pan.b = umbel.failure %>%
+  mutate(p.succ.umbel = (n.phen.umbels - n.lost.umbels) / n.phen.umbels) %>%
+  ggplot(aes(x = mean.phen, y = p.succ.umbel, colour = trt)) +
+  geom_point(size = 1, alpha = 0.5) +
+  geom_line(
+    data = u.succ.pred,
+    inherit.aes = FALSE,
+    aes(x = mean.phen, y = pred.prob)
+  ) +
+  scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
+  scale_x_continuous(breaks = 10*(-3:3), labels = c('7 apr', '14 apr', '27 apr', '7 may', '17 may', '27 may', '6 jun')) +
+  labs(x = '', y = 'Proportion of umbels surviving') +
+  theme(
+    panel.background = element_blank(),
+    axis.text.x = element_text(angle = 90),
+    legend.position = 'none'
+  )
+
+pan.b
+
+# (c) Seeds per umbel
+
+pan.c = seed.phen.demo.size %>%
+  ggplot(aes(x = centered.phen, y = no.seeds, colour = trt)) +
+  geom_point(size = 1, alpha = 0.5) +
+  geom_line(
+    data = seed.set.preds %>% mutate(prev.size = factor(prev.size)),
+    inherit.aes = FALSE,
+    aes(
+      x = centered.phen, y = pred.seed, 
+      group = prev.size,
+      linetype = prev.size)
+  ) +
+  scale_linetype_manual(values = c(4, 1, 2)) +
+  scale_colour_manual(values = c('black', 'red', 'blue')) +
+  scale_x_continuous(breaks = -1 + 10*(-3:3), labels = c('7 apr', '14 apr', '27 apr', '7 may', '17 may', '27 may', '6 jun')) +
+  labs(x = '', y = 'Number of seeds in umbel') +
+  theme(
+    panel.background = element_blank(),
+    axis.text.x = element_text(angle = 90),
+    legend.position = 'none'
+  )
+
+pan.c
+
+# Get single treatment legend
+
+
+# Use cowplot to put them together
+
+plot_grid(
+  get_legend(pan.a + theme(legend.position = 'top')),
+  plot_grid(pan.a, pan.b, pan.c, nrow = 1, labels = c('a', 'b', 'c')),
+  ncol = 1,
+  rel_heights = c(0.1, 1)
+) %>%
+  save_plot(
+    filename = '02_data_exploration/prelim_analysis/fig_phen_repro.png',
+    base_height = 5, base_width = 8
+  )
