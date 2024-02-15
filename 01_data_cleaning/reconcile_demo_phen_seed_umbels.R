@@ -1500,7 +1500,7 @@ head(demo)
 
 # Data set for part 1:
 demo.demoprev = merge(
-  x = demo %>% select(Year, finalid, plantid, No.umbels, Plot, trt),
+  x = demo %>% select(Year, finalid, plantid, No.umbels, No.leaves, Leaf.length, Plot, trt),
   y = demo.prev %>% 
     select(
       plantid, year.match, prev.umbels = No.umbels, 
@@ -1517,32 +1517,40 @@ head(demo.demoprev)
 
 demo.demoprev %>%
   mutate(
-    case = case_when(
+    case.curr = case_when(
+      is.na(No.leaves) | is.na(Leaf.length) ~ 'missing.counts',
+      !No.leaves ~ 'no.leaves',
+      !is.na(No.leaves) & !is.na(Leaf.length) ~ 'has.measures',
+      .default = 'other'
+    ),
+    case.prev = case_when(
        is.na(prev.leaves) | is.na(prev.length) ~ 'missing.counts',
        !prev.leaves ~ 'dead',
        !is.na(prev.leaves) & !is.na(prev.length) ~ 'has.measures',
        .default = 'other'
     )
   ) %>%
-  group_by(case) %>%
+  group_by(case.curr, case.prev) %>%
   summarise(n = n())
 # mostly have measures
 # and no dead plants!
 
 demo.demoprev %>%
   mutate(
-    case = case_when(
-      is.na(prev.leaves) | is.na(prev.length) ~ 'missing.counts',
-      !prev.leaves ~ 'dead',
-      !is.na(prev.leaves) & !is.na(prev.length) ~ 'has.measures',
+    case.curr = case_when(
+      is.na(No.leaves) | is.na(Leaf.length) ~ 'missing.counts',
+      !No.leaves ~ 'no.leaves',
+      !is.na(No.leaves) & !is.na(Leaf.length) ~ 'has.measures',
       .default = 'other'
     )
   ) %>%
-  group_by(Year, case) %>%
+  group_by(Year, case.curr) %>%
   summarise(n = n()) %>%
-  pivot_wider(names_from = case, values_from = n)
-# Missing a lot of counts from 2020-2021
-# (ah... the incomplete sampling in 2020... rats)
+  pivot_wider(names_from = case.curr, values_from = n, values_fill = 0)
+# Fewer than ten plants with any missing measurements, all from 2023
+
+demo.demoprev %>% filter(is.na(No.leaves) | is.na(Leaf.length))
+# All of these are missing leaf lengths, some have zero leaves (?)
 
 # What about umbel counts?
 demo.demoprev %>%
@@ -1560,13 +1568,13 @@ demo.prev %>% filter(grepl('3596', plantid))
 # Filter out plants with missing measurements, add in 
 demo.demoprev.measurements = demo.demoprev %>%
   # Filter out plants with missing records
-  filter(!is.na(prev.leaves) & !is.na(prev.length)) %>%
+  filter(!is.na(No.leaves) & !is.na(Leaf.length)) %>%
   # Fix missing umbel count (assuming NA is zero)
   mutate(prev.umbels = ifelse(is.na(prev.umbels), 0, prev.umbels)) %>% 
   # Add helpful columns
   mutate(
     # Size in previous year
-    prev.size = log(prev.leaves * prev.length),
+    cur.size = log(No.leaves * Leaf.length),
     # Previously flowered
     prev.flwd = prev.umbels > 0
   )
@@ -1574,7 +1582,7 @@ demo.demoprev.measurements = demo.demoprev %>%
 head(demo.demoprev.measurements)
 # Good
 nrow(demo.demoprev.measurements)
-# 962 observations
+# 1158 observations
 
 # ah... for an analysis of umbel counts would we not just want every year...?
 
@@ -1604,7 +1612,7 @@ phen.demo = merge(
     separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
     select(-coord) %>%
     unite(c(tag, plot), col = 'tagplot', sep = '_'),
-  y = demo.demoprev %>% 
+  y = demo.demoprev.measurements %>% 
     rename(n.demo.umbels = No.umbels) %>%
     separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
     select(-coord) %>%
@@ -1642,6 +1650,7 @@ phen.demo
 #   file = '01_data_cleaning/out/phen_demo_for_umbel_survival.csv',
 #   row.names = FALSE
 # )
+# re-exported with current-year sizes, 15 feb 2024
 
 ### Third: demo (above), phen, and seeds
 # - seed counts by individual umbel should be good... but will want to go through
@@ -1665,7 +1674,7 @@ seed.phen.demo = merge(
   separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
   select(-coord) %>%
   unite(c(tag, plot), col = 'tagplot', sep = '_'),
-  y = demo.demoprev %>% 
+  y = demo.demoprev.measurements %>% 
     rename(n.demo.umbels = No.umbels) %>%
     separate(finalid, into = c("tag", "plot", "coord"), sep = '_', remove = FALSE, fill = 'right') %>%
     select(-coord) %>%
@@ -1874,4 +1883,4 @@ nrow(seed.phen.demo)
 #   file = '01_data_cleaning/out/seed_phen_demo_combined.csv',
 #   row.names = FALSE
 # )
-
+# # re-exported with current year's phen 15 feb 2024
