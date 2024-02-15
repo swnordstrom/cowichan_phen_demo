@@ -40,7 +40,7 @@ demo.for.flowering = merge(
       # Filter out 2016 plants (size measurements are not reliable)
       filter(Year > 2016) %>%
       # Select columns for year-of data
-      select(Year, plantid, Plot, trt, No.umbels),
+      select(Year, plantid, Plot, trt, No.umbels, No.leaves, Leaf.length),
     y = demo %>%
       # Filter out only surviving plants
       filter(surv) %>%
@@ -66,17 +66,29 @@ demo.for.flowering %>% filter(is.na(No.umbels.prev))
 
 # How many plants have a previous size (or do not)
 demo.for.flowering %>%
-  group_by(has.prev.meas = !is.na(No.leaves) & !is.na(Leaf.length), Year) %>%
+  group_by(has.prev.meas = !is.na(No.leaves.prev) & !is.na(Leaf.length.prev), Year) %>%
   summarise(n = n()) %>%
   pivot_wider(names_from = has.prev.meas, values_from = n)
 # I can live with this - still plenty of plants in here...
 
-demo.for.flowering = demo.for.flowering %>%
+# How many plants do/do not have current measurements?
+demo.for.flowering %>%
+  group_by(has.cur.meas = !is.na(No.leaves) & !is.na(Leaf.length), Year) %>%
+  summarise(n = n()) %>%
+  pivot_wider(names_from = has.cur.meas, values_from = n)
+
+# Make a data frame with size
+demo.for.flowering.size.both = demo.for.flowering %>%
   # Filter out only plants with a previous measurement
+  filter(!is.na(No.leaves.prev) & !is.na(Leaf.length.prev) & No.leaves.prev > 0) %>%
+  # Filter out plants with a current demo measurement
   filter(!is.na(No.leaves) & !is.na(Leaf.length) & No.leaves > 0) %>%
-  # Add a size column
-  mutate(prev.size = log(No.leaves * Leaf.length)) %>%
-  select(-c(No.leaves, Leaf.length)) %>%
+  # Add size columns
+  mutate(
+    prev.size = log(No.leaves.prev * Leaf.length.prev),
+    cur.size = log(No.leaves * Leaf.length)
+  ) %>%
+  select(-c(No.leaves, No.leaves.prev, Leaf.length, Leaf.length.prev)) %>%
   # Replace NAs with zero
   mutate(
     across(contains('umbel'), function(x) ifelse(is.na(x), 0, x)),
@@ -84,13 +96,28 @@ demo.for.flowering = demo.for.flowering %>%
     flowering = No.umbels > 0
   )
 
-table(demo.for.flowering$prev.flower)  
-table(demo.for.flowering$flowering)
+table(demo.for.flowering.size.both$prev.flower)  
+table(demo.for.flowering.size.both$flowering)
+
+# Based on analysis below, probability of flowering best predicted by current
+# size
+demo.for.flowering = demo.for.flowering %>%
+  # Filter out plants with a current demo measurement
+  filter(!is.na(No.leaves) & !is.na(Leaf.length) & No.leaves > 0) %>%
+  # Add size columns
+  mutate(cur.size = log(No.leaves * Leaf.length)) %>%
+  select(-c(No.leaves, No.leaves.prev, Leaf.length, Leaf.length.prev)) %>%
+  # Replace NAs with zero
+  mutate(
+    across(contains('umbel'), function(x) ifelse(is.na(x), 0, x)),
+    prev.flower = No.umbels.prev > 0,
+    flowering = No.umbels > 0
+  )
 
 head(demo.for.flowering)
-nrow(demo.for.flowering) # >2700 observations
-length(unique(demo.for.flowering$plantid)) # 840 plants
-table(demo.for.flowering$Year) # six years
+nrow(demo.for.flowering) # ~2800 observations
+length(unique(demo.for.flowering$plantid)) # almost 850 plants
+table(demo.for.flowering$Year) # six years  
 
 # Get a dataset with only flowering plants
 # For modeling umbel counts
@@ -189,152 +216,200 @@ nrow(phen.tagplot)
 
 ### Demography (probability of flowering)
 
-pf_s = glmmTMB(
+pf_s0 = glmmTMB(
   flowering ~ prev.size + (1 | Year) + (1 | Plot / plantid),
+  data = demo.for.flowering.size.both,
+  family = 'binomial',
+)
+
+pf_s1 = glmmTMB(
+  flowering ~ cur.size + (1 | Year) + (1 | Plot / plantid),
+  data = demo.for.flowering.size.both,
+  family = 'binomial',
+)
+
+AIC(pf_s0, pf_s1) %>% mutate(daic = round(AIC - min(AIC), 2))
+# Current size is a *much* better predictor than prior size lmao
+
+# (refit on larger dataset)
+pf_s = glmmTMB(
+  flowering ~ cur.size + (1 | Year) + (1 | Plot / plantid),
   data = demo.for.flowering,
   family = 'binomial',
 )
 
-summary(pf_s)
-# Larger plants much more likely to flower
+# pf_s_f = glmmTMB(
+#   flowering ~ cur.size + prev.flower + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.flowering,
+#   family = 'binomial'
+# )
+# 
+# summary(pf_s_f)
+# # plants that flowered last year much more likely to flower - odds increase by 260% (!)
+# 
+# anova(pf_s_f, pf_s)
+# # ah... but this moakes models so much more complicated...
+# 
+# pf_sy_f = glmmTMB(
+#   flowering ~ prev.flower + (cur.size | Year) + (1 | Plot / plantid),
+#   data = demo.for.flowering,
+#   family = 'binomial'
+# )
+# 
+# summary(pf_sy_f)
+# 
+# anova(pf_sy_f, pf_s_f) # definitely no evidence of a strong size-year interaction
+# 
+# pf_s_f_t = glmmTMB(
+#   flowering ~ cur.size + prev.flower + trt + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.flowering,
+#   family = 'binomial'
+# )
+# 
+# summary(pf_s_f_t) # doesn't seem like evidence of a treatment effect here
+# 
+# anova(pf_s_f_t, pf_s_f) # nope - no treatment effect
+# # but maybe there is one that depends on size
+# 
+# pf_st_f = glmmTMB(
+#   flowering ~ cur.size * trt + prev.flower + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.flowering,
+#   family = 'binomial'
+# )
+# 
+# anova(pf_st_f, pf_s_f) # interaction not supported
+# 
+# pf_st_ft = glmmTMB(
+#   flowering ~ cur.size * trt + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.flowering,
+#   family = 'binomial'
+# )
+# 
+# anova(pf_st_ft, pf_s_f) 
+# # treatment effects are supported, p < 0.02, but delta AIC only barely larger than two...
+# 
+# pf_s_ft = glmmTMB(
+#   flowering ~ cur.size + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.flowering,
+#   family = 'binomial'
+# )
 
-pf_s_f = glmmTMB(
-  flowering ~ prev.size + prev.flower + (1 | Year) + (1 | Plot / plantid),
+# AIC(pf_s_f, pf_st_f, pf_s_ft, pf_st_ft) %>% mutate(daic = round(AIC - min(AIC), 2))
+
+pf_s_t = glmmTMB(
+  flowering ~ cur.size + trt + (1 | Year) + (1 | Plot / plantid),
   data = demo.for.flowering,
-  family = 'binomial'
+  family = 'binomial',
 )
 
-summary(pf_s_f)
-# plants that flowered last year much more likely to flower - odds increase by 230%
+anova(pf_s_t, pf_s) # no treatment effect
 
-anova(pf_s_f, pf_s)
-
-pf_sy_f = glmmTMB(
-  flowering ~ prev.flower + (prev.size | Year) + (1 | Plot / plantid),
+pf_st = glmmTMB(
+  flowering ~ cur.size * trt + (1 | Year) + (1 | Plot / plantid),
   data = demo.for.flowering,
-  family = 'binomial'
+  family = 'binomial',
 )
 
-summary(pf_sy_f)
+anova(pf_st, pf_s) # hmm... it's weak but it is better-performing
 
-anova(pf_sy_f, pf_s_f) # definitely no evidence of a strong size-year interaction
+AIC(pf_st, pf_s) %>% mutate(daic = round(AIC - min(AIC), 2)) # hmm...
 
-
-pf_s_f_t = glmmTMB(
-  flowering ~ prev.size + prev.flower + trt + (1 | Year) + (1 | Plot / plantid),
-  data = demo.for.flowering,
-  family = 'binomial'
-)
-
-summary(pf_s_f_t) # doesn't seem like evidence of a treatment effect here
-
-anova(pf_s_f_t, pf_s_f) # nope - no treatment effect
-# but maybe there is one that depends on size
-
-pf_st_f = glmmTMB(
-  flowering ~ prev.size * trt + prev.flower + (1 | Year) + (1 | Plot / plantid),
-  data = demo.for.flowering,
-  family = 'binomial'
-)
-
-anova(pf_st_f, pf_s_f) # interesting... weak support
-
-pf_st_ft = glmmTMB(
-  flowering ~ prev.size * trt + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
-  data = demo.for.flowering,
-  family = 'binomial'
-)
-
-anova(pf_st_ft, pf_s_f) # very well supported
-
-pf_s_ft = glmmTMB(
-  flowering ~ prev.size + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
-  data = demo.for.flowering,
-  family = 'binomial'
-)
-
-AIC(pf_s_f, pf_st_f, pf_s_ft, pf_st_ft) %>% mutate(daic = round(AIC - min(AIC), 2))
-
-summary(pf_s_ft)
-# Lol
-# Evidence here suggests that:
-# - Increasing size increases probability of flowering for all plants
-# - Flowering in previous year increases probability of flowering in next year
-#   - Effect is much stronger in irrigated plots than other plots
-# - For plants that did not flower previously, irrigation may reduce the probability of flowering
+# Final model of these
+summary(pf_st)
+# hmm.. without mean-centering it's not super easy to discern what's going on
+# but... maybe large plants in drought are less likely to flower
 
 ### Umbel count models
 
 nu_s = glmmTMB(
-  No.umbels ~ prev.size + (1 | Year) + (1 | Plot / plantid),
+  No.umbels ~ cur.size + (1 | Year) + (1 | Plot / plantid),
   data = demo.for.umbel.counts,
   family = 'truncated_poisson'
 )
 
 summary(nu_s)
 
-nu_s_f = glmmTMB(
-  No.umbels ~ prev.size + prev.flower + (1 | Year) + (1 | Plot / plantid),
+# nu_s_f = glmmTMB(
+#   No.umbels ~ prev.size + prev.flower + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.umbel.counts,
+#   family = 'truncated_poisson'
+# )
+# 
+# AIC(nu_s_f, nu_s)
+# 
+# summary(nu_s_f)
+# # Flowering in previous year means more flowers in subsequent year (if flowering)
+# 
+# # Size and/or previous flowering treatments varying by year
+# 
+# nu_sy_f = glmmTMB(
+#   No.umbels ~  prev.flower + (prev.size | Year) + (1 | Plot / plantid),
+#   data = demo.for.umbel.counts,
+#   family = 'truncated_poisson'
+# )
+# 
+# nu_s_fy = glmmTMB(
+#   No.umbels ~ prev.size + (prev.flower | Year) + (1 | Plot / plantid),
+#   data = demo.for.umbel.counts,
+#   family = 'truncated_poisson'
+# )
+# # Convergence issue (this always happens with the categoricals...)
+# 
+# AIC(nu_sy_f, nu_s_f) # size effects don't vary by year
+# 
+# # Treatment effects
+# 
+# nu_s_f_t = glmmTMB(
+#   No.umbels ~ prev.size + prev.flower + trt + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.umbel.counts,
+#   family = 'truncated_poisson'
+# )
+# 
+# nu_st_f = glmmTMB(
+#   No.umbels ~ prev.size * trt + prev.flower + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.umbel.counts,
+#   family = 'truncated_poisson'
+# )
+# 
+# nu_s_ft = glmmTMB(
+#   No.umbels ~ prev.size + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.umbel.counts,
+#   family = 'truncated_poisson'
+# )
+# 
+# nu_st_ft = glmmTMB(
+#   No.umbels ~ prev.size * trt + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.for.umbel.counts,
+#   family = 'truncated_poisson'
+# )
+# 
+# AIC(nu_st_ft, nu_st_f, nu_s_ft, nu_s_f_t, nu_s_f) %>%
+#   mutate(daic = round(AIC - min(AIC), 2))
+# # No treatment effects at all.
+
+nu_sy = glmmTMB(
+  No.umbels ~ (cur.size | Year) + (1 | Plot / plantid),
   data = demo.for.umbel.counts,
   family = 'truncated_poisson'
 )
 
-AIC(nu_s_f, nu_s)
-
-summary(nu_s_f)
-# Flowering in previous year means more flowers in subsequent year (if flowering)
-
-# Size and/or previous flowering treatments varying by year
-
-nu_sy_f = glmmTMB(
-  No.umbels ~  prev.flower + (prev.size | Year) + (1 | Plot / plantid),
+nu_s_t = glmmTMB(
+  No.umbels ~ cur.size + trt + (1 | Year) + (1 | Plot / plantid),
   data = demo.for.umbel.counts,
   family = 'truncated_poisson'
 )
 
-nu_s_fy = glmmTMB(
-  No.umbels ~ prev.size + (prev.flower | Year) + (1 | Plot / plantid),
-  data = demo.for.umbel.counts,
-  family = 'truncated_poisson'
-)
-# Convergence issue (this always happens with the categoricals...)
-
-AIC(nu_sy_f, nu_s_f) # size effects don't vary by year
-
-# Treatment effects
-
-nu_s_f_t = glmmTMB(
-  No.umbels ~ prev.size + prev.flower + trt + (1 | Year) + (1 | Plot / plantid),
+nu_st = glmmTMB(
+  No.umbels ~ cur.size * trt + (1 | Year) + (1 | Plot / plantid),
   data = demo.for.umbel.counts,
   family = 'truncated_poisson'
 )
 
-nu_st_f = glmmTMB(
-  No.umbels ~ prev.size * trt + prev.flower + (1 | Year) + (1 | Plot / plantid),
-  data = demo.for.umbel.counts,
-  family = 'truncated_poisson'
-)
+AIC(nu_s, nu_sy, nu_s_t, nu_st) %>% mutate(daic = round(AIC - min(AIC), 2))
+# doesn't look like there's any evidence of a year effect here...
 
-nu_s_ft = glmmTMB(
-  No.umbels ~ prev.size + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
-  data = demo.for.umbel.counts,
-  family = 'truncated_poisson'
-)
-
-nu_st_ft = glmmTMB(
-  No.umbels ~ prev.size * trt + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
-  data = demo.for.umbel.counts,
-  family = 'truncated_poisson'
-)
-
-AIC(nu_st_ft, nu_st_f, nu_s_ft, nu_s_f_t, nu_s_f) %>%
-  mutate(daic = round(AIC - min(AIC), 2))
-# No treatment effects at all.
-
-summary(nu_s_f)
-# So final model based on this appears to be:
-# - larger plants make mroe umbels
-# - plants that flowered last year *also* make more umbels
+summary(nu_s)
+# larger plants produce more umbels... seems unsurprising
 
 # NOTE that I had convergence issues with the negative binomial based on this -
 # not sure if overdispersion is an issue here
