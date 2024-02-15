@@ -100,7 +100,7 @@ table(demo.for.flowering.size.both$prev.flower)
 table(demo.for.flowering.size.both$flowering)
 
 # Based on analysis below, probability of flowering best predicted by current
-# size
+# size (so we can keep records where the prior year's size is missing)
 demo.for.flowering = demo.for.flowering %>%
   # Filter out plants with a current demo measurement
   filter(!is.na(No.leaves) & !is.na(Leaf.length) & No.leaves > 0) %>%
@@ -120,45 +120,31 @@ length(unique(demo.for.flowering$plantid)) # almost 850 plants
 table(demo.for.flowering$Year) # six years  
 
 # Get a dataset with only flowering plants
-# For modeling umbel counts
+# for modeling umbel counts
 demo.for.umbel.counts = demo.for.flowering %>%
   filter(flowering) %>%
   select(-flowering)
 
 ### Demo + phen
 
-phen.demo.with.size = phen.demo %>%
-  # Get rid of plants that have no size measurement (including plants marked as
-  # having zero leaves in prior year)
-  filter(!is.na(prev.leaves) & !is.na(prev.length)) %>%
-  # Change umbel counts to a non-zero quantity
+phen.demo = phen.demo %>%
+  # Change missing umbel counts to zero
   mutate(n.demo.umbels = ifelse(is.na(n.demo.umbels), 0, n.demo.umbels)) %>%
-  # Add a size column
-  mutate(prev.size = log(prev.leaves * prev.length)) %>%
   # Center phenology
-  mutate(mean.doy = init.doy - round(mean(init.doy)))
+  mutate(centered.phen = init.doy - round(mean(init.doy)))
 
 head(phen.demo.with.size)
 
-# While I'm here, add a previously-flowering column just in case
-phen.demo = phen.demo %>%
-  mutate(
-    prev.umbels = ifelse(is.na(prev.umbels), 0, prev.umbels),
-    prev.flower = prev.umbels > 0
-  ) %>%
-  mutate(mean.doy = init.doy - round(mean(init.doy)))
-
 ### Mean bud date against number of dead umbels
 umbel.failure = phen.demo %>%
+  # Get mean budding date for each plant
   group_by(Year, tagplot) %>%
   mutate(mean.doy = mean(init.doy)) %>%
   ungroup() %>%
+  # Distinct here because we need only one row per plant
   distinct(Year, tagplot, .keep_all = TRUE) %>%
-  mutate(mean.phen = mean.doy - round(mean(mean.doy)))
-
-umbel.failure.with.size = umbel.failure %>%
-  filter(!is.na(prev.length) & !is.na(prev.leaves)) %>%
-  mutate(prev.size = log(prev.length * prev.leaves))
+  # Center the phenology column to help with model convergence
+  mutate(centered.phen = mean.doy - round(mean(mean.doy)))
 
 # Worth checking at some point if this is truly binomial
 
@@ -177,23 +163,18 @@ seed.phen.demo = seed.phen.demo.all %>%
 seed.phen.demo = rbind(
   # All umbels with a non-zero number of seeds...
   seed.phen.demo %>% filter(no.seeds > 0),
-  # and all umbels with zero seeds, but removing 
+  # and all umbels with zero seeds, but removing dead umbels from phen
   seed.phen.demo %>%
     filter(!no.seeds) %>%
     group_by(tagplot, Year) %>%
-    # mutate(n = 1:n()) %>%
     filter((1:n()) > n.lost.umbel) %>%
     ungroup()
 )
 
 nrow(seed.phen.demo)
 
-seed.phen.demo.size = seed.phen.demo %>%
-  filter(!is.na(prev.length) & !is.na(prev.leaves)) %>%
-  mutate(prev.size = log(prev.length * prev.leaves))
-
-nrow(seed.phen.demo.size)
-seed.phen.demo.size %>% distinct(Year, tagplot) %>% nrow()
+nrow(seed.phen.demo)
+seed.phen.demo %>% distinct(Year, tagplot) %>% nrow()
 
 
 ### Phen dataset
@@ -229,94 +210,56 @@ pf_s1 = glmmTMB(
 )
 
 AIC(pf_s0, pf_s1) %>% mutate(daic = round(AIC - min(AIC), 2))
-# Current size is a *much* better predictor than prior size lmao
+# Current size is a *much* better predictor than prior size
 
-# (refit on larger dataset)
+# Refitting current size model with whole dataset - will be used as null model
+# moving forward
 pf_s = glmmTMB(
   flowering ~ cur.size + (1 | Year) + (1 | Plot / plantid),
   data = demo.for.flowering,
   family = 'binomial',
 )
 
-# pf_s_f = glmmTMB(
-#   flowering ~ cur.size + prev.flower + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.flowering,
-#   family = 'binomial'
-# )
-# 
-# summary(pf_s_f)
-# # plants that flowered last year much more likely to flower - odds increase by 260% (!)
-# 
-# anova(pf_s_f, pf_s)
-# # ah... but this moakes models so much more complicated...
-# 
-# pf_sy_f = glmmTMB(
-#   flowering ~ prev.flower + (cur.size | Year) + (1 | Plot / plantid),
-#   data = demo.for.flowering,
-#   family = 'binomial'
-# )
-# 
-# summary(pf_sy_f)
-# 
-# anova(pf_sy_f, pf_s_f) # definitely no evidence of a strong size-year interaction
-# 
-# pf_s_f_t = glmmTMB(
-#   flowering ~ cur.size + prev.flower + trt + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.flowering,
-#   family = 'binomial'
-# )
-# 
-# summary(pf_s_f_t) # doesn't seem like evidence of a treatment effect here
-# 
-# anova(pf_s_f_t, pf_s_f) # nope - no treatment effect
-# # but maybe there is one that depends on size
-# 
-# pf_st_f = glmmTMB(
-#   flowering ~ cur.size * trt + prev.flower + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.flowering,
-#   family = 'binomial'
-# )
-# 
-# anova(pf_st_f, pf_s_f) # interaction not supported
-# 
-# pf_st_ft = glmmTMB(
-#   flowering ~ cur.size * trt + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.flowering,
-#   family = 'binomial'
-# )
-# 
-# anova(pf_st_ft, pf_s_f) 
-# # treatment effects are supported, p < 0.02, but delta AIC only barely larger than two...
-# 
-# pf_s_ft = glmmTMB(
-#   flowering ~ cur.size + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.flowering,
-#   family = 'binomial'
-# )
-
-# AIC(pf_s_f, pf_st_f, pf_s_ft, pf_st_ft) %>% mutate(daic = round(AIC - min(AIC), 2))
-
+# Model with treatment intercept
 pf_s_t = glmmTMB(
   flowering ~ cur.size + trt + (1 | Year) + (1 | Plot / plantid),
   data = demo.for.flowering,
   family = 'binomial',
 )
 
-anova(pf_s_t, pf_s) # no treatment effect
-
+# Model with size-treatment interaction
 pf_st = glmmTMB(
   flowering ~ cur.size * trt + (1 | Year) + (1 | Plot / plantid),
   data = demo.for.flowering,
   family = 'binomial',
 )
 
-anova(pf_st, pf_s) # hmm... it's weak but it is better-performing
+anova(pf_st, pf_s_t, pf_s)
+anova(pf_st, pf_s)
+AIC(pf_st, pf_s) %>% mutate(daic = round(AIC - min(AIC), 2))
+# It's not unbelievably strong, but according to our cutoffs, the size-treatment
+# interaction model performs best.
 
-AIC(pf_st, pf_s) %>% mutate(daic = round(AIC - min(AIC), 2)) # hmm...
+# Test against a model with size effects varying by year
+pf_sy = glmmTMB(
+  flowering ~  (cur.size | Year) + (1 | Plot / plantid),
+  data = demo.for.flowering,
+  family = 'binomial',
+)
+
+# Adding treatment to the above model
+pf_sy_t = glmmTMB(
+  flowering ~ trt + (cur.size | Year) + (1 | Plot / plantid),
+  data = demo.for.flowering,
+  family = 'binomial',
+)
+
+AIC(pf_sy_t, pf_sy, pf_st) %>% mutate(daic = round(AIC - min(AIC), 2))
+# no effects of year-varying effects
 
 # Final model of these
 summary(pf_st)
-# hmm.. without mean-centering it's not super easy to discern what's going on
+# Without mean-centering size effects it's not super easy to discern what's going on
 # but... maybe large plants in drought are less likely to flower
 
 ### Umbel count models
@@ -326,66 +269,6 @@ nu_s = glmmTMB(
   data = demo.for.umbel.counts,
   family = 'truncated_poisson'
 )
-
-summary(nu_s)
-
-# nu_s_f = glmmTMB(
-#   No.umbels ~ prev.size + prev.flower + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.umbel.counts,
-#   family = 'truncated_poisson'
-# )
-# 
-# AIC(nu_s_f, nu_s)
-# 
-# summary(nu_s_f)
-# # Flowering in previous year means more flowers in subsequent year (if flowering)
-# 
-# # Size and/or previous flowering treatments varying by year
-# 
-# nu_sy_f = glmmTMB(
-#   No.umbels ~  prev.flower + (prev.size | Year) + (1 | Plot / plantid),
-#   data = demo.for.umbel.counts,
-#   family = 'truncated_poisson'
-# )
-# 
-# nu_s_fy = glmmTMB(
-#   No.umbels ~ prev.size + (prev.flower | Year) + (1 | Plot / plantid),
-#   data = demo.for.umbel.counts,
-#   family = 'truncated_poisson'
-# )
-# # Convergence issue (this always happens with the categoricals...)
-# 
-# AIC(nu_sy_f, nu_s_f) # size effects don't vary by year
-# 
-# # Treatment effects
-# 
-# nu_s_f_t = glmmTMB(
-#   No.umbels ~ prev.size + prev.flower + trt + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.umbel.counts,
-#   family = 'truncated_poisson'
-# )
-# 
-# nu_st_f = glmmTMB(
-#   No.umbels ~ prev.size * trt + prev.flower + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.umbel.counts,
-#   family = 'truncated_poisson'
-# )
-# 
-# nu_s_ft = glmmTMB(
-#   No.umbels ~ prev.size + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.umbel.counts,
-#   family = 'truncated_poisson'
-# )
-# 
-# nu_st_ft = glmmTMB(
-#   No.umbels ~ prev.size * trt + prev.flower * trt + (1 | Year) + (1 | Plot / plantid),
-#   data = demo.for.umbel.counts,
-#   family = 'truncated_poisson'
-# )
-# 
-# AIC(nu_st_ft, nu_st_f, nu_s_ft, nu_s_f_t, nu_s_f) %>%
-#   mutate(daic = round(AIC - min(AIC), 2))
-# # No treatment effects at all.
 
 nu_sy = glmmTMB(
   No.umbels ~ (cur.size | Year) + (1 | Plot / plantid),
@@ -406,24 +289,24 @@ nu_st = glmmTMB(
 )
 
 AIC(nu_s, nu_sy, nu_s_t, nu_st) %>% mutate(daic = round(AIC - min(AIC), 2))
-# doesn't look like there's any evidence of a year effect here...
+# Doesn't look like there's any evidence of a year or treatment effect here...
 
 summary(nu_s)
 # larger plants produce more umbels... seems unsurprising
 
 # NOTE that I had convergence issues with the negative binomial based on this -
-# not sure if overdispersion is an issue here
+# not sure if overdispersion is an issue here.
 
 ### Umbel budding phenology
 
 phen_0 = glmmTMB(
-  formula = mean.doy ~ (1 | Year) + (1 | Plot / tagplot),
-  data = phen.demo.with.size,
+  formula = centered.phen ~ (1 | Year) + (1 | Plot / tagplot),
+  data = phen.demo,
 )
 
 phen_s = glmmTMB(
-  formula = mean.doy ~ prev.size + (1 | Year) + (1 | Plot / tagplot),
-  data = phen.demo.with.size,
+  formula = centered.phen ~ cur.size + (1 | Year) + (1 | Plot / tagplot),
+  data = phen.demo,
 )
 
 anova(phen_s, phen_0)
@@ -433,12 +316,12 @@ anova(phen_s, phen_0)
 
 phen_t = glmmTMB(
   formula = mean.doy ~ trt + (1 | Year) + (1 | Plot / tagplot),
-  data = phen.demo.with.size,
+  data = phen.demo,
 )
 
 phen_s_t = glmmTMB(
-  formula = mean.doy ~ trt + prev.size + (1 | Year) + (1 | Plot / tagplot),
-  data = phen.demo.with.size,
+  formula = mean.doy ~ trt + cur.size + (1 | Year) + (1 | Plot / tagplot),
+  data = phen.demo,
 )
 
 anova(phen_s_t, phen_t)
@@ -446,39 +329,19 @@ anova(phen_s_t, phen_t)
 # (I also tried an interaction)
 # sweet!
 
-# Refit these with full datasets
-
-phen_0 = glmmTMB(
-  formula = mean.doy ~ (1 | Year) + (1 | Plot / tagplot),
-  data = phen.demo
-)
-
-phen_t = glmmTMB(
-  formula = mean.doy ~ trt + (1 | Year) + (1 | Plot / tagplot),
-  data = phen.demo,
-)
+# Now, test for a treatment effect on phenology
 
 anova(phen_t, phen_0)
-# phen effect is here
 
 summary(phen_t)
-# as before - drought means earlier flowering on average, irrigation means later
+# Drought means buding 3.25 days earlier
+# irrigation might mean budding a day later
 
-# Just to be sure... is there an effect of previous flowering?
-phen_t_f = glmmTMB(
-  formula = mean.doy ~ trt + prev.flower + (1 | Year) + (1 | Plot / tagplot),
-  data = phen.demo,
-)
-
-anova(phen_t_f, phen_t)
-AIC(phen_t_f, phen_t)
-
-summary(phen_t_f)
-# Interesting. If you flowered in the last year, you're more likely to bud earlier this year?
-# (and the mean size of this effect is 1.5 days)
-# Why would this be? We could write a story. Is it worth anything?
-# throwing this term in also makes a stronger effect of drought...
-
+# I think it's worth doing a residual check here...
+hist(residuals(phen_t)) # that's actually fairly normal
+qqnorm(residuals(phen_t))
+qqline(residuals(phen_t))
+# Tails are not great, esp. lower tail, but otherwise actually looks decent
 
 ### Umbel failure
 # (Maybe it's smarter to parameterize this as surviving umbels?)
@@ -489,214 +352,270 @@ uf_0 = glmmTMB(
   cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ 1 +
     (1 | Year) + (1 | Plot / tagplot),
   family = 'binomial',
-  data = umbel.failure.with.size
+  data = umbel.failure
 )
 
 uf_s = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ prev.size +
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ cur.size +
     (1 | Year) + (1 | Plot / tagplot),
   family = 'binomial',
-  data = umbel.failure.with.size
+  data = umbel.failure
 )
 
 anova(uf_s, uf_0)
-# okie dokie - no size effects!
-# also fit with treatment juuuust to make sure
+# there *is* a pronounced size effect here
 
-uf_t = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ trt +
-    (1 | Year) + (1 | Plot / tagplot),
+summary(uf_s)
+# larger plants more likely to have umbel success, although effect is not super strong
+# 1 unit increase in size means ~48% increase in odds of umbel succeeding
+
+# Evidence of size-effects varying by year?
+
+uf_sy = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~
+    (cur.size | Year) + (1 | Plot / tagplot),
   family = 'binomial',
-  data = umbel.failure.with.size
+  data = umbel.failure
 )
 
+anova(uf_sy, uf_s)
+# No year-varying effects
+
+# Look for treatment effects
+# first - treatment standalone
 uf_s_t = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ prev.size + trt +
-    (1 | Year) + (1 | Plot / tagplot),
-  family = 'binomial',
-  data = umbel.failure.with.size
-)
-
-anova(uf_s_t, uf_t)
-# Great.
-
-# Fitting without size:
-
-uf_0 = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ 1 +
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~  cur.size + trt +
     (1 | Year) + (1 | Plot / tagplot),
   family = 'binomial',
   data = umbel.failure
 )
 
-uf_t = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ trt +
+# Now - treatment interaction with size
+uf_st = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~  cur.size * trt +
     (1 | Year) + (1 | Plot / tagplot),
   family = 'binomial',
   data = umbel.failure
 )
 
-uf_p = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ mean.phen +
+anova(uf_s_t, uf_s)
+anova(uf_st, uf_s)
+# no evidence of treatment effects
+
+uf_s_p = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ centered.phen + cur.size +
     (1 | Year) + (1 | Plot / tagplot),
   family = 'binomial',
   data = umbel.failure
 )
 
-uf_p_t = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ mean.phen + trt +
+uf_sp = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ centered.phen * cur.size +
     (1 | Year) + (1 | Plot / tagplot),
   family = 'binomial',
   data = umbel.failure
 )
 
-uf_p2 = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ poly(mean.phen, 2) +
+uf_sp_t = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ centered.phen * cur.size + trt +
     (1 | Year) + (1 | Plot / tagplot),
   family = 'binomial',
   data = umbel.failure
 )
 
-uf_p2_t = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ poly(mean.phen, 2) + trt +
+uf_s_p_t = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ centered.phen + cur.size + trt +
     (1 | Year) + (1 | Plot / tagplot),
   family = 'binomial',
   data = umbel.failure
 )
 
+uf_s_p2 = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ poly(centered.phen, 2) + cur.size +
+    (1 | Year) + (1 | Plot / tagplot),
+  family = 'binomial',
+  data = umbel.failure
+)
 
-AIC(uf_0, uf_p, uf_t, uf_p_t, uf_p2, uf_p2_t) %>% 
+uf_s_p2_t = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ poly(centered.phen, 2) + cur.size + trt +
+    (1 | Year) + (1 | Plot / tagplot),
+  family = 'binomial',
+  data = umbel.failure
+)
+
+uf_s_py = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ cur.size +
+    (centered.phen | Year) + (1 | Plot / tagplot),
+  family = 'binomial',
+  data = umbel.failure
+)
+
+uf_s_py_t = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ cur.size + trt +
+    (centered.phen | Year) + (1 | Plot / tagplot),
+  family = 'binomial',
+  data = umbel.failure
+)
+
+# uf_sy_p = glmmTMB(
+#   cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ mean.phen +
+#     (cur.size | Year) + (1 | Plot / tagplot),
+#   family = 'binomial',
+#   data = umbel.failure
+# )
+# didn't converge
+
+# uf_sy_py = glmmTMB(
+#   cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~
+#     (cur.size + mean.phen | Year) + (1 | Plot / tagplot),
+#   family = 'binomial',
+#   data = umbel.failure
+# )
+# failed to converge
+
+# uf_s_p2y = glmmTMB(
+#   cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ cur.size +
+#     (poly(mean.phen, 2) | Year) + (1 | Plot / tagplot),
+#   family = 'binomial',
+#   data = umbel.failure
+# )
+# Quadratic phen varying by year fails to converge
+
+AIC(uf_s, uf_sp, uf_sp_t, uf_s_p, uf_s_p_t, uf_s_p2, uf_s_p2_t, uf_s_py, uf_s_py_t) %>% 
   mutate(daic = round(AIC - min(AIC), 2)) %>%
   arrange(daic)
-# big ol' phen effect... quadratic or linear
-# no treatment effect lmao
+# Linear phen effect, varying by year
 
-summary(uf_p)
-# Budding later means slightly higher chance of umbel success
+summary(uf_s_py)
+# right... this doesn't report mean phen effects...
 
-summary(uf_p2)
+ranef(uf_s_py)$cond$Year
+ranef(uf_s_py)$cond$Year %>% as.data.frame() %>% apply(2, mean)
 
-# Check for a polynomial effect
-uf_p2 = glmmTMB(
-  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ poly(mean.phen, 2) +
-    (1 | Year) + (1 | Plot / tagplot),
+summary(uf_sp)
+# according to this model - larger plants more likely to have umbel success
+# budding later means more success for smaller plants
+# budding later maybe less impactful for larger plants
+
+# Look at year as fixed effect...
+uf_s_py_fixed = glmmTMB(
+  cbind(n.phen.umbels - n.lost.umbels, n.lost.umbels) ~ cur.size +
+    centered.phen * Year + (1 | Plot / tagplot),
   family = 'binomial',
-  data = umbel.failure
+  data = umbel.failure %>% mutate(Year = factor(Year))
 )
 
-anova(uf_p2, uf_p)
-# phew! no polynomial effects.
+AIC(uf_s_py_fixed, uf_s_py)
+# huh... works much better as a fixed effect lmao
+
+summary(uf_s_py_fixed)
+# effect is strongest in 2021, still apparent in 2022, apparently gone in 2023
 
 ### Seeds per umbel
 
 # First, look for effects of previous size
-s_0_size = glmmTMB(
+s_0 = glmmTMB(
   no.seeds ~ (1 | Plot / tagplot) + (1 | Year),
-  data = seed.phen.demo %>%
-    filter(!is.na(prev.leaves) & !is.na(prev.length)) %>%
-    mutate(prev.size = log(prev.leaves * prev.length)),
+  data = seed.phen.demo,
   family = 'nbinom2'
 )
-
-s_s_size = glmmTMB(
-  no.seeds ~ prev.size + (1 | Plot / tagplot) + (1 | Year),
-  data = seed.phen.demo %>%
-    filter(!is.na(prev.leaves) & !is.na(prev.length)) %>%
-    mutate(prev.size = log(prev.leaves * prev.length)),
-  family = 'nbinom2'
-)
-
-anova(s_0_size, s_s_size)
-# god motherfucking damnit
-# that's insane.
-
-# Okay.
-# Run everything with previous size now I guess.
-# (ah... previous size is maybe picking up umbel size)
 
 s_s = glmmTMB(
-  no.seeds ~ prev.size + (1 | Plot / tagplot) + (1 | Year),
-  data = seed.phen.demo.size,
+  no.seeds ~ cur.size + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo,
   family = 'nbinom2'
 )
 
-summary(s_s)
+anova(s_0, s_s)
+# yep - there's a size effect
+# (probably picking up umbel size, which increases with plant size)
 
 s_s_t = glmmTMB(
-  no.seeds ~ prev.size + trt + (1 | Plot / tagplot) + (1 | Year),
-  data = seed.phen.demo.size,
+  no.seeds ~ cur.size + trt + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo,
   family = 'nbinom2'
 )
 
 s_st = glmmTMB(
-  no.seeds ~ prev.size * trt + (1 | Plot / tagplot) + (1 | Year),
-  data = seed.phen.demo.size,
+  no.seeds ~ cur.size * trt + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo,
   family = 'nbinom2'
 )
 
 AIC(s_st, s_s_t, s_s) %>% mutate(daic = round(AIC - min(AIC), 2))
-# no direct treatment effects
+# wow - a size-treatment effect here? lol
+
+summary(s_st)
 
 # Test for phenology
-
-s_s_p = glmmTMB(
-  no.seeds ~ centered.phen + prev.size + (1 | Plot / tagplot) + (1 | Year),
-  data = seed.phen.demo.size,
+s_st_p = glmmTMB(
+  no.seeds ~ centered.phen + cur.size * trt + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo,
   family = 'nbinom2'
 ) 
 
-AIC(s_s, s_s_p)
-anova(s_s_p, s_s)
-summary(s_s_p)
-# negative slope - flowering later (higher day) means fewer seeds
+anova(s_st_p, s_st)
+# yep, phen effect is here
+summary(s_st_p)
+# - negative phen slope (in controls): fewer seeds with earlier flowering
+# - positive intercept for irrigation: more seeds in irrigation (across the board)
+# - negative size-irrigation effect: larger plants don't benefit as much from being large
 
-s_s_p2 = glmmTMB(
-  no.seeds ~ poly(centered.phen, 2) + prev.size + (1 | Plot / tagplot) + (1 | Year),
-  data = seed.phen.demo.size,
+# Polynomial fit?
+s_st_p2 = glmmTMB(
+  no.seeds ~ poly(centered.phen, 2) + cur.size * trt + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo,
   family = 'nbinom2'
 ) 
 
-AIC(s_s, s_s_p, s_s_p2)
-summary(s_s_p2)
+anova(s_st_p, s_st_p2)
+summary(s_st_p2)
 # definitely not quadratic
 
-# Size-phen interaction...?
-
-s_sp = glmmTMB(
-  no.seeds ~ centered.phen * prev.size + (1 | Plot / tagplot) + (1 | Year),
-  data = seed.phen.demo.size,
+# Treatment against polynomial phenology
+s_st_p2t = glmmTMB(
+  no.seeds ~ poly(centered.phen, 2) * trt + cur.size * trt + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo,
   family = 'nbinom2'
 ) 
 
-AIC(s_sp, s_s_p) # sweet - no interaction
-
-# Maybe look for treatment-by-phen interactions...
-
-s_s_pt = glmmTMB(
-  no.seeds ~ centered.phen * trt + prev.size + (1 | Plot / tagplot) + (1 | Year),
-  data = seed.phen.demo.size,
+# Size-phen interaction?
+s_st_sp = glmmTMB(
+  no.seeds ~ centered.phen * cur.size + trt * cur.size + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo,
   family = 'nbinom2'
 ) 
 
-AIC(s_s_pt, s_s_p) # no treatment effects # (also true if we just have fixed effect of phen)
+anova(s_st_p, s_st_sp)
+# no size-phen interaction
 
-s_s_py = glmmTMB(
-  no.seeds ~ prev.size + (1 | Plot / tagplot) + (centered.phen | Year),
-  data = seed.phen.demo.size,
+# Phen-treatment interaction?
+s_st_pt = glmmTMB(
+  no.seeds ~ centered.phen * trt + trt * cur.size + (1 | Plot / tagplot) + (1 | Year),
+  data = seed.phen.demo,
   family = 'nbinom2'
 ) 
-# NOTE: I tried size effects varying by year and there was a convergence issue
 
-AIC(s_s_py, s_s_p) # phen effect should not be varying by year
+anova(s_st_p, s_st_pt)
+# no phen-treatment interaction
 
-# Best model is s_s_p
+# Phen-effects varying by year?
+s_st_py = glmmTMB(
+  no.seeds ~ cur.size * trt + (1 | Plot / tagplot) + (centered.phen | Year),
+  data = seed.phen.demo,
+  family = 'nbinom2'
+) 
 
-summary(s_s_p)
-# - flowering on the ~average day is ~33 seeds/umbel
-# - one day later flowering causes a ~2% reduction in seed set...
-#   - flowering one week later causes a ~10% reduction in seed set
-# - effects of body size but these effects are difficult to interpret due to scale
-#   (one-unit change is ~14% change to seed set... but 80% of plants are within 2 units...s)
+anova(s_st_p, s_st_py)
+# definitely no year-varying phen effect
+
+AIC(s_st_p, s_st_sp, s_st_p2, s_st_pt,  s_st_p2t, s_st_py) %>% 
+  mutate(daic = round(AIC - min(AIC), 2))
+# Best model has a linear effect of phenology, no interactions
+
+# Best model looks like s_st_p
+summary(s_st_p)
 
 #########################################################
 # Figure drafts
@@ -706,32 +625,25 @@ summary(s_s_p)
 # Probability of flowering
 
 pr.flower.data.base = demo.for.flowering %>%
-  mutate(flowering.01 = as.numeric(flowering) + ifelse(prev.flower, .05, -.05)) %>%
-  ggplot(aes(x = prev.size, y = flowering.01, colour = trt, shape = prev.flower)) +
+  mutate(flowering.01 = as.numeric(flowering)) %>%
+  ggplot(aes(x = cur.size, y = flowering.01, colour = trt)) +
   geom_point(position = position_jitter(height = 0.01)) +
   scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
-  scale_shape_manual(
-    values = c(4, 1),
-    labels = c('prev. vegetative', 'prev. flowering'),
-    ''
-  ) +
   facet_wrap(~ Year) +
-  labs(x = 'Previous size', y = 'Flowering') +
+  labs(x = 'Size', y = 'Flowering') +
   theme(
     panel.background = element_blank(),
     legend.position = 'top'
   )
 
-# Model is pf_s_ft
-
+# Model is pf_st
 pr.flower.preds = expand.grid(
-  prev.size = (10:50)/10,
-  prev.flower = c(TRUE, FALSE),
+  cur.size = (10:50)/10,
   trt = c('control', 'drought', 'irrigated')
 ) %>%
   mutate(
     pred.prob = predict(
-      object = pf_s_ft,  newdata = ., 
+      object = pf_st,  newdata = ., 
       re.form = ~ 0, allow.new.levels = TRUE, 
       type = 'response'
     )
@@ -742,15 +654,9 @@ pr.flower.data.base +
     data = pr.flower.preds,
     inherit.aes = FALSE,
     aes(
-      x = prev.size, y = pred.prob, 
-      group = interaction(trt, prev.flower),
-      colour = trt, linetype = prev.flower
+      x = cur.size, y = pred.prob, 
+      colour = trt
     )
-  ) +
-  scale_linetype_manual(
-    values = 2:1, 
-    labels = c('prev. vegetative', 'prev. flowering'),
-    ''
   )
 
 
@@ -760,14 +666,9 @@ pr.flower.data.base +
 # model is nu_s_f
 
 u.count.data.base = demo.for.umbel.counts %>%
-  ggplot(aes(x = prev.size, y = No.umbels, colour = trt, shape = prev.flower)) +
+  ggplot(aes(x = cur.size, y = No.umbels, colour = trt)) +
   geom_point(position = position_jitter(height = 0.05)) +
   scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
-  scale_shape_manual(
-    values = c(4, 1),
-    labels = c('prev. vegetative', 'prev. flowering'),
-    ''
-  ) +
   labs(x = 'Previous size', y = 'Number of umbels') +
   facet_wrap(~ Year) +
   theme(
@@ -777,13 +678,10 @@ u.count.data.base = demo.for.umbel.counts %>%
 
 u.count.data.base
 
-u.count.preds = expand.grid(
-  prev.size = (10:50)/10,
-  prev.flower = c(TRUE, FALSE)
-) %>%
+u.count.preds = data.frame(cur.size = (10:60)/10) %>%
   mutate(
     pred.umb = predict(
-      object = nu_s_f,  newdata = ., 
+      object = nu_s,  newdata = ., 
       re.form = ~ 0, allow.new.levels = TRUE, 
       type = 'response'
     )
@@ -793,25 +691,20 @@ u.count.data.base +
   geom_line(
     data = u.count.preds,
     inherit.aes = FALSE,
-    aes(x = prev.size, y = pred.umb, linetype = prev.flower)
-  ) +
-  scale_linetype_manual(
-    values = 2:1, 
-    labels = c('prev. vegetative', 'prev. flowering'),
-    ''
-  ) +
-  scale_y_log10()
+    aes(x = cur.size, y = pred.umb),
+    linewidth = 2
+  )
 
 #################
 # Probability of umbels failing
 
-# optimal model is uf_p - only has phenology effect
+# optimal model is uf_s_py, but uf_sp is also plausible
 
 u.succ.data.base = umbel.failure %>%
   mutate(p.succ.umbel = (n.phen.umbels - n.lost.umbels) / n.phen.umbels) %>%
-  ggplot(aes(x = mean.phen, y = p.succ.umbel, colour = trt)) +
-  geom_point(aes(size = n.phen.umbels)) +
-  scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
+  ggplot(aes(x = centered.phen, y = p.succ.umbel, fill = trt)) +
+  geom_point(aes(size = n.phen.umbels), shape = 21) +
+  scale_fill_manual(values = c('black', 'red', 'blue'), 'treatment') +
   scale_size_continuous('Number of umbels') +
   scale_x_continuous(breaks = 10*(-3:3), labels = c('7 apr', '14 apr', '27 apr', '7 may', '17 may', '27 may', '6 jun')) +
   labs(x = 'Day of budding', y = 'Probability of umbel success') +
@@ -823,12 +716,14 @@ u.succ.data.base = umbel.failure %>%
 
 u.succ.data.base
 
-u.succ.pred = data.frame(
-  mean.phen = -25:30
+u.succ.pred.py = expand.grid(
+  centered.phen = -25:30,
+  size.sd = -2:2
 ) %>%
+  mutate(cur.size = mean(umbel.failure$cur.size) + size.sd * sd(umbel.failure$cur.size)) %>%
   mutate(
     pred.prob = predict(
-      object = uf_p,
+      object = uf_s_py,
       newdata = .,
       type = 'response',
       re.form = ~ 0,
@@ -838,16 +733,66 @@ u.succ.pred = data.frame(
 
 u.succ.data.base +
   geom_line(
-    data = u.succ.pred,
+    data = u.succ.pred.py,
     inherit.aes = FALSE,
-    aes(x = mean.phen, y = pred.prob)
+    aes(x = centered.phen, y = pred.prob, group = size.sd, colour = size.sd)
   )
-# Not amazingly compelling!
+# uh... maybe that slope effect isn't being picked up because it's in a random effect...?
+# it definitely looks like it should matter here...
+
+u.succ.pred.sp = expand.grid(
+  centered.phen = -25:30,
+  size.sd = -2:2
+) %>%
+  mutate(cur.size = mean(umbel.failure$cur.size) + size.sd * sd(umbel.failure$cur.size)) %>%
+  mutate(
+    pred.prob = predict(
+      object = uf_sp,
+      newdata = .,
+      type = 'response',
+      re.form = ~ 0,
+      allow.new.levels = TRUE
+    )
+  )
+
+u.succ.pred.py.fixed = expand.grid(
+  centered.phen = -25:30,
+  Year = factor(2021:2023),
+  size.sd = -2:2
+) %>%
+  mutate(cur.size = mean(umbel.failure$cur.size) + size.sd * sd(umbel.failure$cur.size)) %>%
+  mutate(
+    pred.prob = predict(
+      object = uf_s_py_fixed,
+      newdata = .,
+      type = 'response',
+      re.form = ~ 0,
+      allow.new.levels = TRUE
+    )
+  )
+
+u.succ.data.base +
+  geom_line(
+    data = u.succ.pred.sp,
+    inherit.aes = FALSE,
+    aes(x = centered.phen, y = pred.prob, group = size.sd, colour = size.sd)
+  )
+# yeah that's more like it.
+# phen matters less for umbel failure of the large plants.
+# the 2023 data though... lmao that looks like a bad fit.
+
+u.succ.data.base +
+  geom_line(
+    data = u.succ.pred.py.fixed,
+    inherit.aes = FALSE,
+    aes(x = centered.phen, y = pred.prob, group = interaction(Year, size.sd), colour = size.sd)
+  )
+# Interesting...
 
 #################
 # Seeds / reproductive umbel
 
-seed.set.base = seed.phen.demo.size %>%
+seed.set.base = seed.phen.demo %>%
   ggplot(aes(x = centered.phen, y = no.seeds, colour = trt)) +
   geom_point(size = 3) +
   scale_colour_manual(values = c('black', 'red', 'blue', 'treatment')) +
@@ -861,12 +806,15 @@ seed.set.base = seed.phen.demo.size %>%
 seed.set.base
 
 seed.set.preds = expand.grid(
-  prev.size = c(2.7, 3.8, 4.6),
-  centered.phen = -20:30
+  size.sd = 2 * (-1:1),
+  # size.sd = 0,
+  centered.phen = -20:30,
+  trt = c('control', 'drought', 'irrigated')
 ) %>%
+  mutate(cur.size = mean(seed.phen.demo$cur.size) + size.sd * sd(seed.phen.demo$cur.size)) %>%
   mutate(
     pred.seed = predict(
-      object = s_s_p,
+      object = s_st_p,
       newdata = .,
       re.form = ~ 0,
       type = 'response',
@@ -876,14 +824,18 @@ seed.set.preds = expand.grid(
 
 seed.set.base +
   geom_line(
-    data = seed.set.preds %>% mutate(prev.size = factor(prev.size)),
+    data = seed.set.preds %>% filter(!size.sd),
     inherit.aes = FALSE,
     aes(
       x = centered.phen, y = pred.seed, 
-      group = prev.size,
-      linetype = prev.size)
+      group = interaction(size.sd, trt),
+      colour = trt
+    )
   ) +
   scale_linetype_manual(values = c(2, 1, 2))
+
+# Huh...
+# why are the irrigated plants not below the drought plants?
 
 #################
 # Raw phenology plot
@@ -982,12 +934,12 @@ pan.a
 
 pan.b = umbel.failure %>%
   mutate(p.succ.umbel = (n.phen.umbels - n.lost.umbels) / n.phen.umbels) %>%
-  ggplot(aes(x = mean.phen, y = p.succ.umbel, colour = trt)) +
+  ggplot(aes(x = centered.phen, y = p.succ.umbel, colour = trt)) +
   geom_point(size = 1, alpha = 0.5) +
   geom_line(
-    data = u.succ.pred,
+    data = u.succ.pred.sp %>% filter(!size.sd),
     inherit.aes = FALSE,
-    aes(x = mean.phen, y = pred.prob)
+    aes(x = centered.phen, y = pred.prob)
   ) +
   scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
   scale_x_continuous(breaks = 10*(-3:3), labels = c('7 apr', '14 apr', '27 apr', '7 may', '17 may', '27 may', '6 jun')) +
@@ -1002,16 +954,16 @@ pan.b
 
 # (c) Seeds per umbel
 
-pan.c = seed.phen.demo.size %>%
+pan.c = seed.phen.demo %>%
   ggplot(aes(x = centered.phen, y = no.seeds, colour = trt)) +
   geom_point(size = 1, alpha = 0.5) +
   geom_line(
-    data = seed.set.preds %>% mutate(prev.size = factor(prev.size)),
+    data = seed.set.preds %>% filter(!size.sd), # mutate(size.sd = factor(size.sd)),
     inherit.aes = FALSE,
     aes(
       x = centered.phen, y = pred.seed, 
-      group = prev.size,
-      linetype = prev.size)
+      colour = trt
+    )
   ) +
   scale_linetype_manual(values = c(4, 1, 2)) +
   scale_colour_manual(values = c('black', 'red', 'blue')) +
@@ -1035,8 +987,77 @@ plot_grid(
   plot_grid(pan.a, pan.b, pan.c, nrow = 1, labels = c('a', 'b', 'c')),
   ncol = 1,
   rel_heights = c(0.1, 1)
+) # %>%
+#   save_plot(
+#     filename = '02_data_exploration/prelim_analysis/fig_phen_repro.png',
+#     base_height = 5, base_width = 8
+#   )
+
+#########################################################
+# Trying to get a composite mean seed per plant
+#########################################################
+
+skeleton = expand.grid(
+  prev.size = (5:50)/10,
+  prev.flower = c(TRUE, FALSE),
+  trt = c('control', 'drought', 'irrigated'),
+  mean.phen = c(-20:30)
 ) %>%
-  save_plot(
-    filename = '02_data_exploration/prelim_analysis/fig_phen_repro.png',
-    base_height = 5, base_width = 8
+  mutate(centered.phen = mean.phen) %>%
+  mutate(
+    # Probability of flowering
+    pred.prob.flower = predict(
+      object = pf_s_ft,
+      newdata = .,
+      allow.new.levels = TRUE,
+      re.form = ~ 0,
+      type = 'response'
+    ),
+    # Umbels per successfully flowering plant
+    pred.n.umbels = predict(
+      object = nu_s_f,
+      newdata = .,
+      allow.new.levels = TRUE,
+      re.form = ~ 0,
+      type = 'response'
+    ),
+    # Probability of succeeding umbel
+    pred.p.umbel.succ = predict(
+      object = uf_p,
+      newdata = .,
+      allow.new.levels = TRUE,
+      re.form = ~ 0,
+      type = 'response'
+    ),
+    # Seeds per surviving umbel
+    pred.seeds = predict(
+      object = s_s_p,
+      newdata = .,
+      allow.new.levels = TRUE,
+      re.form = ~ 0,
+      type = 'response'
+    )
   )
+  
+skeleton = skeleton %>%
+  mutate(reprod.output = pred.prob.flower * pred.n.umbels * pred.p.umbel.succ * pred.seeds)
+
+skeleton %>%
+  mutate(prev.flower = factor(prev.flower), reprod.output = log(reprod.output)) %>%
+  ggplot(aes(x = mean.phen, y = reprod.output, colour = trt)) +
+  geom_line(
+    aes(
+      group = interaction(prev.size, prev.flower, trt),
+      linetype = prev.flower
+    )
+  )
+# useless plot
+
+skeleton %>%
+  ggplot(aes(x = prev.size, y = mean.phen)) +
+  geom_raster(aes(fill = log(reprod.output))) +
+  scale_fill_viridis_c() +
+  facet_wrap(prev.flower ~ trt)
+
+# okay... what is obvious from here is that size probably matters more than phen!
+# What to make of growth differences, then?
