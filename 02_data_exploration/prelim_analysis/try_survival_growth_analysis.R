@@ -54,6 +54,10 @@ demo.for.surv.sizes = demo.for.surv %>%
 nrow(demo.for.surv.sizes)
 length(unique(demo.for.surv.sizes$plantid)) # still have 940 plants
 
+# Ah... let's add a previous flowering column
+demo.for.surv.sizes = demo.for.surv.sizes %>%
+  mutate(prev.flower = No.umbels > 0 & !is.na(No.umbels))
+
 # Further subsetting the above dataset to get growth (conditioned on survival)
 # to get this, we need plants that survived *and* have measurements
 demo.for.growth = demo.for.surv.sizes %>%
@@ -94,6 +98,17 @@ demo.for.growth %>%
     legend.position = 'none'
   )
 # Interesting. Def some year-to-year variation!
+
+demo.for.growth %>%
+  ggplot(aes(x = size.t, y = size.tp1, colour = trt)) +
+  geom_segment(aes(x = 1, xend = 5, y = 1, yend = 5), linetype = 2) +
+  geom_point(size = 3, alpha = 0.125) +
+  scale_colour_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(~ trt) +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'none'
+  )
 
 demo.for.growth %>%
   ggplot(aes(x = size.t, y = size.tp1 / size.t, colour = trt)) +
@@ -168,6 +183,20 @@ summary(s_s)
 # one unit (lol) increase in size means survival odds go up by exp(0.647) =
 # 1.909 or ~91%!
 
+# s_s_f = glmmTMB(
+#   surv ~ size.t + prev.flower + (1 | Plot / plantid) + (1 | Year),
+#   data = demo.for.surv.sizes,
+#   family = 'binomial'
+# )
+# 
+# anova(s_s_f, s_s)
+# # ooh... nice. no strong effects of flowering
+# 
+# s_sf = glmmTMB(
+#   surv ~ size.t * prev.flower + (1 | Plot / plantid) + (1 | Year),
+#   data = demo.for.surv.sizes,
+#   family = 'binomial'
+# )
 
 # Next, growth kernel (conditioned on survival) #######
 
@@ -193,15 +222,15 @@ g_sy = glmmTMB(
 AIC(g_sy, g_s)
 # yearly-varying effects... not in this model!
 
+# # 
+# g_s2 = glmmTMB(
+#   size.tp1 ~ poly(size.t, 2) + (1 | Plot / plantid) + (1 | Year),
+#   data = demo.for.growth
+# )
 # 
-g_s2 = glmmTMB(
-  size.tp1 ~ poly(size.t, 2) + (1 | Plot / plantid) + (1 | Year),
-  data = demo.for.growth
-)
-
-AIC(g_s2, g_s)
-# okay... a polynomial effect
-summary(g_s2) # but it does look kinda weak rel. to uncertainty
+# AIC(g_s2, g_s)
+# # okay... a polynomial effect
+# summary(g_s2) # but it does look kinda weak rel. to uncertainty
 
 g_s_t = glmmTMB(
   size.tp1 ~ size.t + trt + (1 | Plot / plantid) + (1 | Year),
@@ -213,15 +242,15 @@ g_st = glmmTMB(
   data = demo.for.growth
 )
 
-g_s2_t = glmmTMB(
-  size.tp1 ~ poly(size.t, 2) + trt + (1 | Plot / plantid) + (1 | Year),
-  data = demo.for.growth
-)
-
-g_s2t = glmmTMB(
-  size.tp1 ~ poly(size.t, 2) * trt + (1 | Plot / plantid) + (1 | Year),
-  data = demo.for.growth
-)
+# g_s2_t = glmmTMB(
+#   size.tp1 ~ poly(size.t, 2) + trt + (1 | Plot / plantid) + (1 | Year),
+#   data = demo.for.growth
+# )
+# 
+# g_s2t = glmmTMB(
+#   size.tp1 ~ poly(size.t, 2) * trt + (1 | Plot / plantid) + (1 | Year),
+#   data = demo.for.growth
+# )
 
 # g_s2y_t = glmmTMB(
 #   size.tp1 ~ trt + (1 | Plot / plantid) + (poly(size.t, 2) | Year),
@@ -233,13 +262,14 @@ g_s2t = glmmTMB(
 #   data = demo.for.growth
 # )
 
-AIC(g_s, g_s2, g_s_t, g_st, g_s2_t, g_s2t) %>%
+# AIC(g_s, g_s2, g_s_t, g_st, g_s2_t, g_s2t) %>%
+AIC(g_s, g_s_t, g_st) %>%
   mutate(daic = round(AIC - min(AIC), 2)) %>%
   arrange(daic)
 
 # ah very cool... there is a treatment effect!
 
-summary(g_s2t)
+summary(g_st)
 
 # Crude plot of this...
 expand.grid(
@@ -248,7 +278,7 @@ expand.grid(
 ) %>%
   mutate(
     pred.size.tp1 = predict(
-      object = g_s2t,
+      object = g_st,
       newdata = .,
       re.form = ~ 0,
       allow.new.levels = TRUE
@@ -258,33 +288,47 @@ expand.grid(
   geom_segment(aes(x = 2.3, xend = 4.3, y = 2.3, yend = 4.3), linetype = 2) +
   geom_line(aes(group = trt, colour = trt)) +
   scale_colour_manual(values = c('black', 'red', 'blue'))
-# LMAO more growth in drought than in control...
-# still kinda surprised by this
+# okay... more growth in both treatments than controls
 
 # Random effects for the growth model
-ranef(g_s2t)$cond$Year %>% unlist() %>% plot()
+ranef(g_st)$cond$Year %>% unlist() %>% plot()
 # interesting... does look like there's an increase over time
-ranef(g_s2t)$cond$Plot %>% unlist() %>% hist()
+ranef(g_st)$cond$Plot %>% unlist() %>% hist()
 # plausibly normally distributed
-ranef(g_s2t)$cond$`plantid:Plot` %>% unlist() %>% hist()
+ranef(g_st)$cond$`plantid:Plot` %>% unlist() %>% hist()
 # hey cool that looks super normally distributed! hell yeah bro
-ranef(g_s2t)$cond$`plantid:Plot` %>% unlist() %>% qqnorm()
-ranef(g_s2t)$cond$`plantid:Plot` %>% unlist() %>% qqline()
+ranef(g_st)$cond$`plantid:Plot` %>% unlist() %>% qqnorm()
+ranef(g_st)$cond$`plantid:Plot` %>% unlist() %>% qqline()
 # hmm upper tail of these is off but otherwise looks good
-residuals(g_s2t) %>% qqnorm()
-residuals(g_s2t) %>% qqline()
+residuals(g_st) %>% qqnorm()
+residuals(g_st) %>% qqline()
 # right tail also looks off but otherwise good
 
 demo.for.growth %>%
-  mutate(resid = residuals(g_s2t)) %>%
+  mutate(resid = residuals(g_st)) %>%
   ggplot(aes(x = size.t, y = resid)) +
   geom_point(aes(colour = trt)) +
   geom_segment(aes(x = 1, xend = 5, y = 0, yend = 0), linetype = 2) +
   scale_colour_manual(values = c('black', 'red', 'blue')) +
   facet_wrap(~ Year)
-# Honestly this looks fine to me. Looks like residual variance is similar across years.
-# Also doesn't look like the variance changes with size.
+# Ugh. 2018 looks bad. 2021 also looks not great.
 
+demo.for.growth %>%
+  mutate(resid = residuals(g_st)) %>%
+  ggplot(aes(x = size.t, y = resid)) +
+  geom_point(aes(colour = trt), alpha = 0.5) +
+  geom_segment(aes(x = 1, xend = 5, y = 0, yend = 0), linetype = 2) +
+  scale_colour_manual(values = c('black', 'red', 'blue'))
+# Maybe the visual trend being off is driven by a handful of negative residuals
+# There is this weird sloping pattern at low size
+
+demo.for.growth %>%
+  mutate(resid = residuals(g_st)) %>%
+  ggplot(aes(x = size.t, y = resid)) +
+  geom_point(aes(colour = trt)) +
+  geom_segment(aes(x = 1, xend = 5, y = 0, yend = 0), linetype = 2) +
+  scale_colour_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(~ trt)
 
 ########################################################
 # Plot model predictions
@@ -334,14 +378,14 @@ growth.preds = expand.grid(
 ) %>%
   mutate(
     pred.size.tp1 = predict(
-      object = g_s2t,
+      object = g_st,
       newdata = .,
       re.form = ~ 0,
       allow.new.levels = TRUE
     )
   ) 
 
-growth.data.base = demo.for.growth %>%
+growth.data.base.year = demo.for.growth %>%
   ggplot(aes(x = size.t, y = size.tp1, colour = trt)) +
   # geom_segment(aes(x = 1, xend = 5, y = 1, yend = 5), linetype = 2) +
   geom_point(size = 3, alpha = 0.125) +
@@ -353,22 +397,41 @@ growth.data.base = demo.for.growth %>%
     legend.position = 'none'
   )
 
-growth.data.base +
+growth.data.base.year +
   geom_line(
     data = growth.preds,
     inherit.aes = FALSE,
     aes(x = size.t, y = pred.size.tp1, group = trt, colour = trt)
   )
 
+growth.data.base.trt = demo.for.growth %>%
+  ggplot(aes(x = size.t, y = size.tp1, colour = trt)) +
+  # geom_segment(aes(x = 1, xend = 5, y = 1, yend = 5), linetype = 2) +
+  geom_point(size = 3, alpha = 0.125) +
+  labs(x = 'Size before transition', y = 'Size after transition') +
+  scale_colour_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(~ trt) +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'none'
+  )
+
+growth.data.base.trt +
+  geom_line(
+    data = growth.preds,
+    inherit.aes = FALSE,
+    aes(x = size.t, y = pred.size.tp1, group = trt, colour = trt)
+  )
+# Huh. Something strange definitely happening for very low size in control and treatment plots.
 
 ########################################################
 # Can I make a kernel?
 
-growth.resid.sd = summary(g_s2t)$sigma
+growth.resid.sd = summary(g_st)$sigma
 
 kernels = expand.grid(
-  size.t = (95:505)/100,
-  size.tp1 = (95:505)/100,
+  size.t = (9:51)/10,
+  size.tp1 = (9:51)/10,
   trt = c('control', 'drought', 'irrigated')
 )
 
@@ -382,7 +445,7 @@ kernels = kernels %>%
       type = 'response'
     ),
     exp.size.tp1 = predict(
-      object = g_s2t,
+      object = g_st,
       newdata = .,
       allow.new.levels = TRUE,
       re.form = ~ 0,
@@ -393,14 +456,16 @@ kernels = kernels %>%
 kernels = kernels %>%
   mutate(
     p.grow.size.tp1 = dnorm(x = size.tp1, mean = exp.size.tp1, sd = growth.resid.sd),
-    p.size.tp1 = p.grow.size.tp1 * p.survive
+    p.size.tp1 = p.survive * p.grow.size.tp1
   )
 
 ggkernel = ggplot(kernels, aes(x = size.t, y = size.tp1, fill = p.size.tp1))
 
 ggkernel +
   geom_tile() +
+  geom_segment(aes(x = 0.9, xend = 5.1, y = 0.9, yend = 5.1)) +
   scale_y_reverse() +
   scale_fill_viridis_c() +
+  coord_equal() +
   labs(x = 'Size in t', y = 'Size in t+1') +
   facet_wrap(~ trt)
