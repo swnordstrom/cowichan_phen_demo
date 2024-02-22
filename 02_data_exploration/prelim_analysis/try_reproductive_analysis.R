@@ -315,12 +315,12 @@ anova(phen_s, phen_0)
 # test with treatment effects just to be sure
 
 phen_t = glmmTMB(
-  formula = mean.doy ~ trt + (1 | Year) + (1 | Plot / tagplot),
+  formula = centered.phen ~ trt + (1 | Year) + (1 | Plot / tagplot),
   data = phen.demo,
 )
 
 phen_s_t = glmmTMB(
-  formula = mean.doy ~ trt + cur.size + (1 | Year) + (1 | Plot / tagplot),
+  formula = centered.phen ~ trt + cur.size + (1 | Year) + (1 | Plot / tagplot),
   data = phen.demo,
 )
 
@@ -342,6 +342,12 @@ hist(residuals(phen_t)) # that's actually fairly normal
 qqnorm(residuals(phen_t))
 qqline(residuals(phen_t))
 # Tails are not great, esp. lower tail, but otherwise actually looks decent
+
+phen.demo %>%
+  mutate(residual = residuals(phen_t)) %>%
+  ggplot(aes(x = residual, fill = trt)) +
+  geom_histogram(position = position_identity(), alpha = 0.25) +
+  scale_fill_manual(values = c('black', 'red', 'blue'))
 
 ### Umbel failure
 # (Maybe it's smarter to parameterize this as surviving umbels?)
@@ -702,15 +708,20 @@ u.count.data.base +
 
 u.succ.data.base = umbel.failure %>%
   mutate(p.succ.umbel = (n.phen.umbels - n.lost.umbels) / n.phen.umbels) %>%
-  ggplot(aes(x = centered.phen, y = p.succ.umbel, fill = trt)) +
-  geom_point(aes(size = n.phen.umbels), shape = 21) +
-  scale_fill_manual(values = c('black', 'red', 'blue'), 'treatment') +
+  ggplot(aes(x = centered.phen, y = p.succ.umbel, colour = trt)) +
+  geom_point(
+    aes(size = n.phen.umbels), 
+    size = 2, shape = 21,
+    position = position_jitter(height = 1/50)
+  ) +
+  scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
   scale_size_continuous('Number of umbels') +
   scale_x_continuous(breaks = 10*(-3:3), labels = c('7 apr', '14 apr', '27 apr', '7 may', '17 may', '27 may', '6 jun')) +
   labs(x = 'Day of budding', y = 'Probability of umbel success') +
   facet_wrap(~ Year) +
   theme(
     panel.background = element_blank(),
+    axis.text.x = element_text(angle = 90),
     legend.position = 'top'
   )
 
@@ -783,9 +794,9 @@ u.succ.data.base +
 
 u.succ.data.base +
   geom_line(
-    data = u.succ.pred.py.fixed,
+    data = u.succ.pred.py.fixed %>% filter(!size.sd),
     inherit.aes = FALSE,
-    aes(x = centered.phen, y = pred.prob, group = interaction(Year, size.sd), colour = size.sd)
+    aes(x = centered.phen, y = pred.prob)
   )
 # Interesting...
 
@@ -794,12 +805,14 @@ u.succ.data.base +
 
 seed.set.base = seed.phen.demo %>%
   ggplot(aes(x = centered.phen, y = no.seeds, colour = trt)) +
-  geom_point(size = 3) +
-  scale_colour_manual(values = c('black', 'red', 'blue', 'treatment')) +
-  labs(x = 'Phenology (centered, in days)', y = 'Number of seeds') +
-  facet_wrap(~ Year, ncol = 1) +
+  geom_point(shape = 21, size = 2) +
+  scale_colour_manual(values = c('black', 'red', 'blue'), 'treatment') +
+  scale_x_continuous(breaks = 10*(-3:3), labels = c('7 apr', '14 apr', '27 apr', '7 may', '17 may', '27 may', '6 jun')) +
+  labs(x = 'Day of budding', y = 'Number of seeds') +
+  facet_wrap(~ Year, ncol = 3) +
   theme(
     panel.background = element_blank(),
+    axis.text.x = element_text(angle = 90),
     legend.position = 'top'
   )
 
@@ -830,7 +843,8 @@ seed.set.base +
       x = centered.phen, y = pred.seed, 
       group = interaction(size.sd, trt),
       colour = trt
-    )
+    ),
+    linewidth = 1.2,
   ) +
   scale_linetype_manual(values = c(2, 1, 2))
 
@@ -845,7 +859,7 @@ seed.set.base +
 
 phen.plot.data.base = phen.demo %>%
   mutate(year.dodge = Year + -0.2 * as.numeric(trt %in% 'drought') + 0.2 * as.numeric(trt %in% 'irrigated')) %>%
-  ggplot(aes(x = mean.doy, y = year.dodge, colour = trt)) +
+  ggplot(aes(x = centered.phen, y = year.dodge, colour = trt)) +
   geom_point(position = position_jitter(height = 0.08, width = 2), size = 2) +
   scale_colour_manual(values = c('black', 'red', 'blue')) +
   # scale_y_reverse(breaks = 2020:2023, labels = c('overall', '2021', '2022', '2023')) +
@@ -853,7 +867,7 @@ phen.plot.data.base = phen.demo %>%
   # date column is centered in data frame such that 0 = may 7 (day 126)
   # use as.Date(10*(-2:3) + 126) to get these
   scale_y_continuous(breaks = 2020:2023, labels = c('overall', '2021', '2022', '2023')) +
-  labs(x = 'Day of year (centered)', y = '') +
+  labs(x = 'Day of year', y = '') +
   theme(
     legend.position = 'none',
     panel.background = element_blank()
@@ -898,7 +912,7 @@ phen.plot.data.base +
 pan.a = phen.demo %>%
   # Manually dodge y-axis by treatment
   mutate(year.dodge = Year + -0.2 * as.numeric(trt %in% 'drought') + 0.2 * as.numeric(trt %in% 'irrigated')) %>%
-  ggplot(aes(x = mean.doy, y = year.dodge, colour = trt)) +
+  ggplot(aes(x = centered.phen, y = year.dodge, colour = trt)) +
   # Plot raw data
   geom_point(position = position_jitter(height = 0.04, width = 2), size = 1, alpha = 0.25) +
   # Plot model predicted mean bud date
@@ -996,6 +1010,8 @@ plot_grid(
 #########################################################
 # Trying to get a composite mean seed per plant
 #########################################################
+
+# NOT adjusted for current size changes
 
 skeleton = expand.grid(
   prev.size = (5:50)/10,
