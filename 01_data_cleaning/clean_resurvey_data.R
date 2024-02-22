@@ -1121,3 +1121,62 @@ table(ind.buds.all$init.doy)
 # NOTE:
 # 24 jan 2024 - went back and did some edits but *only re-exported the bud dataset*
 # I haven't exported the flowering phen dataset with the updated data yet
+
+#-------------------------------------------------------
+# Phen overlap on each day?
+
+flw.by.day21 = proc21 %>%
+  select(survey.period, plot, tag, no.flat, no.open, no.olp, plantid) %>%
+  mutate(across(c(no.open, no.flat, no.olp), function(x) ifelse(is.na(x), 0, x))) %>%
+  mutate(no.total = no.open + no.flat + no.olp) %>%
+  filter(no.total > 0) %>%
+  select(survey.period, plot, tag, no.total, plantid)
+
+flw.by.day22 = proc22 %>%
+  select(survey.period, plot, tag, no.flowers, no.flp, plantid) %>%
+  mutate(across(c(no.flowers, no.flp), function(x) ifelse(is.na(x), 0, x))) %>%
+  mutate(no.total = no.flowers + no.flp) %>%
+  filter(no.total > 0) %>%
+  select(survey.period, plot, tag, no.total, plantid)
+
+flw.by.day23 = proc23 %>%
+  select(survey.period, plot, tag, no.flowers, no.flp, plantid) %>%
+  mutate(across(c(no.flowers, no.flp), function(x) ifelse(is.na(x), 0, x))) %>%
+  mutate(no.total = no.flowers + no.flp) %>%
+  filter(no.total > 0) %>%
+  select(survey.period, plot, tag, no.total, plantid)
+
+flw.by.day = rbind(
+  flw.by.day21 %>% mutate(year = 2021),
+  flw.by.day22 %>% mutate(year = 2022),
+  flw.by.day23 %>% mutate(year = 2023)
+) %>% 
+  merge(y = exclude.plantids) %>%
+  # Use the "exclude" column to remove these
+  filter(!exclude) %>%
+  # Remove unnecessary column
+  select(-exclude) %>%
+  # Arrange columns (for export)
+  arrange(year, plot) %>%
+  # Merge to add approx. survey date
+  merge(
+    y = data.frame(
+      year = 2021:2023,
+      min.date = c(
+        as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
+        as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
+        as.numeric(min(proc23$survey.date) - as.Date('2023-01-01'))
+      )
+    )
+  ) %>%
+  mutate(init.doy = min.date + (survey.period - 1) * 7) %>%
+  select(-min.date)
+
+head(flw.by.day)
+nrow(flw.by.day)
+
+# write.csv(
+#   flw.by.day,
+#   row.names = FALSE,
+#   file = '01_data_cleaning/out/phen_flowers_open_by_survey.csv'
+# )
