@@ -315,4 +315,53 @@ expand.grid(size.t = (9:60)/10) %>%
 # ------------------------------------------------
 # Construct kernels
 
-# code go here
+### Some things I'll need 
+
+# Distribution of year-fixed effects in year model
+s_s_fix_year_terms = fixef(s_s_fix)$cond %>%
+  (function(x) x[grepl('Year', names(x))]) %>%
+  (function(x) c(0, x))
+
+# Residual variance in growth models
+grow.sd = summary(g_ran)$sigma
+
+# Get a scaffold
+kernel.scaffold = expand.grid(
+  size.t = (5:60)/10,
+  size.tp1 = (5:60)/10
+)
+
+nrow(kernel.scaffold)
+
+kernel.surv = kernel.scaffold %>%
+  mutate(Year = factor(2017)) %>%
+  mutate(
+    linpred = predict(
+      newdata = .,
+      object = s_s_fix, type = 'link',
+      re.form = ~ 0, allow.new.levels = TRUE
+    ),
+    linpred = linpred + mean(s_s_fix_year_terms),
+    pred.surv = 1 / (1+exp(-linpred))
+  ) %>%
+  select(-c(linpred, Year))
+
+head(kernel.surv)
+
+kernel.grow = kernel.scaffold %>%
+  mutate(
+    pred.mean = predict(
+      newdata = .,
+      object = g_ran, type = 'response',
+      re.form = ~ 0, allow.new.levels = TRUE
+    ),
+    p.grow.tp1 = dnorm(size.tp1, mean = pred.mean, sd = grow.sd)
+  )
+
+head(kernel.grow)
+
+kernel.sg = merge(x = kernel.surv, y = kernel.grow, by = c('size.t', 'size.tp1')) %>%
+  mutate(p.size.tp1 = pred.surv * p.grow.tp1)
+
+ggplot(kernel.sg, aes(x = size.t, y = size.tp1)) +
+  geom_tile(aes(fill = p.size.tp1))
