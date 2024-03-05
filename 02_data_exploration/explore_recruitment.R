@@ -223,3 +223,106 @@ demo %>% filter(Year %in% 2020, Plot %in% 10)
 # there are just not that many plants in this plot
 demo %>% filter(Year %in% 2017, Plot %in% 10)
 # then how are we still getting recruits there... lol
+
+###
+###
+### 
+
+# Looking now at what happens if you say only one-leaved plants are new recruits
+head(croots)
+
+croots1 = croots %>% filter(No.leaves < 2)
+
+nrow(croots1) # 309 plants
+table(croots1$Year) # year-to-year variation
+with(croots1, table(trt, Year))
+# Looks like control has the least... lmao.
+
+# Oh... how many are flowering?
+croots1 %>% filter(flowering) # ~20 plants in here that flowered
+# Are plants that flower larger than plants that don't?
+croots1 %>%
+  ggplot(aes(x = flowering, y = Leaf.length, colour = trt)) +
+  geom_point(size = 4, position = position_jitter(width = 0.4)) +
+  scale_colour_manual(values = c('black', 'red', 'blue'))
+# Slightly larger but not by much
+# (I guess there's also an NA in here? lol)
+# Looks like the drought plants are huge, wow
+
+croots1 = croots1 %>% filter(!flowering, !is.na(flowering), !is.na(Leaf.length))
+
+nrow(croots1) # 285 plants
+table(croots1$Year)
+with(croots1, table(trt, Year))
+
+# Visualize distribution for time, treatment
+croots1 %>%
+  ggplot(aes(x = Year, y = Leaf.length)) +
+  geom_point(
+    aes(colour = trt, group = trt), 
+    position = position_dodge(width = 0.25), 
+    size = 3, alpha = 0.25) +
+  scale_colour_manual(values = c('black', 'red', 'blue'))
+# 2022 is much larger than the rest
+# there's def year-to-year variation here
+
+# Are these lognormally distributed?
+
+croots1 %>%
+  mutate(log.len = log(Leaf.length)) %>%
+  ggplot(aes(x = log.len, group = trt, fill = trt)) +
+  geom_histogram(alpha = 0.5, position = position_identity()) +
+  scale_fill_manual(values = c('black', 'red', 'blue'))
+# hmm... long left tail
+
+croots1 %>%
+  ggplot(aes(x = Leaf.length, group = trt, fill = trt)) +
+  geom_histogram(alpha = 0.5, position = position_identity()) +
+  scale_fill_manual(values = c('black', 'red', 'blue'))
+# This certainly isn't normally distributed
+# Oh well.
+
+# Some models
+
+croots1 = croots1 %>% mutate(log.len = log(Leaf.length))
+
+s_0 = lmer(
+  formula = log.len ~ (1 | Plot),
+  data = croots1
+)
+
+s_y = lmer(
+  formula = log.len ~ (1 | Year) + (1 | Plot),
+  data = croots1
+)
+
+AIC(s_y, s_0)
+# Year-to-year variation, very cool
+
+s_y_t = lmer(
+  formula = log.len ~ trt + (1 | Year) + (1 | Plot),
+  data = croots1
+)
+
+# Just in case - no year effect, treatment effect
+s_t = lmer(
+  formula = log.len ~ trt + (1 | Plot),
+  data = croots1
+)
+
+AIC(s_y, s_t, s_y_t) %>% mutate(daic = round(AIC - min(AIC), 2))
+# no treatment effect - very cool!
+
+qqnorm(residuals(s_y))
+qqline(residuals(s_y))
+# left tail, not great, something weird happening upper right
+# oh well
+
+summary(s_y)
+
+croots1 %>%
+  mutate(resid = residuals(s_y)) %>%
+  ggplot(aes(x = Year, y = resid, colour = trt)) +
+  geom_point(position = position_jitter(width = 0.25), size = 3) +
+  scale_colour_manual(values = c('black', 'red', 'blue'))
+# 2022 is a little small but otherwise looks fine to me
