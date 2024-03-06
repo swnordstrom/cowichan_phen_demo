@@ -591,3 +591,74 @@ expand.grid(
 #-------------------------------------------------------------------
 # Fit models for seeds per umbel
 
+# Singularity issue when trying random effect for plant within plot
+
+# Test fir effect if size
+s_0 = glmer.nb(
+  formula = no.seeds ~ (1 | Plot) + Year,
+  data = seed.phen.demo
+)
+
+s_s = glmer.nb(
+  formula = no.seeds ~ cur.size + (1 | Plot) + Year,
+  data = seed.phen.demo
+)
+
+AIC(s_0, s_s)
+# Yep - sizeable effect of size
+
+# Fixed vs. random effect?
+s_ran = glmer.nb(
+  formula = no.seeds ~ (1 | Plot) + (1 | Year),
+  data = seed.phen.demo
+)
+
+AIC(s_ran, s_s)
+# Unsurprisingly - fixed effects model is better
+
+# Models to test:
+# commented out a bunch that have issues - many of them are about unidentifiability (?)
+# (glmmTMB did not have these problems! ugh)
+seed.mod.forms = c(
+  'no.seeds ~ cur.size + Year + (1 | Plot)',
+  'no.seeds ~ cur.size * Year + (1 | Plot)',
+  'no.seeds ~ cur.size + Year + trt + (1 | Plot)',
+  'no.seeds ~ cur.size * Year + trt + (1 | Plot)',
+  'no.seeds ~ cur.size + Year * trt + (1 | Plot)',
+  # 'no.seeds ~ cur.size * Year + Year * trt + (1 | Plot)',
+  'no.seeds ~ cur.size * trt + Year + (1 | Plot)',
+  # 'no.seeds ~ cur.size * trt + cur.size * Year + (1 | Plot)'# ,
+  'no.seeds ~ cur.size * trt + Year * trt + (1 | Plot)'# ,
+  # 'no.seeds ~ cur.size * Year * trt + (1 | Plot)'
+)
+
+seed.mod.list = vector('list', length = length(seed.mod.forms))
+
+for (j in 1:length(seed.mod.list)) {
+  print(j)
+  seed.mod.list[[j]] = glmer.nb(
+    formula = seed.mod.forms[j],
+    data = seed.phen.demo,
+    control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
+  )
+}
+zx# This spits out warnings but none of the models themselves have any issues?
+# Come on man what is going on.
+
+sapply(seed.mod.list, function(x) summary(x)$fitMsgs)
+sapply(seed.mod.list, function(x) summary(x)$optinfo$warnings)
+# literally all empty
+# man come the hell on
+# Maybe it's a bug in the rec ording?
+
+data.frame(
+  aic = sapply(seed.mod.list, AIC) %>% unlist(),
+  form = seed.mod.forms
+) %>%
+  mutate(daic = round(aic - min(aic), 2)) %>%
+  arrange(daic)
+
+# Of course, the complicated model is the best-supported one...
+
+# Okay try re-running with more of these models
+# Maybe also just try re-running all of these with glmmTMB?
