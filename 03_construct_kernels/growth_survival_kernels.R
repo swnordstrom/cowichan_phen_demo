@@ -355,7 +355,7 @@ kernel.grow = kernel.scaffold %>%
       object = g_ran, type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
     ),
-    p.grow.tp1 = dnorm(size.tp1, mean = pred.mean, sd = grow.sd)
+    p.grow.tp1 = 0.1 * dnorm(size.tp1, mean = pred.mean, sd = grow.sd)
   )
 
 head(kernel.grow)
@@ -364,4 +364,11 @@ kernel.sg = merge(x = kernel.surv, y = kernel.grow, by = c('size.t', 'size.tp1')
   mutate(p.size.tp1 = pred.surv * p.grow.tp1)
 
 ggplot(kernel.sg, aes(x = size.t, y = size.tp1)) +
-  geom_tile(aes(fill = p.size.tp1))
+  geom_tile(aes(fill = p.size.tp1)) +
+  scale_y_reverse()
+
+# write.csv(
+#   kernel.sg,
+#   file = '03_construct_kernels/out/test_survgrow_kernel.csv',
+#   row.names = FALSE
+# )
