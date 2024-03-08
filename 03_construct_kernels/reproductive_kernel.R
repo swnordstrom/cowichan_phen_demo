@@ -408,8 +408,20 @@ u_s = glmer(
 AIC(u_s, u_0)
 # Yes. There is a size effect. (Bleh)
 
-AIC(u_fix, u_ran)
-# Slight (smaller than expected, ~ 5) advantage to fixed effects model
+
+# Account for number of umbels produced? (After accounting for size)
+# These should be correlated so models may not play nice...
+u_n_s = glmer(
+  formula = cbind(n.succ.umbels, n.lost.umbels) ~ 
+    n.phen.umbels + cur.size + (1 | Plot) + Year,
+  family = 'binomial',
+  data = umbel.fate,
+  control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
+)
+
+AIC(u_s, u_n_s)
+summary(u_n_s)
+# Yes. Producing more umbels means your umbels are less likely to succeed.
 
 # Models to test:
 # - size*year
@@ -419,12 +431,12 @@ AIC(u_fix, u_ran)
 # - phen
 
 fate.mod.forms = c(
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size + Year',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size * Year',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size + Year + trt',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size * Year + trt',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size * trt + Year',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size * trt + cur.size * Year'
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * Year',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + trt',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * Year + trt',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + Year',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + cur.size * Year'
 ) %>%
   paste('+ (1 | Plot)')
 
@@ -453,11 +465,11 @@ data.frame(
 # Now test for phen effects.
 
 fate.phen.mod.forms = c(
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size + Year',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size + Year + centered.phen',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size + Year + centered.phen * trt',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size + Year + centered.phen * Year',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ cur.size + Year + centered.phen * Year + trt * centered.phen'
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + centered.phen',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + centered.phen * trt',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + centered.phen * Year',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + centered.phen * Year + trt * centered.phen'
 ) %>%
   paste('+ (1 | Plot)')
 
@@ -483,21 +495,21 @@ data.frame(
 # No strong evidence of a treatment effect here either
 # But there is a year-varying effect of phenology
 
-u_s_y_py = glmer(
+u_n_s_y_py = glmer(
   formula = cbind(n.succ.umbels, n.lost.umbels) ~ (1 | Plot) +
-    cur.size + Year + Year * centered.phen,
+    n.phen.umbels + cur.size + Year + Year * centered.phen,
   family = 'binomial',
   data = umbel.fate,
   control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
 )
 
-summary(u_s_y_py)
-# okay, definitely some year-treatment effects here
+summary(u_n_s_y_py)
 
 expand.grid(
   cur.size = 3.7,
   Year = factor(2021:2023),
-  centered.phen = -30:30
+  centered.phen = -30:30,
+  n.umbels = 1
 ) %>%
   mutate(
     pred = predict(
@@ -757,7 +769,7 @@ summary(r_ranef)$sigma
 
 # For umbel fate
 umbel.fate.year.terms = with(
-  data = data.frame(t(fixef(u_s_y_py))),
+  data = data.frame(t(fixef(u_n_s_y_py))),
   data.frame(
     intercept = c(0, Year2022, Year2023),
     slope = c(0, Year2022.centered.phen, Year2023.centered.phen)
@@ -793,14 +805,16 @@ reprod.kernel = expand.grid(
       re.form = ~ 0, allow.new.levels = TRUE
     ),
     # Number of umbels
-    n.umbel = predict(
+    n.phen.umbels = predict(
       n_s_y,
       newdata = ., type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
-    ),
+    )
+  ) %>%
+  mutate(
     # Proportion of umbels surviving
     p.survive = predict(
-      u_s_y_py,
+      u_n_s_y_py,
       newdata = ., type = 'link',
       re.form = ~ 0, allow.new.levels = TRUE
     ),
@@ -808,6 +822,7 @@ reprod.kernel = expand.grid(
       mean(umbel.fate.year.terms$slope) * cur.size,
     p.survive = 1 / (1 + exp(-p.survive))
   ) %>%
+  rename(n.umbel = n.phen.umbels) %>%
   # Number of seeds per umbel
   # first need to convert size
   mutate(cur.size = cur.size - mean(seed.phen.demo$cur.size)) %>%
@@ -860,3 +875,11 @@ reprod.kernel %>%
   facet_wrap(~ trt)
 
 # cool
+
+nrow(reprod.kernel)
+
+# write.csv(
+#   reprod.kernel,
+#   '03_construct_kernels/out/test_reprod_kernel.csv',
+#   row.names = FALSE
+# )
