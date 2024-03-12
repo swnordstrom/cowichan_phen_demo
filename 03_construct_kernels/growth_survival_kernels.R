@@ -101,8 +101,8 @@ surv.mod.forms = c(
   'surv ~ size.t + trt + (1 | Year)',
   'surv ~ size.t * trt + (1 | Year)',
   'surv ~ (size.t | Year)',
-  'surv ~ trt + (size.t | Year)'# ,
-  # 'surv ~ size.t + (trt | Year)'
+  'surv ~ trt + (size.t | Year)' ,
+  'surv ~ size.t + trt + (1 | Year) + (1 | Year:trt)'
 ) %>%
   paste('+ (1 | Plot / plantid)')
 
@@ -124,112 +124,56 @@ data.frame(
   form = surv.mod.forms
 ) %>%
   mutate(daic = round(AIC - min(AIC), 2))
-# Very funny! AIC ordering is same as the order in which I entered models
+# Best model has year-varying treatment effect
+# But it's barely better than the "null" model
 
 # Okay, but now the fixed effects model is still the best-performing one.
 
-# Inspect residuals
-demo.for.surv.sizes %>%
-  mutate(
-    r.ran = residuals(s_s),
-    r.fix = residuals(s_s_fix)
-) %>%
-  pivot_longer(cols = c(r.ran, r.fix), names_to = 'mod', values_to = 'resid') %>%
-  ggplot(aes(x = size.t, y = resid)) +
-  geom_point() +
-  facet_wrap(Year ~ mod)
-# Ah right... residuals are not normally distributed here
-# But these look very similar otherwise...
-
-# Comparison of magnitude of annual variation:
-data.frame(
-  fix.y.var = fixef(s_s_fix)$cond %>%
-    (function(x) x[grepl('Year', names(x))]) %>%
-    (function(x) c(0, x)) %>%
-    (function(x) x - mean(x)),
-  ran.y.var = ranef(s_s)$cond$Year %>% unlist()
-) %>%
-  ggplot(aes(x = fix.y.var, y = ran.y.var)) +
-  geom_segment(aes(x = -0.3, xend = 0.3, y = -0.3, yend = 0.3), linetype = 2) +
-  geom_point(size = 3)
-# Fixed effects have a lot more variation in magnitude
-
-# Going to go with... fixed effects here
-# Will estimate linear predictors and add random noise to it
+s_s = glmer(
+  formula = surv ~ size.t + (1 | Year) + (1 | Plot / plantid),
+  family = 'binomial',
+  data = demo.for.surv.sizes
+)
 
 # Plot model outputs:
 expand.grid(size.t = (5:60)/10, Year = factor(2017:2022)) %>%
   mutate(
+    pred_y = predict(
+      s_s, newdata = ., type = 'response',
+      re.form = ~ (1 | Year), allow.new.levels = TRUE
+    ),
     pred = predict(
-      s_s_fix, newdata = ., type = 'response',
+      s_s, newdata = ., type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
     )
   ) %>%
+  pivot_longer(c(pred_y, pred), names_to = 'model', values_to = 'pred') %>%
   ggplot(aes(x = size.t, y = pred)) +
   geom_point(
     data = demo.for.surv.sizes,
     aes(x = size.t, y = as.numeric(surv)),
     size = 3, alpha = 0.1
   ) +
-  geom_line() +
+  geom_line(aes(linetype = model)) +
   labs(x = 'size', y = 'survival') +
   facet_wrap(~ Year)
 # Ah right... a lot of behavior here being driven by plants in the tail.
 # Okay, well, that happens sometimes.
 
-# And now one for the "average" year:
-# it'll be easier if I make an object here with the year random effects
-
-s_s_fix_year_terms = fixef(s_s_fix)$cond %>%
-  (function(x) x[grepl('Year', names(x))]) %>%
-  (function(x) c(0, x))
-
-expand.grid(size.t = (5:60)/10, Year = factor(2017)) %>%
-  mutate(
-    lin.pred = predict(
-      s_s_fix, newdata = ., type = 'link',
-      re.form = ~ 0, allow.new.levels = TRUE
-    ),
-    lin.pred = lin.pred + mean(s_s_fix_year_terms),
-    pred = 1 / (1 + exp(-lin.pred))
-  ) %>%
-  ggplot(aes(x = size.t, y = pred, group = Year)) +
-  geom_point(
-    data = demo.for.surv.sizes,
-    aes(x = size.t, y = as.numeric(surv)),
-    size = 3, alpha = 0.1
-  ) +
-  geom_line() +
-  labs(x = 'size', y = 'survival')
-
-# Okay.
-
 # ------------------------------------------------
 # Fit growth models
 
 # Size effect of course will be here.
-# First test is whether annual variation should be fixed or random:
-
-g_ran = lmer(
-  formula = size.tp1 ~ size.t + (1 | Year) + (1 | Plot / plantid),
-  data = demo.for.growth
-)
-
-g_fix = lmer(
-  formula = size.tp1 ~ size.t + Year + (1 | Plot / plantid),
-  data = demo.for.growth
-)
-
-AIC(g_ran, g_fix)
-# Slight advantage to the random effects model here.
-# So go with the random effects. Good!
 
 grow.mod.forms = c(
   'size.tp1 ~ size.t + (1 | Year)',
   'size.tp1 ~ size.t + trt + (1 | Year)',
   'size.tp1 ~ size.t * trt + (1 | Year)',
   'size.tp1 ~ (size.t | Year)',
-  'size.tp1 ~ trt + (size.t | Year)'
+  'size.tp1 ~ trt + (size.t | Year)',
+  'size.tp1 ~ size.t + trt + (1 | Year) + (1 | Year:trt)',
+  'size.tp1 ~ trt + (size.t | Year) + (1 | Year:trt)',
+  'size.tp1 ~ trt + (size.t | Year) + (size.t | Year:trt)'
 ) %>%
   paste('+ (1 | Plot / plantid)')
 
@@ -252,123 +196,124 @@ data.frame(
   mutate(daic = round(AIC - min(AIC), 2)) %>%
   arrange(daic)
 
-# Once again, no treatment effect, no good evidence of year-varying effects of
-# size
+# Wow. Tear-varying treatment effect dominates here.
+# Only vital rate I have seen like this!
+# Furthermore definitely no support for year-varying size effects
+
+g_s_ty = lmer(
+  size.tp1 ~ size.t + trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
+  data = demo.for.growth,
+  control = lmerControl(optimizer = 'bobyqa')
+)
+
+summary(g_s_ty)
+# Treatment effects are incredibly small, but...
+# there is a slight benefit to both treatments? lmao.
 
 # Residuals:
 demo.for.growth %>%
-  mutate(resid = residuals(g_ran)) %>%
+  mutate(resid = residuals(g_s_ty)) %>%
   ggplot(aes(x = size.t, y = resid)) +
   geom_point() +
   facet_wrap( ~ Year)
-# Some negative outliers (negative tail looking bleh), and 2018 is weird, but
+# Some negative outliers (negative tail looking bleh), and 2018 is weird, 2021 a
+# little strange, maybe a handful of outliers in 2022
 # otherwise okay
-# No visual evidence of heteroskedasticity
+# Not worried about heteroskedasticity here
+
+# The year-treatment random effects
+ranef(g_s_ty)$`Year:trt` %>%
+  mutate(year.trt = row.names(.)) %>%
+  separate(year.trt, into = c('year', 'trt'), sep = ':') %>%
+  rename(intercept = `(Intercept)`) %>%
+  ggplot(aes(x = year, y = intercept, colour = trt)) +
+  geom_point() +
+  geom_line(aes(group = trt)) +
+  scale_colour_manual(values = c('black', 'red', 'blue'))
+# Not seeing clear patterns here
+# Maybe some negative temporal autocorrelation?
+# Controls are pretty noisy though...
 
 # Model predictions, year-varying first
-expand.grid(size.t = (9:60)/10, Year = factor(2017:2022)) %>%
+expand.grid(
+  size.t = (9:60)/10, 
+  Year = factor(2017:2022), 
+  trt = c('control', 'drought', 'irrigated')
+) %>%
   mutate(
-    pred = predict(
-      g_ran,
+    pred_y = predict(
+      g_s_ty,
       newdata = .,
       re.form = ~ (1 | Year),
       type = 'response',
       allow.new.levels = TRUE
-    )
-  ) %>%
-  ggplot(aes(x = size.t, y = pred)) +
-  geom_point(
-    data = demo.for.growth,
-    aes(x = size.t, y = size.tp1),
-    inherit.aes = FALSE,
-    size = 3, alpha = 0.1
-  ) +
-  geom_segment(aes(x = .9, xend = 6, y = .9, yend = 6), linetype = 2, colour = 'gray77') +
-  geom_line() +
-  facet_wrap(~ Year)
-# Alright, okey dokey, etc.
-
-# Now plot grand mean:
-expand.grid(size.t = (9:60)/10) %>%
-  mutate(
-    pred = predict(
-      g_ran,
+    ),
+    pred_mean = predict(
+      g_s_ty,
       newdata = .,
       re.form = ~ 0,
       type = 'response',
       allow.new.levels = TRUE
     )
   ) %>%
+  pivot_longer(c(pred_mean, pred_y), names_to = 'model', values_to = 'pred') %>%
   ggplot(aes(x = size.t, y = pred)) +
   geom_point(
     data = demo.for.growth,
-    aes(x = size.t, y = size.tp1),
+    aes(x = size.t, y = size.tp1, colour = trt),
     inherit.aes = FALSE,
     size = 3, alpha = 0.1
   ) +
   geom_segment(aes(x = .9, xend = 6, y = .9, yend = 6), linetype = 2, colour = 'gray77') +
-  geom_line()
-# Agh. It does look like it over-predicts for low sizes. Ugh.
-# Oh well.
-
+  geom_line(aes(colour = trt, linetype = model)) +
+  scale_colour_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(~ Year)
+# That 2020 fit looks bad... maybe it's a plot-variance effect?
+# Yeesh.
 
 # ------------------------------------------------
 # Construct kernels
 
-### Some things I'll need 
-
-# Distribution of year-fixed effects in year model
-s_s_fix_year_terms = fixef(s_s_fix)$cond %>%
-  (function(x) x[grepl('Year', names(x))]) %>%
-  (function(x) c(0, x))
-
 # Residual variance in growth models
-grow.sd = summary(g_ran)$sigma
+grow.sd = summary(g_s_ty)$sigma
 
 # Get a scaffold
-kernel.scaffold = expand.grid(
+grow.surv.kernel = expand.grid(
   size.t = (5:60)/10,
-  size.tp1 = (5:60)/10
+  size.tp1 = (5:60)/10,
+  trt = c('control', 'drought', 'irrigated')
 )
 
-nrow(kernel.scaffold)
-
-kernel.surv = kernel.scaffold %>%
-  mutate(Year = factor(2017)) %>%
+grow.surv.kernel = grow.surv.kernel %>%
+  # Predicted survival
   mutate(
-    linpred = predict(
+    pred.surv = predict(
       newdata = .,
-      object = s_s_fix, type = 'link',
+      object = s_s, type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
-    ),
-    linpred = linpred + mean(s_s_fix_year_terms),
-    pred.surv = 1 / (1+exp(-linpred))
+    )
   ) %>%
-  select(-c(linpred, Year))
-
-head(kernel.surv)
-
-kernel.grow = kernel.scaffold %>%
+  # Predicted growth
   mutate(
-    pred.mean = predict(
+    pred.grow.mean = predict(
       newdata = .,
-      object = g_ran, type = 'response',
+      object = g_s_ty, type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
-    ),
-    p.grow.tp1 = 0.1 * dnorm(size.tp1, mean = pred.mean, sd = grow.sd)
-  )
+    )
+  ) %>%
+  # Predicted distribution of sizes in next time step
+  mutate(p.grow.size.tp1 = 0.1 * dnorm(size.tp1, mean = pred.grow.mean, sd = grow.sd)) %>%
+  # Combine all together to get overall size distribution in next time step
+  mutate(p.size.tp1 = pred.surv * p.grow.size.tp1)
 
-head(kernel.grow)
-
-kernel.sg = merge(x = kernel.surv, y = kernel.grow, by = c('size.t', 'size.tp1')) %>%
-  mutate(p.size.tp1 = pred.surv * p.grow.tp1)
-
-ggplot(kernel.sg, aes(x = size.t, y = size.tp1)) +
+ggplot(grow.surv.kernel, aes(x = size.t, y = size.tp1)) +
   geom_tile(aes(fill = p.size.tp1)) +
-  scale_y_reverse()
+  scale_y_reverse() +
+  facet_wrap(~ trt)
+# Neat
 
 # write.csv(
-#   kernel.sg,
+#   grow.surv.kernel,
 #   file = '03_construct_kernels/out/test_survgrow_kernel.csv',
 #   row.names = FALSE
 # )
