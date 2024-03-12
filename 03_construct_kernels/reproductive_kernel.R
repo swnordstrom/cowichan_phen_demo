@@ -214,7 +214,9 @@ flow.mod.forms = c(
   'flowering ~ (cur.size | Year)',
   'flowering ~ cur.size + trt +  (1 | Year)',
   'flowering ~ cur.size * trt +  (1 | Year)',
-  'flowering ~ trt +  (cur.size | Year)'
+  'flowering ~ trt +  (cur.size | Year)', # adding trt-year interaction causes singularity
+  'flowering ~ cur.size + trt +  (1 | Year) + (1 | Year:trt)',
+  'flowering ~ cur.size * trt +  (1 | Year) + (1 | Year:trt)'
 ) %>%
   paste('+ (1 | Plot / plantid)')
 
@@ -237,6 +239,7 @@ data.frame(
 ) %>%
   mutate(daic = round(AIC - min(AIC), 2))
 # Of these models, best has size-treatment interaction
+# *and* a year-treatment effect
 
 # Best fixed effects model:
 # f_sy_ty_st = glmer(
@@ -246,14 +249,22 @@ data.frame(
 #   control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6)) 
 # )
 
-f_st_y = glmer(
-  formula = flowering ~ cur.size * trt +  (1 | Year) + (1 | Plot / plantid),
+# f_st_y = glmer(
+#   formula = flowering ~ cur.size * trt +  (1 | Year) + (1 | Plot / plantid),
+#   family = 'binomial',
+#   data = demo.for.flowering,
+#   control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6)) 
+# )
+
+f_st_ty = glmer(
+  formula = flowering ~ cur.size * trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
   family = 'binomial',
   data = demo.for.flowering,
   control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6)) 
 )
 
-summary(f_st_y)
+summary(f_st_ty)
+# year-treatment effect is pretty small
 
 # Try to plot results... this will be very funny.
 
@@ -266,7 +277,7 @@ expand.grid(
 ) %>%
   mutate(
     pred = predict(
-      f_st_y,
+      f_st_ty,
       newdata = ., type = 'response', 
       re.form = ~ (1 | Year), allow.new.levels = TRUE
     )
@@ -276,10 +287,9 @@ expand.grid(
   scale_colour_manual(values = c('black', 'red', 'blue')) +
   facet_wrap(~ Year)
 
-# Jeez. That's not pretty.
-# Seems like in most (but not all) years drought plants are less likely to flower.
-
-# Will take some thought to think about how to get annual variation...
+# Interesting
+# Looks like there is a slightly higher probability of flowering for small plants in drought?
+# offset by less flowering for other plants though...
 
 #-------------------------------------------------------------------
 # Fit models for number of umbels per plant
@@ -345,13 +355,34 @@ n_st_y = glmmTMB(
   data = demo.for.umbel.counts
 )
 
-AIC(n_s_y, n_s_t_y, n_st_y) %>% mutate(daic = round(AIC - min(AIC), 2))
+n_s_ty = glmmTMB(
+  formula = No.umbels ~ cur.size + trt +  (1 | Year) + (1 | trt:Year) + (1 | Plot / plantid),
+  family = 'truncated_poisson',
+  data = demo.for.umbel.counts
+)
+
+n_st_ty = glmmTMB(
+  formula = No.umbels ~ cur.size * trt +  (1 | Year) + (1 | trt:Year) + (1 | Plot / plantid),
+  family = 'truncated_poisson',
+  data = demo.for.umbel.counts
+)
+
+AIC(n_s_y, n_s_t_y, n_st_y, n_s_ty, n_st_ty) %>% mutate(daic = round(AIC - min(AIC), 2))
 # Looks like a treatment-year effect
 
 # Final model includes: size and treatment-year effects.
-summary(n_s_y)
-# lmao only one of the year-treatment terms is significant and it's only
-# marginal...
+# summary(n_s_y)
+# # lmao only one of the year-treatment terms is significant and it's only
+# # marginal...
+summary(n_s_ty)
+# positive effects of both treatments? on average at least
+ranef(n_s_ty)$cond$`trt:Year` %>%
+  mutate(param = row.names(.)) %>%
+  separate(param, sep = ':', into = c('trt', 'Year')) %>%
+  rename(estimate = `(Intercept)`) %>%
+  ggplot(aes(x = Year, y = estimate, group = trt, colour = trt)) +
+  geom_line() +
+  scale_colour_manual(values = c('black', 'red', 'blue'))
 
 expand.grid(
   Year = factor(2018:2023),
@@ -360,7 +391,7 @@ expand.grid(
 ) %>%
   mutate(
     pred = predict(
-      n_s_y,
+      n_s_ty,
       newdata = ., type = 'response', 
       re.form = ~ 0, allow.new.levels = TRUE
     )
@@ -376,10 +407,7 @@ expand.grid(
   facet_wrap(~ Year) +
   theme(legend.position = 'none')
 
-# Lmao no consistency in the rank ordering.
-# Come on man.
-# And 12 umbels? Come on man.
-# Eight umbels for that one plant in 2018... what the heck man.
+# 
 
 
 #-------------------------------------------------------------------
@@ -436,7 +464,10 @@ fate.mod.forms = c(
   'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + trt',
   'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * Year + trt',
   'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + Year',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + cur.size * Year'
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + Year * trt',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * Year + Year * trt',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + cur.size * Year',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + cur.size * Year + Year * trt'
 ) %>%
   paste('+ (1 | Plot)')
 
@@ -460,16 +491,16 @@ data.frame(
   mutate(daic = round(aic - min(aic), 2)) %>%
   arrange(daic)
 
-# Phew! Nice simple model.
+# Best model here has size-treatment and year-size
 
 # Now test for phen effects.
 
 fate.phen.mod.forms = c(
-  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + centered.phen',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + centered.phen * trt',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + centered.phen * Year',
-  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size + Year + centered.phen * Year + trt * centered.phen'
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + trt * Year',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + trt * Year + centered.phen',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + trt * Year + centered.phen * trt',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + trt * Year + centered.phen * Year',
+  'cbind(n.succ.umbels, n.lost.umbels) ~ n.phen.umbels + cur.size * trt + trt * Year + centered.phen * Year + trt * centered.phen'
 ) %>%
   paste('+ (1 | Plot)')
 
@@ -492,58 +523,83 @@ data.frame(
 ) %>%
   mutate(daic = round(aic - min(aic), 2)) %>%
   arrange(daic)
-# No strong evidence of a treatment effect here either
-# But there is a year-varying effect of phenology
+# Best model by far has year- and treatment-varying effects of phenology
 
-u_n_s_y_py = glmer(
+u_n_st_yt_py_tp = glmer(
   formula = cbind(n.succ.umbels, n.lost.umbels) ~ (1 | Plot) +
-    n.phen.umbels + cur.size + Year + Year * centered.phen,
+    n.phen.umbels + cur.size * trt + trt * Year + Year * centered.phen + trt * centered.phen,
   family = 'binomial',
   data = umbel.fate,
   control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
 )
 
-summary(u_n_s_y_py)
+u_n_st_yt_py = glmer(
+  formula = cbind(n.succ.umbels, n.lost.umbels) ~ (1 | Plot) +
+    n.phen.umbels + cur.size * trt + trt * Year + Year * centered.phen,
+  family = 'binomial',
+  data = umbel.fate,
+  control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
+)
+
+summary(u_n_st_yt_py_ty)
+# lots going on in here...
 
 expand.grid(
   cur.size = 3.7,
   Year = factor(2021:2023),
+  trt = c('control', 'drought', 'irrigated'),
   centered.phen = -30:30,
-  n.umbels = 1
+  n.phen.umbels = 1
 ) %>%
   mutate(
     pred = predict(
-      u_s_y_py,
+      u_n_st_yt_py_tp,
+      newdata = ., type = 'response',
+      re.form = ~ 0, allow.new.levels = TRUE
+    ),
+    pred2 = predict(
+      u_n_st_yt_py,
       newdata = ., type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
     )
   ) %>%
-  ggplot(aes(x = centered.phen, y = pred)) +
-  geom_line() +
+  pivot_longer(c(pred, pred2), names_to = 'model', values_to = 'estimate') %>%
+  ggplot(aes(x = centered.phen, y = estimate, colour = trt)) +
+  geom_point(
+    data = umbel.fate,
+    aes(x = centered.phen, y = (n.succ.umbels/n.phen.umbels), colour = trt),
+    inherit.aes = FALSE,
+    size = 3, alpha = 0.1
+  ) +
+  geom_line(aes(linetype = model)) +
   scale_colour_manual(values = c('black', 'red', 'blue')) +
-  facet_wrap(~ Year)
+  facet_wrap(trt ~ Year)
+# I think the more complicated model is okay here
 
-# Similar to prior model result (with year-varying slope)
+# Now this is interesting...
+# Drought plants *much* more likely to have umbel death in 2021,
+# phen effects in drought are less severe in 2022
+# and opposite trend in 2023?
 
-# What about the effect of size?
-expand.grid(
-  cur.size = (18:56)/10,
-  Year = factor(2021:2023),
-  centered.phen = 0
-) %>%
-  mutate(
-    pred = predict(
-      u_s_y_py,
-      newdata = ., type = 'response',
-      re.form = ~ 0, allow.new.levels = TRUE
-    )
-  ) %>%
-  ggplot(aes(x = cur.size, y = pred)) +
-  geom_line() +
-  scale_colour_manual(values = c('black', 'red', 'blue')) +
-  facet_wrap(~ Year)
-# Considerable effect of size here!
-# Smaller plants much more likely to have umbel death.
+# # What about the effect of size?
+# expand.grid(
+#   cur.size = (18:56)/10,
+#   Year = factor(2021:2023),
+#   centered.phen = 0
+# ) %>%
+#   mutate(
+#     pred = predict(
+#       u_s_y_py,
+#       newdata = ., type = 'response',
+#       re.form = ~ 0, allow.new.levels = TRUE
+#     )
+#   ) %>%
+#   ggplot(aes(x = cur.size, y = pred)) +
+#   geom_line() +
+#   scale_colour_manual(values = c('black', 'red', 'blue')) +
+#   facet_wrap(~ Year)
+# # Considerable effect of size here!
+# # Smaller plants much more likely to have umbel death.
 
 # (Note: did not test for phen-size interaction)
 # (That's too much stuff!)
@@ -555,7 +611,7 @@ expand.grid(
 # Singularity issue when trying random effect for plant within plot
 # Also doing only fixed effects models here (too few years)
 
-# Test fir effect if size
+# Test for effect if size
 s_0 = glmer.nb(
   formula = no.seeds ~ (1 | Plot) + Year,
   data = seed.phen.demo
@@ -576,7 +632,10 @@ seed.mod.forms = c(
   'no.seeds ~ cur.size + Year + trt',
   'no.seeds ~ cur.size * Year + trt',
   'no.seeds ~ cur.size * trt + Year',
-  'no.seeds ~ cur.size * trt + cur.size * Year'
+  'no.seeds ~ cur.size + Year * trt',
+  'no.seeds ~ cur.size * Year + Year * trt',
+  'no.seeds ~ cur.size * trt + cur.size * Year',
+  'no.seeds ~ cur.size * trt + cur.size * Year +  Year * trt'
 ) %>%
   paste('+ (1 | Plot)')
 
@@ -602,17 +661,24 @@ data.frame(
 
 # Of course, the complicated model is the best-supported one
 
+s_st_sy_ty = glmer.nb(
+  no.seeds ~ cur.size * trt + cur.size * Year + Year * trt + (1 | Plot),
+  data = seed.phen.demo %>% mutate(cur.size = cur.size - mean(cur.size)),
+  control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
+)
+
 s_st_sy = glmer.nb(
   no.seeds ~ cur.size * trt + cur.size * Year + (1 | Plot),
   data = seed.phen.demo %>% mutate(cur.size = cur.size - mean(cur.size)),
   control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
 )
 
-s_st_y = glmer.nb(
-  no.seeds ~ cur.size * trt + Year + (1 | Plot),
+s_st_ty = glmer.nb(
+  no.seeds ~ cur.size * trt + trt * Year + (1 | Plot),
   data = seed.phen.demo %>% mutate(cur.size = cur.size - mean(cur.size)),
   control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
 )
+
 
 # Cool...
 expand.grid(
@@ -628,15 +694,19 @@ expand.grid(
   # ) %>%
   mutate(
     seed3 = predict(
-      object = s_st_sy, newdata = ., type = 'response',
+      object = s_st_sy_ty, newdata = ., type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE,
     ),
     seed2 = predict(
-      object = s_st_y, newdata = ., type = 'response',
+      object = s_st_sy, newdata = ., type = 'response',
+      re.form = ~ 0, allow.new.levels = TRUE,
+    ),
+    seed1 = predict(
+      object = s_st_ty, newdata = ., type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE,
     )
   ) %>%
-  pivot_longer(c(seed2, seed3), names_to = 'model', values_to = 'seed') %>%
+  pivot_longer(c(seed1, seed2, seed3), names_to = 'model', values_to = 'seed') %>%
   mutate(cur.size = cur.size + mean(seed.phen.demo$cur.size)) %>%
   ggplot(aes(x = cur.size, y = seed, colour = trt)) +
   geom_point(
@@ -650,7 +720,7 @@ expand.grid(
   facet_wrap(trt ~ Year) +
   theme(legend.position = 'bottom')
 # That 2021-control curve is a lot of extrapolation...
-# I default to the model without year-varying size effects
+# seed2 looks like better fit... but that's based on three datapoints...
 
 seed.phen.mod.forms = c(
   'no.seeds ~ cur.size * trt + Year + (1 | Plot)',
@@ -750,7 +820,12 @@ r_t_y = lmer(
   data = recruits
 )
 
-AIC(r_t_y, r_ranef)
+r_ty = lmer(
+  log(Leaf.length) ~ trt + (1 | Year) + (1 | Year:trt) + (1 | Plot),
+  data = recruits
+)
+
+AIC(r_ty, r_t_y, r_ranef)
 # No treatment effect.
 
 summary(r_ranef)
