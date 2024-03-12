@@ -541,7 +541,7 @@ u_n_st_yt_py = glmer(
   control = glmerControl(optimizer = 'bobyqa', optCtrl = list(maxfun = 1e6))
 )
 
-summary(u_n_st_yt_py_ty)
+summary(u_n_st_yt_py_tp)
 # lots going on in here...
 
 expand.grid(
@@ -720,16 +720,17 @@ expand.grid(
   facet_wrap(trt ~ Year) +
   theme(legend.position = 'bottom')
 # That 2021-control curve is a lot of extrapolation...
-# seed2 looks like better fit... but that's based on three datapoints...
+# seed2 is maybe a better fit for drought but it's so little data
+# I really prefer the `seed1` model
 
 seed.phen.mod.forms = c(
-  'no.seeds ~ cur.size * trt + Year + (1 | Plot)',
-  'no.seeds ~ cur.size * trt + Year + centered.phen + (1 | Plot)',
-  'no.seeds ~ cur.size * trt + Year + centered.phen * trt + (1 | Plot)',
-  'no.seeds ~ cur.size * trt + centered.phen * Year + (1 | Plot)',
-  'no.seeds ~ cur.size * trt + centered.phen * trt + centered.phen * Year + (1 | Plot)',
-  'no.seeds ~ cur.size * trt + Year + poly(centered.phen, 2) + (1 | Plot)',
-  'no.seeds ~ cur.size * trt + Year + poly(centered.phen, 2) * trt + (1 | Plot)'# ,
+  'no.seeds ~ cur.size * trt + trt * Year + (1 | Plot)',
+  'no.seeds ~ cur.size * trt + trt * Year + centered.phen + (1 | Plot)',
+  'no.seeds ~ cur.size * trt + trt * Year + centered.phen * trt + (1 | Plot)',
+  'no.seeds ~ cur.size * trt + trt * Year + centered.phen * Year + (1 | Plot)',
+  'no.seeds ~ cur.size * trt + trt * Year + centered.phen * trt + centered.phen * Year + (1 | Plot)',
+  'no.seeds ~ cur.size * trt + trt * Year + poly(centered.phen, 2) + (1 | Plot)',
+  'no.seeds ~ cur.size * trt + trt * Year + poly(centered.phen, 2) * trt + (1 | Plot)'# ,
   # 'no.seeds ~ cur.size * trt + poly(centered.phen, 2) * Year + (1 | Plot)' # does not converge
 )
 
@@ -756,9 +757,10 @@ data.frame(
   mutate(daic = round(aic - min(aic), 2)) %>%
   arrange(daic)
 # best model here has a linear effect of phen (nice)
+# I'd consider the phen-treatment effect to be weakly supported only
 
-s_st_y_p = glmer.nb(
-  no.seeds ~ cur.size * trt + Year + centered.phen + (1 | Plot),
+s_st_ty_p = glmer.nb(
+  no.seeds ~ cur.size * trt + trt * Year + centered.phen + (1 | Plot),
   data = seed.phen.demo %>% 
     mutate(
       cur.size = cur.size - mean(cur.size),
@@ -775,7 +777,7 @@ expand.grid(
 ) %>%
   mutate(
     seed = predict(
-      object = s_st_y_p, newdata = ., type = 'response',
+      object = s_st_ty_p, newdata = ., type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE, 
     )
   ) %>%
@@ -840,89 +842,191 @@ summary(r_ranef)$sigma
 # Construct a reproductive kernel
 # Start with size only (no phen effects yet)
 
-# First, get year-coefficient effects for appropriate models
-
-# For umbel fate
-umbel.fate.year.terms = with(
-  data = data.frame(t(fixef(u_n_s_y_py))),
-  data.frame(
-    intercept = c(0, Year2022, Year2023),
-    slope = c(0, Year2022.centered.phen, Year2023.centered.phen)
-  )
-)
-
-# For seed set
-seed.set.year.terms = with(
-  data = data.frame(t(fixef(s_st_y_p))),
-  data.frame(intercept = c(0, Year2022, Year2023))
-)
+# # First, get year-coefficient effects for appropriate models
+# # (This may not be necessary... might be easier to get estimates on the linear
+# # scale?)
+# 
+# # For umbel fate, mod is u_n_st_yt_py_tp
+# umbel.fate.year.terms = with(
+#   data = data.frame(t(fixef(u_n_st_yt_py_tp))),
+#   data.frame(
+#     intercept = c(0, Year2022, Year2023),
+#     phen.slope = c(0, Year2022.centered.phen, Year2023.centered.phen),
+#     drought.effect = trtdrought + c(0, trtdrought.Year2022, trtdrought.Year2023),
+#     irrigat.effect = trtirrigated + c(0, trtirrigated.Year2022, trtirrigated.Year2023)
+#   )
+# )
+# 
+# # Plot to see temporal variation in effects:
+# umbel.fate.year.terms %>%
+#   mutate(Year = 2021:2023) %>%
+#   pivot_longer(-Year, names_to = 'term', values_to = 'estimate') %>%
+#   ggplot(aes(x = Year, y = estimate, group = term, colour = term)) +
+#   geom_line() +
+#   geom_point(size = 3)
+# # wow - highly variable effects of drought...
+# 
+# # For seed set, mod is s_st_ty_p
+# # code below is probably handling intercept effects the wrong way - above
+# # looks closer to correct (but also maybe not necessary?)
+# seed.set.year.terms = with(
+#   data = data.frame(t(fixef(s_st_ty_p))),
+#   data.frame(
+#     intercept = c(0, Year2022, Year2023),
+#     drought.slope = c(trtdrought, trtdrought.Year2022, trtdrought.Year2023),
+#     irrigat.slope = c(trtirrigated, trtirrigated.Year2022, trtirrigated.Year2023)
+#   )
+# )
 
 # Next, get residual mean and s.d. in size of new recruits
 recruit.mu = fixef(r_ranef)[[1]]
 recruit.sigma = summary(r_ranef)$sigma
 
+# reprod.kernel = expand.grid(
+#   trt = c('control', 'drought', 'irrigated'),
+#   cur.size = (5:60)/10,
+#   nex.size = (5:60)/10
+# ) %>%
+#   # Other covariates needed
+#   mutate(
+#     centered.phen = 0,
+#     Year = factor(2021)
+#   ) %>%
+#   # Model predictions
+#   mutate(
+#     # Probability of flowering
+#     p.flower = predict(
+#       f_st_y,
+#       newdata = ., type = 'response',
+#       re.form = ~ 0, allow.new.levels = TRUE
+#     ),
+#     # Number of umbels
+#     n.phen.umbels = predict(
+#       n_s_y,
+#       newdata = ., type = 'response',
+#       re.form = ~ 0, allow.new.levels = TRUE
+#     )
+#   ) %>%
+#   mutate(
+#     # Proportion of umbels surviving
+#     p.survive = predict(
+#       u_n_s_y_py,
+#       newdata = ., type = 'link',
+#       re.form = ~ 0, allow.new.levels = TRUE
+#     ),
+#     p.survive = p.survive + mean(umbel.fate.year.terms$intercept) +
+#       mean(umbel.fate.year.terms$slope) * cur.size,
+#     p.survive = 1 / (1 + exp(-p.survive))
+#   ) %>%
+#   rename(n.umbel = n.phen.umbels) %>%
+#   # Number of seeds per umbel
+#   # first need to convert size
+#   mutate(cur.size = cur.size - mean(seed.phen.demo$cur.size)) %>%
+#   mutate(
+#     n.seeds = predict(
+#       s_st_y_p,
+#       newdata = ., type = 'link',
+#       re.form = ~ 0, allow.new.levels = TRUE
+#     ),
+#     n.seeds = n.seeds + mean(seed.set.year.terms$intercept),
+#     n.seeds = exp(n.seeds),
+#     # fix size
+#     cur.size = cur.size + mean(seed.phen.demo$cur.size),
+#   )
+
+# Here: a way to get the mean effects across years
+# For the two models with year-fixed effects, we get the mean effect by
+# generating predictions for each year on the linear scale, then average them
+# (linear averaging)
+# We'll maybe want something else to get the variances...
+
 reprod.kernel = expand.grid(
+  # Get combinations of z', z for each treatment and year
   trt = c('control', 'drought', 'irrigated'),
   cur.size = (5:60)/10,
-  nex.size = (5:60)/10
+  nex.size = (5:60)/10,
+  Year = factor(2021:2023),
+  # p.germ = c(.001, .005, .01, .05, .1, .5, 1)
+  p.germ = c(.001, .01, .1, 1)
 ) %>%
-  # Other covariates needed
+  # Other covariates needed for estimating from models
   mutate(
     centered.phen = 0,
-    Year = factor(2021)
   ) %>%
   # Model predictions
+  # We'll estimate probability of flowering and umbel phenology on the response
+  # scale
+  # (although for getting inter-annual estimates we may want the linear scale)
   mutate(
     # Probability of flowering
     p.flower = predict(
-      f_st_y,
+      f_st_ty,
       newdata = ., type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
     ),
     # Number of umbels
+    # (using the name n.phen.umbels because that's the predictor used in the the
+    # umbel survival model)
     n.phen.umbels = predict(
-      n_s_y,
+      n_s_ty,
       newdata = ., type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
     )
   ) %>%
+  # Get linear-scale probability of survival for each year 
   mutate(
-    # Proportion of umbels surviving
-    p.survive = predict(
-      u_n_s_y_py,
+    lin.p.survive = predict(
+      u_n_st_yt_py,
       newdata = ., type = 'link',
       re.form = ~ 0, allow.new.levels = TRUE
-    ),
-    p.survive = p.survive + mean(umbel.fate.year.terms$intercept) +
-      mean(umbel.fate.year.terms$slope) * cur.size,
-    p.survive = 1 / (1 + exp(-p.survive))
+    )
   ) %>%
-  rename(n.umbel = n.phen.umbels) %>%
   # Number of seeds per umbel
   # first need to convert size
   mutate(cur.size = cur.size - mean(seed.phen.demo$cur.size)) %>%
   mutate(
-    n.seeds = predict(
-      s_st_y_p,
+    lin.n.seeds = predict(
+      s_st_ty_p,
       newdata = ., type = 'link',
       re.form = ~ 0, allow.new.levels = TRUE
     ),
-    n.seeds = n.seeds + mean(seed.set.year.terms$intercept),
-    n.seeds = exp(n.seeds),
-    # fix size
+    # Un-center the size column
     cur.size = cur.size + mean(seed.phen.demo$cur.size),
+  ) %>%
+  # Rename the numner of umbels column
+  rename(n.umbels = n.phen.umbels) %>%
+  # Get means of each parameter
+  # NOTE: because year is a random effect in the other models, but we generate
+  # predictions without year random effects specialized, the estimates are the
+  # same across years, so averaging will just give us the same mean estimate
+  select(-Year) %>%
+  group_by(trt, cur.size, nex.size, centered.phen, p.germ) %>%
+  summarise(across(everything(), mean)) %>%
+  ungroup() %>%
+  # Convert to the prediction scales
+  mutate(
+    p.survive = 1 / (1 + exp(-lin.p.survive)),
+    n.seeds = exp(lin.n.seeds)
+  ) %>%
+  # Remove columns for linear scale
+  select(-c(lin.p.survive, lin.n.seeds)) %>%
+  # Get number of seeds produced
+  mutate(total.seeds = p.flower * n.umbels * p.survive * n.seeds) %>%
+  # Estimate number of germinating seeds (assume this is independent of phen)
+  mutate(establishing.seeds = p.germ * total.seeds) %>%
+  # Estimate size distribution of seeds
+  mutate(
+    p.nex.size = 0.1 * dnorm(x = nex.size, mean = recruit.mu, sd = recruit.sigma),
+    n.nex.size = p.nex.size * establishing.seeds
   )
 
 head(reprod.kernel)
-
-reprod.kernel = reprod.kernel %>%
-  mutate(
-    cumulative.seed.est = p.flower * n.umbel * p.survive * n.seeds
-  )
+nrow(reprod.kernel)
 
 reprod.kernel %>%
+  filter(p.germ %in% 1) %>%
   pivot_longer(
-    cols = c(p.flower, n.umbel, p.survive, n.seeds, cumulative.seed.est),
+    cols = c(p.flower, n.umbels, p.survive, n.seeds, total.seeds),
     names_to = 'estim.type',
     values_to = 'estimate'
   ) %>%
@@ -933,21 +1037,12 @@ reprod.kernel %>%
   facet_wrap(~ estim.type, scale = 'free_y')
 # Cool
 
-reprod.kernel = reprod.kernel %>%
-  # IMPORTANT: need that window size here (0.1 in this case) to get probabilities from pdf
-  mutate(p.nex.size = 0.1 * dnorm(x = nex.size, mean = recruit.mu, sd = recruit.sigma)) %>%
-  mutate(
-    # Assume germination probability is 1
-    p.germ = 1,
-    mean.next.size = cumulative.seed.est * p.germ * p.nex.size
-    )
-# p.nex.size shouldn't be greater than 1...
-
+# Visualization of kernels here... not helpful
 reprod.kernel %>%
   ggplot(aes(x = cur.size, y = nex.size)) +
-  geom_tile(aes(fill = mean.next.size)) +
+  geom_tile(aes(fill = n.nex.size)) +
   scale_y_reverse() +
-  facet_wrap(~ trt)
+  facet_wrap(trt ~ p.germ)
 
 # cool
 
