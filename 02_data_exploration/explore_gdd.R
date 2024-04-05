@@ -6,6 +6,7 @@
 library(ggplot2)
 library(dplyr)
 library(tidyr)
+library(lme4)
 
 clim = read.csv('00_raw_data/climate/cgop_weather_daily_interp.csv') %>%
   separate(Date, into = c('Year', 'Month', 'Day'), remove = FALSE, sep = '-') %>%
@@ -200,3 +201,95 @@ jfmamj.gdd %>%
   facet_wrap(~ thresh, scales = 'free_y') +
   theme(legend.position = 'bottom')
 # Could maybe be useful...
+
+
+# Can I try fitting a model here?
+# lol what would the response be...?
+
+##### Moisture?
+
+jfma %>%
+  arrange(Year, jday) %>%
+  group_by(Year = factor(Year)) %>%
+  mutate(cumul.prc = cumsum(total_precip_mm)) %>%
+  ggplot(aes(x = jday, y = cumul.prc, group = Year)) +
+  geom_line(aes(colour = Year))
+
+jfmamj.pcp =  jfma %>%
+  arrange(Year, jday) %>%
+  group_by(Year = factor(Year)) %>%
+  mutate(
+    cumul.prc = cumsum(total_precip_mm),
+    Month = factor(Month)
+  ) 
+
+jfmamj.pcp %>%
+  # could filter out jan - apr for flowering phen
+  arrange(Year, desc(jday)) %>%
+  distinct(Year, Month, .keep_all = TRUE) %>%
+  ggplot(aes(x = Year)) +
+  geom_point(aes(y = cumul.prc, colour = Month), size = 3) +
+  geom_line(aes(y = cumul.prc, colour = Month, group = Month)) +
+  labs(x = 'Year', y = 'Cumulative precipitation (mm)') +
+  theme(legend.position = 'bottom')
+
+ggsave('02_data_exploration/climate/cpc_compare.png', width = 8, height = 5)
+
+# What about matching cumulative precipitation with date of flowering?
+
+phen.pcp = phen %>%
+  group_by(year, plot, init.doy) %>%
+  summarise(n.init = n()) %>%
+  merge(
+    x = jfmamj.pcp %>%
+      select(-c(total_precip_mm, minTemp_C, maxTemp_C, AveTemp_C)), 
+    y = .,
+    by.x = c('Year', 'jday'), by.y = c('year', 'init.doy')
+  ) %>%
+  merge(read.csv('00_raw_data/plot_treatments.csv')) %>%
+  ungroup()
+
+head(phen.pcp)
+# neat
+
+jfmamj.pcp %>%
+  filter(Year %in% 2021:2023, jday < max(phen.pcp$jday)) %>%
+  mutate(Month = factor(Month), Year = factor(Year)) %>%
+  ggplot(aes(x = jday, y = cumul.prc, colour = Year)) +
+  geom_point(
+    data = phen.pcp %>% mutate(Year = factor(Year)) %>% uncount(n.init),
+    alpha = 0.05, shape = 21, size = 3
+  ) +
+  geom_line(aes(group = Year)) +
+  theme(legend.position = 'bottom')
+
+# Well, this roughly matches the inter-annual phen ordering
+# 2022 earliest, then 2021, then 2023 (although 2021 and 2023 are similar in
+# precip and phen)
+# interesting that the *duration* of flowering in 2022 is wider and it is the
+# year where the flowering period is the wettest, i.e., it continues raining
+# after the first flowering and flowers keep coming out, whereas in 2021 and
+# 2023 it's pretty dry after hte first flower and the flowering window is
+# shorter
+# Could the irrigation treatments show the same pattern?
+# (relative to the control and even the drought...)
+
+# Woudl this look better with a text block with the number of flowers?
+
+jfmamj.pcp %>%
+  filter(Year %in% 2021:2023, jday < max(phen.pcp$jday)) %>%
+  mutate(Month = factor(Month), Year = factor(Year)) %>%
+  ggplot(aes(x = jday, y = cumul.prc, colour = Year)) +
+  geom_line(aes(group = Year)) +
+  geom_label(
+    data = phen.pcp %>% 
+      mutate(Year = factor(Year)) %>%
+      group_by(Year, jday, cumul.prc) %>%
+      summarise(n.init = sum(n.init)),
+    aes(label = n.init),
+    alpha = 0.05, size = 3
+  ) +
+  labs(x = 'Day of year', y = 'Cumulative precipitation (mm)') +
+  theme(legend.position = 'bottom')
+# oh lol there are some early plants in 2023 and a late plant in 2021 but they
+# get washed out at low alpha
