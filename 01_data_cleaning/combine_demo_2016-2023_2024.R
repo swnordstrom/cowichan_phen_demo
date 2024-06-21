@@ -184,8 +184,7 @@ d.2024 %>% filter(is.na(No.leaves > 0))
 d.2024 %>% filter(!grepl('NP', demo.note), !No.leaves)
 # hmm... two cases here, one of which is for a known-living plant
 
-d.2024 = d.2024 %>%
-  mutate(obs.alive = !grepl('NP', demo.note) | grepl('3480\\_2', plantid))
+d.2024 = d.2024 %>% mutate(obs.alive = !grepl('NP', demo.note) | grepl('3480\\_2', plantid))
 
 d.2024 %>% group_by(obs.alive) %>% summarise(n = n())
 # dang... 222 plants not observed alive this year.
@@ -194,5 +193,198 @@ d.2024 %>% group_by(obs.alive) %>% summarise(n = n())
 # In 2024, we can say true, but otherwise, can't say for certain.
 # Probably a good idea to leave this NA for unsen plants
 # But we can go back and edit 2023 records
+# I guess to do this we want to combine the data frames now?
 
+demo.all = rbind(
+  d.1623 %>%
+    select(
+      plantid, Plot, trt, Year, surv, obs.alive, No.leaves, Leaf.length,
+      No.umbels, edited, proc.note, demo.note
+  ),
+  d.2024 %>%
+    mutate(
+      obs.alive = !grepl('NP', demo.note),
+      surv = NA
+    ) %>%
+    select(
+      plantid, Plot, trt, Year, surv, obs.alive, No.leaves, Leaf.length,
+      No.umbels, edited, proc.note, demo.note
+    )
+)
 
+nrow(demo.all)
+
+# Test code to make sure we're doing the survival imputation correctly
+# demo.all %>%
+#   filter(Year %in% 2023:2024) %>%
+#   mutate(tagplotcoord = gsub('b', '', plantid)) %>%
+#   group_by(tagplotcoord) %>%
+#   # this throws an error...
+#   # mutate(
+#   #   new.surv = case_when(
+#   #     n() < 2 ~ 'one.record',
+#   #     diff(obs.alive) > 0 ~ 'impute',
+#   #     diff(obs.alive) <= 0 ~ 'stay.same',
+#   #     .default = NA
+#   #   )
+#   # )
+#   mutate(rr = n()) %>%
+#   ungroup() %>%
+#   rbind(
+#     . %>% filter(rr < 2) %>% mutate(surv2 = surv),
+#     . %>% 
+#       filter(rr > 1) %>%
+#       group_by(tagplotcoord) %>%
+#       mutate(surv2 = diff(obs.alive) > 0) %>%
+#       ungroup()
+#   )
+
+rbind(
+  demo.all %>% 
+    filter(Year %in% 2023:2024) %>%
+    mutate(tagplotcoord = gsub('b', '', plantid)) %>%
+    group_by(tagplotcoord) %>%
+    filter(n() < 2) %>%
+    ungroup() %>%
+    mutate(x = FALSE),
+  demo.all %>% 
+    filter(Year %in% 2023:2024) %>%
+    mutate(tagplotcoord = gsub('b', '', plantid)) %>%
+    group_by(tagplotcoord) %>%
+    filter(n() > 1) %>%
+    filter(diff(obs.alive) <= 0) %>%
+    mutate(x = FALSE) %>%
+    ungroup(),
+  demo.all %>% 
+    filter(Year %in% 2023:2024) %>%
+    mutate(tagplotcoord = gsub('b', '', plantid)) %>%
+    group_by(tagplotcoord) %>%
+    filter(n() > 1) %>%
+    filter(diff(obs.alive) > 0) %>%
+    mutate(x = TRUE) %>%
+    ungroup()
+)
+
+demo.all = rbind(
+  # Separate out all records from pre-2023
+  demo.all %>% filter(Year < 2023),
+  # 
+  # This is SUPER inelegant but the other things I've tried throw annoying
+  # recycling errors
+  # (each of these requires going through and reconciling 'b' plants)
+  # Case 1: only one record for the plant in these two years
+  demo.all %>% 
+    filter(Year %in% 2023:2024) %>%
+    mutate(tagplotcoord = gsub('b', '', plantid)) %>%
+    group_by(tagplotcoord) %>%
+    filter(n() < 2) %>%
+    ungroup() %>%
+    select(-tagplotcoord) %>%
+    mutate(surv = surv),
+  # Case 2: plant has records in both years and does not need correcting
+  # (does not go from not observed to observed)
+  demo.all %>% 
+    filter(Year %in% 2023:2024) %>%
+    mutate(tagplotcoord = gsub('b', '', plantid)) %>%
+    group_by(tagplotcoord) %>%
+    filter(n() > 1) %>%
+    # this is the line that tells us if we need to correct anything
+    filter(diff(obs.alive) <= 0) %>%
+    mutate(
+      plantid = ifelse(any(grepl('b', plantid)), grep('b', plantid, value = TRUE), plantid),
+      surv = surv
+    ) %>%
+    ungroup() %>%
+    select(-tagplotcoord),
+  demo.all %>% 
+    filter(Year %in% 2023:2024) %>%
+    mutate(tagplotcoord = gsub('b', '', plantid)) %>%
+    group_by(tagplotcoord) %>%
+    filter(n() > 1) %>%
+    # this is the line that tells us if we need to correct anything
+    # (obs.alive going fromm FALSE to TRUE)
+    filter(diff(obs.alive) > 0) %>%
+    mutate(
+      plantid = ifelse(any(grepl('b', plantid)), grep('b', plantid, value = TRUE), plantid),
+      # just change all of the records to TRUE
+      surv = TRUE,
+      # leave a note
+      proc.note = ifelse(
+        Year %in% 2023, 
+        paste(proc.note, 'survival imputed based on subsq. record', sep = ';'),
+        proc.note
+      )
+    ) %>%
+    ungroup() %>%
+    select(-tagplotcoord)
+) %>%
+  arrange(Plot, plantid, Year)
+
+nrow(demo.all)
+
+# Ah - let's go through now and see if there are any other survival gaps that
+# are longer than one year...
+# (In which case we'd want to add 'b' to their tags... ugh wish there was a
+# smoother way to do this.)
+
+demo.all %>%
+  # arrange(plantid, Year) %>%
+  filter(surv | obs.alive) %>%
+  group_by(plantid) %>%
+  filter(n() > 1) %>%
+  filter(any(diff(Year) > 1))
+# Oh actually I guess we're good?
+# (this data frame would be non-empty if there were corrections we needed to make)
+
+# Hmm... okay cool.
+
+# Okay I guess there's that one pair of plants that need to be combined
+
+demo.all %>% filter(grepl('fix', demo.note))
+demo.all %>% filter(grepl('3361\\_5', plantid) | grepl('5044\\_5', plantid))
+# demo.all %>% filter(grepl('3661', plantid))
+# that note should be 3361 not 3661
+# oh wow, lmao
+# 3361 was not seen in 2020-2022,
+# 5044 appeared in 2021-2024
+# so what appears to have happened is that the plant was not seen in 2020 (the
+# year with sparser sampling) and assumed dead after that, but the plant was in
+# fact 3361
+
+demo.all = rbind(
+  demo.all %>% filter(!(grepl('3361\\_5', plantid) | grepl('5044\\_5', plantid))),
+  demo.all %>%
+    filter(grepl('3361\\_5', plantid) | grepl('5044\\_5', plantid)) %>%
+    filter(!(grepl('3361\\_5', plantid) & Year > 2020)) %>%
+    mutate(
+      plantid = '3361_5_13A',
+      surv = ifelse(Year %in% 2020, TRUE, surv),
+      edited = ifelse(Year >= 2020, TRUE, edited),
+      proc.note = ifelse(Year %in% 2020, 'survival imputed based on 2021 record', proc.note),
+      proc.note = ifelse(Year > 2020, 'id changed to old tag 3361 (was 5044 which was a dupe)', proc.note)
+    )
+)
+
+nrow(demo.all)
+length(unique(demo.all))
+
+# I guess final step should be to update the surv column.
+
+demo.all = demo.all %>%
+  mutate(
+    surv = case_when(
+      Year %in% 2024 & grepl('NP\\;\\stag\\spull', demo.note) ~ FALSE,
+      Year %in% 2024 & !grepl('NP', demo.note) ~ TRUE,
+      .default = surv
+    )
+      # ifelse(Year %in% 2024 & !grepl('NP', demo.note), TRUE, surv)
+  )
+
+demo.all %>% group_by(Year, surv) %>% summarise(n = n())
+# Looks good to me (for now)
+
+write.csv(
+  demo.all,
+  na = '',  row.names = FALSE,
+  '01_data_cleaning/out/Lomatium_demo_2016-2024.csv'
+)
