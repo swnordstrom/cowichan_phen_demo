@@ -1,5 +1,5 @@
-# Script for assessing Lomatium demography data entry
-# data entered May 2024 (SN)
+# Script for assessing Lomatium data entry
+# data entered: demo May 2024, phen Jun 2024  (SN)
 # script init June 2024 (SN)
 
 # --- Setup ---
@@ -13,7 +13,7 @@ library(tidyr)
 rm(list = ls())
 
 # -----------------------------------------------------------------------------------
-# Code used to make data entry sheet
+# Code used to make demo data entry sheet
 # do not rerun
 # -----------------------------------------------------------------------------------
 # a23 = read.csv('00_raw_data/lomatium_demography/2023_Lomatium_Demography_Data.csv')
@@ -193,3 +193,39 @@ d24 %>%
   # group_by(tag.pulled) %>% summarise(n = n())
   # write.csv()
 
+# -----------------------------------------------------------------------------------
+# Code used to make phen data entry sheet
+# do not rerun
+# -----------------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------------
+# Assess phen data entry
+# -----------------------------------------------------------------------------------
+
+rm(list = ls())
+
+phen24 = read.csv('00_raw_data/lomatium_demography/2024_Lomatium_Resurveys.csv')
+
+# Look for NAs in counts
+phen24 %>% filter(if_any(starts_with('no.'), ~ is.na(.)))
+# none - good
+
+# Look for NAs in anything else
+phen24 %>% filter(if_any(everything(), ~ is.na(.)))
+# cool - none
+
+head(phen24)
+
+phen24 %>%
+  mutate(
+    all.umbels = no.buds + no.flowers + no.flp + no.seeding + no.dead,
+    liv.umbels = no.buds + no.flowers + no.flp + no.seeding
+  ) %>%
+  distinct(all.umbels)
+# Looks fine with me
+
+str(phen24)
+
+phen24 %>%
+  group_by(plot, tag, survey.date) %>%
+  filter(n() > 1)
