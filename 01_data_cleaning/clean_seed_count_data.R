@@ -142,17 +142,25 @@ proc.2023 = proc.2023 %>%
 
 # Not sure any other changes need to be made.
 
+### 2024
+
+proc.2024 = seed.counts.list[[4]]
+
+head(proc.2024)
+
+proc.2024 = proc.2024 %>%
+  mutate(plantid = paste(tag, plot, coor, sep = '_'))
+
 ######################################################################
 ##### Combining
 ######################################################################
 
 rbind(
-  proc.2021 %>% select(year, plantid, plot, tag, umble.no, no.seeds, notes),
-  proc.2022 %>% select(year, plantid, plot, tag, umble.no, no.seeds, notes),
-  proc.2023 %>% select(year, plantid, plot, tag, umble.no, no.seeds, notes)
+  proc.2021 %>% select(year, plantid, plot, tag, umbel.no = umble.no, no.seeds, notes),
+  proc.2022 %>% select(year, plantid, plot, tag, umbel.no = umble.no, no.seeds, notes),
+  proc.2023 %>% select(year, plantid, plot, tag, umbel.no = umble.no, no.seeds, notes),
+  proc.2024 %>% select(year, plantid, plot, tag, umbel.no, no.seeds, notes)
 ) %>%
-  # Rename umbel column...
-  rename(umbel.no = umble.no) %>%
   # Export
   write.csv(
     file = '01_data_cleaning/out/seed_counts_all_cleaned.csv',
