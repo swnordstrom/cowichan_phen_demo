@@ -314,13 +314,8 @@ seed %>%
   group_by(year, plantid) %>%
   summarise(n = n()) %>%
   group_by(year, n) %>%
-  summarise(n.plants = n())
-# oh interesting...
-
-# also interestingly - a lot more seed data in 2022 than 2021?
-table(seed$year)
-# huh... would be good to enter the 2023 data then I guess!
-# might be a lot of data here!
+  summarise(n.plants = n()) %>%
+  pivot_wider(names_from = n, values_from = n.plants)
 
 # Look year-by-year
 
@@ -359,7 +354,7 @@ demo.seed.2022 %>%
   group_by(plantid) %>%
   filter(any(duplicated(umbel.no))) %>%
   select(-c(year, Year, Plot, Tag)) 
-# only three cases here!
+# only two cases here!
 # and all of them have only one flowering plant! cha ching?
 
 # How many of these are listed as no flowering?
@@ -929,6 +924,14 @@ nrow(demo.seed)
 #   demo,
 #   '01_data_cleaning/out/demo_all_clean_v2.csv',
 #   row.names = FALSE
+# )
+
+# Export cleaned seed only (no need to merge it in with demo)
+# this file will only have 2021-2023 cleaned, I'll do 2024 in a different script
+# write.csv(
+#   seed,
+#   '01_data_cleaning/out/seed_reconciled_2021-2023.csv',
+#   row.names = FALSE, na = ''
 # )
 
 #######################
