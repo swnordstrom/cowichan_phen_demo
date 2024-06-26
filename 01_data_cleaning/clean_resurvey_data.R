@@ -46,6 +46,8 @@ raw.demo.list[[2]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
 # 2023: plot, tag, "coor" (coordinate)
 raw.demo.list[[3]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
 # have distinct coordinates
+raw.demo.list[[4]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
+# 3546 in plot 5... some mistake in here (oh this is the 5309 plant)
 
 # There are notes columns though. I'll take care of these on a case-by-case basis.
 
@@ -56,21 +58,25 @@ raw.demo.list[[3]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
 proc21 = raw.demo.list[[1]]
 proc22 = raw.demo.list[[2]]
 proc23 = raw.demo.list[[3]]
+proc24 = raw.demo.list[[4]]
 
 # Add unique plant identifiers ("plantid")
 proc21$plantid = with(proc21, paste0(tag, "_", plot, "_", xcoor, ycoor))
 proc22$plantid = with(proc22, paste(tag, plot, sep = "_"))
 proc23$plantid = with(proc23, paste(tag, plot, coor, sep = "_"))
+proc24$plantid = with(proc24, paste(tag, plot, coor, sep = "_"))
 
 head(proc21$plantid)
 head(proc22$plantid)
 head(proc23$plantid)
+head(proc24$plantid)
 
 # Initialize a data frame of plantids to exclude
 exclude.plantids = rbind(
   data.frame(plantid = unique(proc21$plantid)) %>% mutate(year = 2021),
   data.frame(plantid = unique(proc22$plantid)) %>% mutate(year = 2022),
-  data.frame(plantid = unique(proc23$plantid)) %>% mutate(year = 2023)
+  data.frame(plantid = unique(proc23$plantid)) %>% mutate(year = 2023),
+  data.frame(plantid = unique(proc24$plantid)) %>% mutate(year = 2024)
 ) %>%
   mutate(exclude = FALSE)
 
@@ -479,6 +485,139 @@ exclude.plantids = exclude.plantids %>%
   # exclude 3987_5 - went missing one week, came back with new stuff
   mutate(exclude = ifelse(plantid %in% '3987_5' & year %in% 2023, TRUE, exclude))
 
+### 2024
+
+# Survey periods:
+# Just set the survey date equal to the first day of each period
+# (scott has a spreadsheet with survey dates for each plot locally stored - ask
+# him for data, not put in repo)
+
+proc24 = proc24 %>%
+  mutate(
+    survey.date = as.Date(survey.date, format = '%m/%d/%y'),
+    survey.date = survey.date - as.numeric(
+      survey.date %in% as.Date(paste0('2024-', c('04-20', '04-26', '05-02', '05-09', '05-17')))
+    )
+  )
+
+unique(proc24$survey.date)
+
+# I'll do some data cleaning in here too...
+
+# Plants that had a decrease in umbel count over time
+# (many of these won't need fixing because they're dead umbels or lost plants)
+# proc24 %>% 
+#   group_by(plantid) %>%
+#   mutate(n.umbel = no.buds + no.flowers + no.flp + no.seeding + no.dead) %>% 
+#   filter(any(diff(n.umbel) < 0)) %>%
+#   print(n = nrow(.))
+  
+proc24 %>%
+  mutate(
+    # Plant 3168, plot 2: extra umbel was recorded here
+    # I think this should have been for plant 3751, which has two umbels in seed set
+    # transfer umbels over
+    # (just add buds to each date - will preserve bud date which we will use in analysis)
+    no.buds = ifelse(grepl('3168\\_2', plantid) & survey.date %in% as.Date('2024-05-01'), 0, no.buds),
+    no.buds = ifelse(grepl('3751\\_2', plantid) & survey.date > as.Date('2025-04-30'), 1, no.buds),
+    # plant 3546, plot 5: ah this is the plant from above
+    # two issues here: a can't find one week, and records for (likely) the same
+    # plant under a different tag, etc.
+    # first record can be changed by just adding a bud record in the missing
+    # week (there was one bud before and after - parsimony, assume it's the
+    # same)
+    no.buds = ifelse(grepl('3546\\_5', plantid) & survey.date %in% as.Date('2024-04-12'), 1, no.buds),
+    # second issue - assume what *was* incorrectly surveyed as 5309 was in fact
+    # 3546, which itself was marked as "NT" for the three records where 5309 was
+    # found
+  ) %>%
+  filter(!(grepl('3546\\_5', plantid) & coor %in% '10D' & survey.date > as.Date('2024-04-26'))) %>%
+  mutate(
+    coor    = ifelse(tag %in% 3546 & coor %in% '9G' & plot %in% 5, '10D', coor),
+    plantid = ifelse(grepl('3546\\_5\\_9G', plantid), '3546_5_10D', plantid),
+    # RSP/7675 and BSP in plot 5: these are the same plant and I didn't realize it until doing demo
+    # wish there was a clever way to combine these... but I will just enter them manually
+    # to avoid accidentally making a mistake
+    # also - one of these plants goes '1F2B' to '3B' the next weekend
+    # I'm going to assume these are the same umbels and they were always buds,
+    # because the bud-flower protocol is so finnicky/subjective
+    # (found these values by running the following):
+    # proc24 %>% 
+    #   filter(plot %in% 5, tag %in% c('RSP', 'BSP', 7675)) %>% 
+    #   arrange(survey.date) %>% 
+    #   group_by(survey.date) %>% 
+    #   summarise(across(starts_with('no.'), ~ sum(.)))
+    no.buds = case_when(
+      grepl('7675\\_5', plantid) & survey.date %in% as.Date('2024-04-19') ~ 2,
+      grepl('7675\\_5', plantid) & survey.date %in% as.Date('2024-04-25') ~ 4,
+      grepl('7675\\_5', plantid) & survey.date %in% as.Date('2024-05-01') ~ 4,
+      .default = no.buds
+    ),
+    no.flowers = case_when(
+      grepl('7675\\_5', plantid) & survey.date %in% as.Date('2024-04-25') ~ 0,
+      grepl('7675\\_5', plantid) & survey.date %in% as.Date('2024-05-08') ~ 2,
+      .default = no.flowers
+    ),
+    no.dead = case_when(
+      grepl('7675\\_5', plantid) & survey.date %in% as.Date('2024-05-08') ~ 2,
+      grepl('7675\\_5', plantid) & survey.date %in% as.Date('2024-05-16') ~ 1,
+      .default = no.dead
+    ),
+    no.seeding = ifelse(grepl('7675\\_5', plantid) & survey.date %in% as.Date('2024-05-16'), 2, no.seeding)
+  ) %>%
+  filter(!(plantid %in% 'BSP_5_10J')) %>%
+  mutate(
+    # Plant 3488, plot 5: I think one week I was just looking at the wrong plant
+    # (or there was a recording mistake)
+    # just assume the record was 3FLP (won't influence analysis whether these are
+    # recorded as 3F or 3FLP)
+    no.buds = ifelse(grepl('3488\\_5', plantid) & survey.date %in% as.Date('2024-05-08'), 0, no.buds),
+    no.flp  = ifelse(grepl('3488\\_5', plantid) & survey.date %in% as.Date('2024-05-08'), 3, no.flp),
+    # Plant 3994, plot 7: assume the second bud observed on the first day was
+    # missed on the second and was observed on the third, i.e., impute another
+    # bud on that day
+    no.buds = ifelse(grepl('3994\\_7', plantid) & survey.date %in% as.Date('2024-04-25'), 2, no.buds),
+    # Plant 3187, plot 13: likewise impute flowering plant
+    # (two Flp observed on the next day, likely that we just missed it)
+    no.flowers = ifelse(grepl('3187\\_13', plantid) & survey.date %in% as.Date('2024-05-01'), 2, no.flowers),
+    # Plant 3796, plot 13: impute budding plant (records before and after have one bud only)
+    no.buds = ifelse(grepl('3796\\_13', plantid) & survey.date %in% as.Date('2024-04-25'), 1, no.buds),
+    # Plant 3780, plot 13: because we're not interested in flowering dates, I'm
+    # comfortable assigning the missing record here to flower (not that it
+    # matters which stage it's in, as long as there is a record there)
+    no.flowers = ifelse(grepl('3780\\_13', plantid) & survey.date %in% as.Date('2024-05-01'), 1, no.flowers),
+    # Plant 3377, plot 15: impute the missing record (call it a bud)
+    no.buds = ifelse(grepl('3377\\_15', plantid) & survey.date %in% as.Date('2024-04-19'), 1, no.buds),
+    # Plant 3177 in plot 15: I just really don't trust this strange 2B that appears one day
+    # remove them
+    no.buds = ifelse(grepl('3177\\_15', plantid) & survey.date %in% as.Date('2024-05-01'), 0, no.buds),
+    # Plant 3426 in plot 15: assume that one Flp was missed on this date; makes records consistent
+    # (doesn't explain the other bud that appeared and went to Flp in a week but c'est la vie)
+    no.flp = ifelse(grepl('3426\\_15', plantid) & survey.date %in% as.Date('2024-05-08'), 2, no.flp),
+    # Plant 3479 in plot 15: impute bud
+    no.buds = ifelse(grepl('3479\\_15', plantid) & survey.date %in% as.Date('2024-04-25'), 1, no.buds)
+  )
+
+exclude.plantids = exclude.plantids %>%
+  # (Exclude 3643 and 3599 in plot 6 - these got confused with each other, record messy)
+  mutate(
+    exclude = ifelse(
+      (grepl('3643\\_6', plantid) | grepl('3955\\_6', plantid)) & year %in% 2024, 
+      TRUE, 
+      exclude
+      ),
+    # Exclude R(tp) in plot 7 - missed twice so two gaps, just kinda messy
+    exclude = ifelse(grepl('R\\_7\\_0I', plantid) & year %in% 2024, TRUE, exclude),
+    # Exclude 3515 and 3513 in plot 13 - messy, multiple gaps in each
+    exclude = ifelse(grepl('351[35]\\_13', plantid) & year %in% 2024, TRUE, exclude),
+    # Exclude 3590 in plot 13 because it was missed on a day that makes
+    # assigning bud+flower dates ambiguous
+    exclude = ifelse(grepl('3590\\_13', plantid) & year %in% 2024, TRUE, exclude),
+    # exclude 3455 in plot 15, I just don't trust that record that has three
+    # flowers appearing out of nowhere and then disappearing the next week
+    exclude = ifelse(grepl('3455\\_15', plantid) & year %in% 2024, TRUE, exclude),
+  )
+
 ##### Multiple records in the same survey period: why would this happen?
 
 ### 2021
@@ -530,6 +669,11 @@ proc23 %>%
   filter(n() > 1)
 # cool!
 
+### Check 2024
+proc24 %>%
+  group_by(plantid, survey.date) %>%
+  filter(n() > 1)
+# none - good
 
 ##### Look into survey periods where only 1-2 plots were surveyed...
 
@@ -592,6 +736,13 @@ proc23 %>% filter(plot %in% c(6, 13), survey.period %in% 7:8) %>%
   arrange(tag, survey.period)
 # maybe these were just the very last plants to be flowering...
 
+### 2024
+
+# this is fine
+# pre-april 12 surveys were done by piper battersby
+# 24 may surveys were of only plants with yellow visible (to catch new buds)
+# so only a handful are included
+
 ##### Plants with no records of flowering at all
 
 proc21 %>%
@@ -627,10 +778,12 @@ proc21 %>%
   # Filter out any plant that has any non-NA records after an NA record
   filter(any(survey.period[is.na(no.partial)] < max(survey.period[!is.na(no.partial)])))
 
-# Just this one plant - I say remove it because that missing record is *right*
-# where the partial date should be
-exclude.plantids = exclude.plantids %>%
-  mutate(exclude = ifelse(plantid %in% '3563_4_12S' & year %in% 2021 , TRUE, exclude))
+# # Just this one plant - I say remove it because that missing record is *right*
+# # where the partial date should be
+# exclude.plantids = exclude.plantids %>%
+#   mutate(exclude = ifelse(plantid %in% '3563_4_12S' & year %in% 2021 , TRUE, exclude))
+# Actually - going to leave this in here because I'll be doing analysis of bud
+# date, not flower date
 
 ###
 
@@ -682,6 +835,26 @@ proc23 %>%
 # a couple of cases with the note "yellow and wilted" - is this flowering?
 # (probably good to be consistent and say no)
 # also some cases of being eaten
+
+### 2024
+
+proc24 %>%
+  group_by(plantid) %>%
+  summarise(any.fl = any(no.buds > 0 | no.flowers > 0 | no.flp > 0 | no.seeding > 0)) %>%
+  group_by(any.fl) %>%
+  summarise(n = n())
+# three plants that don't have any records of budding, flowering, etc.
+
+proc24 %>%
+  group_by(plantid) %>%
+  filter(!any(no.buds > 0 | no.flowers > 0 | no.flp > 0 | no.seeding > 0))
+
+# Oh yes... I know what's going on here.
+# These are plants that had records that I crossed out on the datasheet.
+# I'll remove them.
+
+proc24 = proc24 %>% filter(!grepl('crossed\\sout', notes))
+
 
 ##### Actually do stuff
 
@@ -777,7 +950,7 @@ phen22 = flower22 %>%
     # Final survey period where receptive tissues were observed
     fl.fina = ifelse(
       any(no.flowers + no.flp > 0),
-      max(survey.period[no.flowers + no.flp > 0]),
+      max(survey.period[no.buds + no.flowers + no.flp > 0]),
       NA
     )
   )
@@ -830,7 +1003,7 @@ phen23 = flower23 %>%
     # Final survey period where receptive tissues were observed
     fl.fina = ifelse(
       any(no.flowers + no.flp > 0),
-      max(survey.period[no.flowers + no.flp > 0]),
+      max(survey.period[no.buds + no.flowers + no.flp > 0]),
       NA
     )
   )
@@ -851,12 +1024,51 @@ ind.flw.phen23 = flower23 %>%
   uncount(flo.incr) %>%
   select(plantid, plot, survey.period)
 
+### 2024
+
+# (no need to change NAs to zeros because of data entry scheme)
+# (also no need to filter out plants that only have budding etc. records because
+# of the data entry)
+
+# but to make this consistent with the other years, I will want a survey.period column
+# (not sure why I did this...)
+
+proc24 = proc24 %>%
+  # set 'date.2024' as julian date but with day 0 being sunday 31 dec. 2024
+  mutate(
+    date.2024 = as.numeric(survey.date - as.Date('2023-12-31')),
+    # convert day to week
+    survey.period = date.2024 %/% 7,
+    # first observation now will be survey period 1
+    survey.period = survey.period - min(survey.period) + 1
+  ) %>%
+  select(-date.2024)
+
+phen24 = proc24 %>%
+  group_by(plantid, plot, tag) %>%
+  summarise(
+    # First date with observed budding activity
+    fl.init = min(survey.period[no.buds + no.flowers + no.flp + no.seeding > 0]),
+    fl.fina = ifelse(
+      # Hmm.. the flowering flag here may not be as useful here due to the bud
+      # classification protocol in 2024
+      # also not counting seeding plants would cause an issue no?
+      any(no.flowers + no.flp > 0),
+      max(survey.period[no.buds + no.flowers + no.flp > 0]),
+      NA
+    )
+  )
+
+# 3341_15... want an algo that handles this
+
+
 ##### Combine all data frames together (remember to add year)
 
 phen.all = rbind(
   phen21 %>% ungroup() %>% mutate(year = 2021),
   phen22 %>% ungroup() %>% mutate(year = 2022),
-  phen23 %>% ungroup() %>% mutate(year = 2023)
+  phen23 %>% ungroup() %>% mutate(year = 2023),
+  phen24 %>% ungroup() %>% mutate(year = 2024)
 )
 
 head(phen.all)
@@ -877,11 +1089,12 @@ phen.all = merge(x = phen.all, y = exclude.plantids) %>%
 phen.all = merge(
   x = phen.all,
   y = data.frame(
-    year = 2021:2023,
+    year = 2021:2024,
     min.date = c(
-      as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
-      as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
-      as.numeric(min(proc23$survey.date) - as.Date('2023-01-01'))
+      as.numeric(min(proc21$survey.date) - as.Date('2020-12-31')),
+      as.numeric(min(proc22$survey.date) - as.Date('2021-12-31')),
+      as.numeric(min(proc23$survey.date) - as.Date('2022-12-31')),
+      as.numeric(min(proc24$survey.date) - as.Date('2023-12-31'))
     )
   )
 ) %>%
@@ -937,11 +1150,8 @@ ind.phen.all = rbind(
 
 
 #####
-# In future: might want to add eaten or premature death and being eaten to these
-# and the future is NOW (17 jan 2024)
-
 # Here: get mean date of *bud* initiation
-# Also get number dead and eaten
+# Also get number dead/eaten
 
 # 2021 data
 buds21 = proc21 %>%
@@ -999,13 +1209,31 @@ buds23 = proc23 %>%
   ) %>%
   ungroup()
 
+buds24 = proc24 %>%
+  # I don't think this line is needed but I'll keep it anyway
+  mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
+  arrange(plantid, survey.date) %>%
+  mutate(no.umbels = no.buds + no.flowers + no.flp + no.seeding) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    live.diff = diff(c(0, no.umbels)),
+    lost.diff = diff(c(0, no.dead))
+  ) %>%
+  summarise(
+    mean.bud.window = mean(ifelse(live.diff < 0, 0, live.diff) * survey.period),
+    n.lost = max(no.dead),
+    n.total = max(no.umbels)
+  ) %>%
+  ungroup()
+
 # Bind it all together
 
 buds.all = rbind(
   # Bind everything together
   buds21 %>% mutate(year = 2021),
   buds22 %>% mutate(year = 2022),
-  buds23 %>% mutate(year = 2023)
+  buds23 %>% mutate(year = 2023),
+  buds24 %>% mutate(year = 2024)
 ) %>%
   merge(y = exclude.plantids) %>%
   # Use the "exclude" column to remove these
@@ -1017,11 +1245,12 @@ buds.all = rbind(
   # Merge to add approx. survey date
   merge(
     y = data.frame(
-      year = 2021:2023,
+      year = 2021:2024,
       min.date = c(
-        as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
-        as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
-        as.numeric(min(proc23$survey.date) - as.Date('2023-01-01'))
+        as.numeric(min(proc21$survey.date) - as.Date('2020-12-31')),
+        as.numeric(min(proc22$survey.date) - as.Date('2021-12-31')),
+        as.numeric(min(proc23$survey.date) - as.Date('2022-12-31')),
+        as.numeric(min(proc24$survey.date) - as.Date('2023-12-31'))
       )
     )
   ) %>%
@@ -1071,7 +1300,7 @@ ind.bud23 = proc23 %>%
   mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
   arrange(plantid, survey.date) %>%
   # NOTE: pods removed
-  mutate(no.umbels = no.buds + no.pods + no.flowers + no.flp + no.seeding) %>%
+  mutate(no.umbels = no.buds + no.flowers + no.flp + no.seeding) %>%
   group_by(plantid, plot) %>%
   mutate(
     new = diff(c(0, no.umbels + no.dead + no.eaten + no.broken)),
@@ -1084,10 +1313,27 @@ ind.bud23 = proc23 %>%
   uncount(weight = count) %>%
   arrange(plantid)
 
+ind.bud24 = proc24 %>%
+  mutate(across(starts_with('no.'), function(x) ifelse(is.na(x), 0, x))) %>%
+  arrange(plantid, survey.date) %>%
+  mutate(no.umbels = no.buds + no.flowers + no.flp + no.seeding) %>%
+  group_by(plantid, plot) %>%
+  mutate(
+    new = diff(c(0, no.umbels)),
+    lost = diff(c(0, no.dead))
+  ) %>%
+  select(plantid, plot, survey.date, survey.period, new, lost) %>%
+  pivot_longer(c(new, lost), names_to = 'varb', values_to = 'count') %>%
+  # change negative numbers to zeros for uncounting
+  mutate(count = ifelse(count < 0, 0, count)) %>%
+  uncount(weight = count) %>%
+  arrange(plantid)
+
 ind.buds.all = rbind(
   ind.bud21 %>% mutate(year = 2021),
   ind.bud22 %>% mutate(year = 2022),
-  ind.bud23 %>% mutate(year = 2023)
+  ind.bud23 %>% mutate(year = 2023),
+  ind.bud24 %>% mutate(year = 2024)
 ) %>%
   merge(y = exclude.plantids) %>%
   # Use the "exclude" column to remove these
@@ -1099,11 +1345,12 @@ ind.buds.all = rbind(
   # Merge to add approx. survey date
   merge(
     y = data.frame(
-      year = 2021:2023,
+      year = 2021:2024,
       min.date = c(
-        as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
-        as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
-        as.numeric(min(proc23$survey.date) - as.Date('2023-01-01'))
+        as.numeric(min(proc21$survey.date) - as.Date('2020-12-31')),
+        as.numeric(min(proc22$survey.date) - as.Date('2021-12-31')),
+        as.numeric(min(proc23$survey.date) - as.Date('2022-12-31')),
+        as.numeric(min(proc24$survey.date) - as.Date('2023-12-31'))
       )
     )
   ) %>%
