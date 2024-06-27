@@ -344,13 +344,42 @@ expand.grid(
   geom_segment(aes(x = .9, xend = 6, y = .9, yend = 6), linetype = 2, colour = 'gray77') +
   geom_line(aes(colour = trt, group = interaction(Year, trt))) +
   scale_colour_manual(values = c('black', 'red', 'blue'))
-# Hmm... oay not a super cool plot...
+# Hmm... oay not a super useful plot...
+
+expand.grid(
+  size.t = (9:60)/10, 
+  Year = factor(2017:2023), 
+  trt = c('control', 'drought', 'irrigated')
+) %>%
+  mutate(
+    pred_y = predict(
+      g_st_ty,
+      newdata = .,
+      re.form = ~ (1 | Year) + (1 | Year:trt),
+      type = 'response',
+      allow.new.levels = TRUE
+    )
+  ) %>%
+  pivot_wider(names_from = trt, values_from = pred_y) %>%
+  mutate(
+    drought.effect = drought - control,
+    irrigat.effect = irrigated - control
+  ) %>%
+  select(size.t, Year, drought.effect, irrigat.effect) %>%
+  pivot_longer(-c(size.t, Year), names_to = 'compare', values_to = 'effect.size') %>%
+  ggplot(aes(x = size.t, y = effect.size, group = compare)) +
+  geom_segment(aes(x = .9, xend = 6, y = 0, yend = 0), linetype = 2, colour = 'gray77') +
+  geom_line(aes(colour = compare, group = interaction(Year, compare))) +
+  scale_colour_manual(values = c('red', 'blue')) +
+  facet_wrap(~ Year)
+
+# there should be different lines for each year...
 
 # ------------------------------------------------
 # Construct kernels
 
 # Residual variance in growth models
-grow.sd = summary(g_s_ty)$sigma
+grow.sd = summary(g_st_ty)$sigma
 
 # Get a scaffold
 grow.surv.kernel = expand.grid(
@@ -372,7 +401,7 @@ grow.surv.kernel = grow.surv.kernel %>%
   mutate(
     pred.grow.mean = predict(
       newdata = .,
-      object = g_s_ty, type = 'response',
+      object = g_st_ty, type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
     )
   ) %>%
