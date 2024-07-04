@@ -17,8 +17,32 @@ rm(list = ls())
 # Read in seed data
 seed = read.csv('01_data_cleaning/out/seed_reconciled_2021-2023.csv')
 
+# Read in phen data
+phen = read.csv('01_data_cleaning/out/phenology_buds_deaths_all.csv')
+
 # Read in demo data
 demo = read.csv('01_data_cleaning/out/Lomatium_demo_2016-2024.csv')
+
+# Merge together phen and seed
+
+phen.seed.plants = merge(
+  x = seed %>% distinct(plantid, year) %>% mutate(in.seed = TRUE), 
+  y = phen %>% distinct(plantid, year) %>% mutate(in.phen = TRUE), 
+  by = c('plantid', 'year'), all.x = TRUE, all.y = TRUE
+) %>%
+  mutate(across(c(in.seed, in.phen), function(x) ifelse(is.na(x), FALSE, x)))
+
+phen.seed.plants
+
+phen.seed.plants %>%
+  group_by(year, in.seed, in.phen) %>%
+  summarise(n = n())
+
+phen.seed.plants %>%
+  filter(!(in.seed & in.phen)) %>%
+  # filter(!(!i))
+  filter(year > 2021) %>%
+  arrange(year, plantid)
 
 # Subset out 2024 data in each dataset
 # Make tagplot column (coordinates unlikely to match)
