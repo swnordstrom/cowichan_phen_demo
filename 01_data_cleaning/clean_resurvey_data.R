@@ -13,22 +13,22 @@ library(tidyr)
 rm(list = ls())
 
 # Read in raw demo - one list for each file
-raw.demo.list = dir('00_raw_data/lomatium_demography/') %>%
+raw.phen.list = dir('00_raw_data/lomatium_demography/') %>%
   grep(pattern = 'Resurvey', x = ., value = TRUE) %>%
   paste0('00_raw_data/lomatium_demography/', .) %>%
   lapply(FUN = read.csv)
 
 ##### Assess data
 
-length(raw.demo.list)
+length(raw.phen.list)
 
-lapply(raw.demo.list, names)
+lapply(raw.phen.list, names)
 
 # 2021 data is different from 2022-2023
 
 # From metadata:
 # 2021: capable of pollen transfer in stages: "partial, flat, open, olp"
-#   (for start date, can do partial... or flat - ask Jennifer)
+#   (for start date, can do partial... or flat - ask Jenna)
 # 2022: capable of pollen transfer in stages: "flowers"
 #   (can use this for start date - not sure if "pods" is partially open or not)
 # 2023: capable of pollen transfer in stages: "flowers"
@@ -36,17 +36,17 @@ lapply(raw.demo.list, names)
 
 # Also: unique plant identifiers
 # 2021: plot, tag, coordinates
-raw.demo.list[[1]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
+raw.phen.list[[1]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
 # these have distinct coordinates
 # tags are repeated though
-raw.demo.list[[1]] %>% distinct(plot, tag) %>% group_by(tag) %>% filter(n() > 1)
+raw.phen.list[[1]] %>% distinct(plot, tag) %>% group_by(tag) %>% filter(n() > 1)
 # 2022: plot, tag
-raw.demo.list[[2]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
+raw.phen.list[[2]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
 # no repeated tags within a plot
 # 2023: plot, tag, "coor" (coordinate)
-raw.demo.list[[3]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
+raw.phen.list[[3]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
 # have distinct coordinates
-raw.demo.list[[4]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
+raw.phen.list[[4]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
 # 3546 in plot 5... some mistake in here (oh this is the 5309 plant)
 
 # There are notes columns though. I'll take care of these on a case-by-case basis.
@@ -55,21 +55,54 @@ raw.demo.list[[4]] %>% group_by(plot, tag, survey.date) %>% filter(n() > 1)
 
 # First initialize separate data frames for processed data
 
-proc21 = raw.demo.list[[1]]
-proc22 = raw.demo.list[[2]]
-proc23 = raw.demo.list[[3]]
-proc24 = raw.demo.list[[4]]
+proc21 = raw.phen.list[[1]]
+proc22 = raw.phen.list[[2]]
+proc23 = raw.phen.list[[3]]
+proc24 = raw.phen.list[[4]]
 
 # Add unique plant identifiers ("plantid")
-proc21$plantid = with(proc21, paste0(tag, "_", plot, "_", xcoor, ycoor))
-proc22$plantid = with(proc22, paste(tag, plot, sep = "_"))
-proc23$plantid = with(proc23, paste(tag, plot, coor, sep = "_"))
-proc24$plantid = with(proc24, paste(tag, plot, coor, sep = "_"))
 
-head(proc21$plantid)
-head(proc22$plantid)
-head(proc23$plantid)
-head(proc24$plantid)
+proc21 = proc21 %>%
+  group_by(tag, plot) %>%
+  mutate(flag = length(unique(xcoor)) > 1 | length(unique(ycoor)) > 1) %>%
+  ungroup() %>%
+  mutate(
+    plantid = ifelse(
+      flag,
+      paste0(tag, '_', plot, '.', xcoor, ycoor),
+      paste(tag, plot, sep = '_')
+    )
+  ) %>%
+  select(-flag)
+
+proc22 = proc22 %>% mutate(plantid = paste(tag, plot, sep = '_'))
+
+proc23 = proc23 %>%
+  group_by(tag, plot) %>%
+  mutate(flag = length(unique(coor)) > 1) %>%
+  ungroup() %>%
+  mutate(
+    plantid = ifelse(
+      flag,
+      paste0(tag, '_', plot, '.', coor),
+      paste(tag, plot, sep = '_')
+    )
+  ) %>%
+  select(-flag)
+
+proc24 = proc24 %>%
+  group_by(tag, plot) %>%
+  mutate(flag = length(unique(coor)) > 1) %>%
+  ungroup() %>%
+  mutate(
+    plantid = ifelse(
+      flag,
+      paste0(tag, '_', plot, '.', coor),
+      paste(tag, plot, sep = '_')
+    )
+  ) %>%
+  select(-flag)
+
 
 # Initialize a data frame of plantids to exclude
 exclude.plantids = rbind(
@@ -143,11 +176,11 @@ proc21 %>%
 
 # exclude 3108_13_12G - 15 day gap between "closed" and "flat"
 exclude.plantids = exclude.plantids %>%
-  mutate(exclude = case_when(plantid %in% '3108_13_12G' & year %in% 2021 ~ TRUE, .default = exclude))
+  mutate(exclude = case_when(plantid %in% '3108_13' & year %in% 2021 ~ TRUE, .default = exclude))
 
 # exclue 3485_15_3A - 13 day gap between "unfurling" and "partial"
 exclude.plantids = exclude.plantids %>%
-  mutate(exclude = case_when(plantid %in% '3485_15_3A' & year %in% 2021  ~ TRUE, .default = exclude))
+  mutate(exclude = case_when(plantid %in% '3485_15' & year %in% 2021  ~ TRUE, .default = exclude))
 
 # Fix mistakes in data entry
 proc21 = proc21 %>%
@@ -327,7 +360,14 @@ proc22 = proc22 %>%
     # 2 on datasheet mis-entered as a 3
     no.seeding = ifelse(plantid %in% '3423_15' & survey.date %in% as.Date('2022-06-23'), 2, no.seeding),
     # 2 on datasheet mis-entered as a 3
-    no.seeding = ifelse(plantid %in% '3892_15' & survey.date %in% as.Date('2022-06-14'), 2, no.seeding)
+    no.seeding = ifelse(plantid %in% '3892_15' & survey.date %in% as.Date('2022-06-14'), 2, no.seeding),
+    # 3848: missed possible flowering date, but have bud date for first umbel
+    # going to impute bud on May 8 (missing day) - won't influence bud day analysis
+    no.buds = ifelse(plantid %in% '3848_15' & survey.date %in% as.Date('2022-05-08'), 1, no.buds),
+    # also add a dead record for this plant so it doesn't count the dead plant as new
+    no.dead = ifelse(plantid %in% '3848_15' & survey.date %in% as.Date('2022-06-06'), 1, no.dead),
+    # 3863: assume one seeding was missed on may 26
+    no.seeding = ifelse(plantid %in% '3863_15' & survey.date %in% as.Date('2022-05-26'), 2, no.seeding)
   )
 
 exclude.plantids = exclude.plantids %>%
@@ -344,13 +384,7 @@ exclude.plantids = exclude.plantids %>%
   # what the absolute fuck is going on in this data? christ what a fucking disaster
   mutate(exclude = ifelse(plantid %in% '3403_15' & year %in% 2022, TRUE, exclude)) %>%
   # Plant 3755 - pulled out, records unclear, seems likely missed true bud date
-  mutate(exclude = ifelse(plantid %in% '3755_15' & year %in% 2022, TRUE, exclude)) %>%
-  # Plant 3848 - missed one week, true flowering date unknown...
-  mutate(exclude = ifelse(plantid %in% '3848_15' & year %in% 2022, TRUE, exclude)) %>%
-  # Plant 3863 - WHY ARE YOU PUTTING QUESTION MARKS IN HERE - TAKE THE TIME TO
-  # FIGURE OUT WHAT THE DATA ACTUALLY IS. I can't impute it because the true
-  # flowering date isn't known
-  mutate(exclude = ifelse(plantid %in% '3863_15' & year %in% 2022, TRUE, exclude))
+  mutate(exclude = ifelse(plantid %in% '3755_15' & year %in% 2022, TRUE, exclude))
 
 
 ### 2023 data
@@ -358,6 +392,18 @@ proc23$survey.date = as.Date(proc23$survey.date, format = '%m/%d/%Y')
 
 # there is a record with date = NA (no other info in record - remove)
 proc23 = proc23 %>% filter(!is.na(survey.date))
+
+# Fixing a mistaken coordinate (doing it here instead of below so it makes it
+# through the filtering below)
+proc23 = proc23 %>% mutate(coor = ifelse(tag %in% 7521 & plot %in% 15, '15E', coor))
+
+# Remove plants in parts of plots that were incompletely censused
+proc23 = proc23 %>%
+  mutate(xc = as.numeric(gsub('[A-Z]|\\/', '', coor))) %>%
+  filter(!(plot %in% c(1:2, 5, 13:14) & xc > 9)) %>%
+  filter(!(plot %in% 15 & xc < 10)) %>%
+  filter(!(plot %in% 7 & xc > 9) | (plot %in% 7 & coor %in% '15B')) %>%
+  select(-xc)
 
 proc23 %>% 
   group_by(survey.date, plot) %>%
@@ -480,10 +526,12 @@ exclude.plantids = exclude.plantids %>%
   mutate(exclude = ifelse(grepl('3481\\_15', plantid) & year %in% 2023, TRUE, exclude)) %>%
   # exclude 3687_1 - missed one week making flowering date uncertain
   mutate(exclude = ifelse(plantid %in% '3867_1' & year %in% 2023, TRUE, exclude)) %>%
-  # exclude 3338_5 - STOP WRITING QUESTION MARKS, KEEP TRACK OF OBSERVED UMBELS
-  mutate(exclude = ifelse(plantid %in% '3338_5' & year %in% 2023, TRUE, exclude)) %>%
+  # # exclude 3338_5 - STOP WRITING QUESTION MARKS, KEEP TRACK OF OBSERVED UMBELS
+  # mutate(exclude = ifelse(plantid %in% '3338_5' & year %in% 2023, TRUE, exclude)) %>%
   # exclude 3987_5 - went missing one week, came back with new stuff
-  mutate(exclude = ifelse(plantid %in% '3987_5' & year %in% 2023, TRUE, exclude))
+  mutate(exclude = ifelse(plantid %in% '3987_5' & year %in% 2023, TRUE, exclude)) %>%
+  # Should probably exclude plant 5770 - plant was only surveyed for two weeks, then ignored
+  mutate(exclude = ifelse(plantid %in% '5770_5' & year %in% 2023, TRUE, exclude))
 
 ### 2024
 
@@ -512,7 +560,7 @@ unique(proc24$survey.date)
 #   filter(any(diff(n.umbel) < 0)) %>%
 #   print(n = nrow(.))
   
-proc24 %>%
+proc24 = proc24 %>%
   mutate(
     # Plant 3168, plot 2: extra umbel was recorded here
     # I think this should have been for plant 3751, which has two umbels in seed set
@@ -534,7 +582,7 @@ proc24 %>%
   filter(!(grepl('3546\\_5', plantid) & coor %in% '10D' & survey.date > as.Date('2024-04-26'))) %>%
   mutate(
     coor    = ifelse(tag %in% 3546 & coor %in% '9G' & plot %in% 5, '10D', coor),
-    plantid = ifelse(grepl('3546\\_5\\_9G', plantid), '3546_5_10D', plantid),
+    plantid = ifelse(grepl('3546\\_5', plantid), '3546_5', plantid),
     # RSP/7675 and BSP in plot 5: these are the same plant and I didn't realize it until doing demo
     # wish there was a clever way to combine these... but I will just enter them manually
     # to avoid accidentally making a mistake
@@ -565,7 +613,11 @@ proc24 %>%
     ),
     no.seeding = ifelse(grepl('7675\\_5', plantid) & survey.date %in% as.Date('2024-05-16'), 2, no.seeding)
   ) %>%
-  filter(!(plantid %in% 'BSP_5_10J')) %>%
+  filter(!(tag %in% 'BSP' & plot %in% 5 & coor %in% '10J')) %>%
+  # Get rid of plant 'R' in plot 7 - data here is just very messy
+  filter(!(tag %in% 'R' & plot %in% 7)) %>%
+  # Get rid of YTP in plot 5 - only one non-empty record here
+  filter(!(tag %in% 'YTP' & plot %in% 5)) %>%
   mutate(
     # Plant 3488, plot 5: I think one week I was just looking at the wrong plant
     # (or there was a recording mistake)
@@ -616,7 +668,11 @@ exclude.plantids = exclude.plantids %>%
     # exclude 3455 in plot 15, I just don't trust that record that has three
     # flowers appearing out of nowhere and then disappearing the next week
     exclude = ifelse(grepl('3455\\_15', plantid) & year %in% 2024, TRUE, exclude),
-  )
+  ) %>%
+  # change the plantid on 3546 (this data frame has two IDs when there should be one)
+  mutate(plantid = gsub('3546\\_5\\.10D', '3546_5', plantid)) %>%
+  filter(!(plantid %in% '3546_5.9G'))
+  
 
 ##### Multiple records in the same survey period: why would this happen?
 
@@ -686,8 +742,7 @@ proc21 %>%
 # hmm...
 # one plot surveyed in period 1, six in period 2,
 # one plot missing from period 3, one missing from final period
-proc21 %>%
-  filter(survey.period %in% 1)
+proc21 %>% filter(survey.period %in% 1)
 # this is only one plant...
 
 proc21 %>% filter(plot %in% 7)
@@ -1060,7 +1115,20 @@ phen24 = proc24 %>%
   )
 
 # 3341_15... want an algo that handles this
-
+# 
+# ind.flw.phen24 = phen24 %>%
+#   arrange(survey.date) %>%
+#   select(-c(no.buds, no.pods)) %>%
+#   mutate(incl.dead = rowSums(across(contains('no.')))) %>%
+#   group_by(plantid, plot) %>%
+#   mutate(
+#     all.incr = diff(c(0, incl.dead)),
+#     dea.incr = diff(c(0, no.dead + no.eaten)),
+#     flo.incr = all.incr - dea.incr
+#   ) %>%
+#   filter(flo.incr > 0) %>%
+#   uncount(flo.incr) %>%
+#   select(plantid, plot, survey.period)
 
 ##### Combine all data frames together (remember to add year)
 
@@ -1107,34 +1175,38 @@ phen.all = merge(
 
 # Do the same for the individual-flowering one
 
-ind.phen.all = rbind(
-  # Bind everything together
-  ind.flw.phen21 %>% mutate(year = 2021),
-  ind.flw.phen22 %>% mutate(year = 2022),
-  ind.flw.phen23 %>% mutate(year = 2023)
-) %>%
-  merge(y = exclude.plantids) %>%
-  # Use the "exclude" column to remove these
-  filter(!exclude) %>%
-  # Remove unnecessary column
-  select(-exclude) %>%
-  # Arrange columns (for export)
-  arrange(year, plot) %>%
-  # Merge to add approx. survey date
-  merge(
-    y = data.frame(
-      year = 2021:2023,
-      min.date = c(
-        as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
-        as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
-        as.numeric(min(proc23$survey.date) - as.Date('2023-01-01'))
-      )
-    )
-  ) %>%
-  mutate(init.doy = min.date + (survey.period - 1) * 7) %>%
-  select(-min.date)
+# ind.phen.all = rbind(
+#   # Bind everything together
+#   ind.flw.phen21 %>% mutate(year = 2021),
+#   ind.flw.phen22 %>% mutate(year = 2022),
+#   ind.flw.phen23 %>% mutate(year = 2023),
+#   ind.flw.phen24 %>% mutate(year = 2024)
+# ) %>%
+#   merge(y = exclude.plantids) %>%
+#   # Use the "exclude" column to remove these
+#   filter(!exclude) %>%
+#   # Remove unnecessary column
+#   select(-exclude) %>%
+#   # Arrange columns (for export)
+#   arrange(year, plot) %>%
+#   # Merge to add approx. survey date
+#   merge(
+#     y = data.frame(
+#       year = 2021:2023,
+#       min.date = c(
+#         as.numeric(min(proc21$survey.date) - as.Date('2021-01-01')),
+#         as.numeric(min(proc22$survey.date) - as.Date('2022-01-01')),
+#         as.numeric(min(proc23$survey.date) - as.Date('2023-01-01')),
+#         as.numeric(min(proc24$survey.date) - as.Date('2024-01-01'))
+#       )
+#     )
+#   ) %>%
+#   mutate(init.doy = min.date + (survey.period - 1) * 7) %>%
+#   select(-min.date)
 
 # Export to csvs
+
+# NOT RUN since winter 2024 (i.e., does not include 2024 data)
 
 # write.csv(
 #   phen.all,
@@ -1359,15 +1431,14 @@ ind.buds.all = rbind(
 
 table(ind.buds.all$init.doy)
 
-# write.csv(
-#   ind.buds.all,
-#   file = '01_data_cleaning/out/phenology_buds_deaths_all.csv',
-#   row.names = FALSE
-# )
+write.csv(
+  ind.buds.all,
+  file = '01_data_cleaning/out/phenology_buds_deaths_cleaned.csv',
+  row.names = FALSE
+)
 
 # NOTE:
-# 24 jan 2024 - went back and did some edits but *only re-exported the bud dataset*
-# I haven't exported the flowering phen dataset with the updated data yet
+# last exported 4 Jul 2024 when reconciling phen, seed, and demo
 
 #-------------------------------------------------------
 # Phen overlap on each day?
