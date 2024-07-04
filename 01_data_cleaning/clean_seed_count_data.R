@@ -83,9 +83,18 @@ proc.2021 = proc.2021 %>%
 head(proc.2021)
 
 # Add unique plant ID
-proc.2021 = proc.2021 %>% 
-  mutate(plantid = paste0(tag, '_', plot, '_', xcoor, ycoor)) %>%
-  select(-c(xcoor, ycoor))
+proc.2021 = proc.2021 %>%
+  group_by(tag, plot) %>%
+  mutate(flag = length(unique(paste0(xcoor, ycoor))) > 1) %>%
+  ungroup() %>%
+  mutate(
+    plantid = ifelse(
+      flag,
+      paste0(tag, '_', plot, '.', xcoor, ycoor),
+      paste(tag, plot, sep = '_')
+    )
+  ) %>%
+  select(-c(xcoor, ycoor, flag))
 
 # Check for duplicated umbel numbers
 proc.2021 %>%
@@ -134,13 +143,23 @@ proc.2023 = proc.2023 %>%
   mutate(
     tag = ifelse(tag %in% 7512 & coor %in% '3D', 7519, tag),
     notes = ifelse(tag %in% 7519 & coor %in% '3D', '[tag corrected during cleaning]', notes)
-  )
+  ) %>%
+  # Fix mis-recorded coordinate
+  mutate(coor = ifelse(tag %in% 75321 & plot %in% 21, '15E', coor)) %>%
+  # Add tag ID
+  group_by(tag, plot) %>%
+  mutate(flag = length(unique(coor)) > 1) %>%
+  ungroup() %>%
+  mutate(
+    plantid = ifelse(
+      flag,
+      paste0(tag, '_', plot, '.', coor),
+      paste0(tag, '_', plot)
+    )
+  ) %>%
+  select(-c(coor, flag))
 
-# Need to add plant ID
-proc.2023 = proc.2023 %>%
-  mutate(plantid = paste(tag, plot, coor, sep = '_'))
-
-# Not sure any other changes need to be made.
+# Not sure any other changes need to be made right now
 
 ### 2024
 
@@ -149,7 +168,20 @@ proc.2024 = seed.counts.list[[4]]
 head(proc.2024)
 
 proc.2024 = proc.2024 %>%
-  mutate(plantid = paste(tag, plot, coor, sep = '_'))
+  # Getting rid of the 3546_5.10D record - dupe record for the same tag where
+  # proper data was recorded at 9G
+  filter(!(tag %in% 3546 & plot %in% 5 & coor %in% '10D')) %>%
+  group_by(tag, plot) %>%
+  mutate(flag = length(unique(coor)) > 1) %>%
+  ungroup() %>%
+  mutate(
+    plantid = ifelse(
+      flag,
+      paste0(tag, '_', plot, '.', coor),
+      paste0(tag, '_', plot)
+    )
+  ) %>%
+  select(-c(coor, flag))
 
 ######################################################################
 ##### Combining
