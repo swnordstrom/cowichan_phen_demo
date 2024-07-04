@@ -47,6 +47,7 @@ raw.demo = raw.demo.list %>%
   do.call(what = rbind)
 
 head(raw.demo)
+tail(raw.demo)
 
 # Create a proc.demo data frame for storing processed demo
 proc.demo = raw.demo %>% mutate(proc.note = NA, edited = FALSE)
@@ -254,6 +255,18 @@ proc.demo.dupe %>% group_by(dupe.status) %>% summarise(n = n())
 
 # Guess work through these case by case?
 
+### 3142
+proc.demo = proc.demo %>%
+  mutate(
+    edited = ifelse(Tag %in% 31432 & Plot %in% 6 & Ycoor %in% 'C', TRUE, edited),
+    proc.note = ifelse(
+      Tag %in% 31432 & Plot %in% 6 & Ycoor %in% 'C',
+      'coordinate changed (was recorded as C, is actually D)',
+      proc.note
+    ),
+    Ycoor = ifelse(Tag %in% 3142 & Plot %in% 6, 'D', Ycoor),
+  )
+
 ### 3180: 
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3180))
 # two different plants recorded in 2016, but 17B was not seen in 2017
@@ -264,7 +277,9 @@ raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3180))
 # two different plants (maybe? not sure) in plot 5
 # but one of them might have died, the 2019 record has the wrong coordinates
 # (what to do about the 2018 record? ugh)
-# The two possibilities for plot 5: it was always only one plant, or it was two but died in year one...
+# I'm going to assume it was always one plant and the 2019 record was entered
+# for the wrong coordinate.
+# 18C is the real plant, 17B is a dupe and should be deleted.
 
 # Here: re-assigning coordinates to the plot 5 year 2019 observations
 proc.demo = rbind(
@@ -278,21 +293,20 @@ proc.demo = rbind(
     mutate(
       Xcoor = rev(Xcoor), 
       Ycoor = rev(Ycoor),
-      proc.note  = "coordinates swapped on 2019 records based on prior records",
+      proc.note  = "coordinates swapped in 2019 records based on prior records",
       edited = TRUE
     )
-)
+) %>%
+  # Remove all records for 17B plant
+  filter(!(Tag %in% 3180 & Plot %in% 5 & Xcoor %in% 17))
 
 ### 3342: 
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3342))
-# Plot 4 plant is in a diversity plot (does this mean it gets included?)
-# In 2016, there were plants observed at 18B and 17B in plot 5
-# the one at 17B had "no leaves just an umbel", the one at 18B did not flower
-# the one at 18B was never *checked* again, the one at 187B was checked but
-# never seen (ever)
-# (I suppose we can keep 18B in, it just won't get included in any transitions?)
-# (but how can we honestly not think that 18B and 17B are somehow the same plant...)
-# (also 17B has no leaf measurements... ahhhhhhhhhhhhh!!!!!)
+# Plot 4 plant is a diversity plant - keep
+# Plot 5: assume the 18B plant was a mistake.
+# (Only one record for it anyway - it would not matter anyway)
+proc.demo = proc.demo %>%
+  filter(!(Tag %in% 3342 & Plot %in% 5 & Xcoor %in% 18))
 
 ### 3390
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3390))
@@ -380,7 +394,7 @@ proc.demo = proc.demo %>%
 
 ### 3125
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3125))
-# going to say these are in fact different plants - records present in both years
+# these are two different plants
 
 ### 3185
 raw.demo.list %>% lapply(function(df) df %>% filter(Tag %in% 3185))
@@ -593,7 +607,6 @@ proc.demo = proc.demo %>% mutate(
 
 unique(proc.demo$Xcoor) # all numeric - good
 unique(proc.demo$Ycoor) # not sure what is up with these numbers?
-# ALSO: there are spaces in here...
 
 # look at the plants that have numeric Y coordinates
 proc.demo %>% filter(grepl('\\.', Ycoor))
@@ -610,8 +623,9 @@ proc.demo = proc.demo %>% mutate(Ycoor = gsub('\\s', '', Ycoor))
 ##### Look for plants with with '[Tt]ag' in the notes field
 ################
 
-# from here:
-# demo %>% filter(grepl('[Tt]ag', demo.note), np %in% 'none') # np is added col
+# (old code)
+# # from here:
+# # demo %>% filter(grepl('[Tt]ag', demo.note), np %in% 'none') # np is added col
 
 ### 3323/3500
 raw.demo %>% filter(Tag %in% c(3323, 3500)) %>% arrange(Plot, Year)
@@ -674,7 +688,7 @@ proc.demo = proc.demo %>%
   filter(!(Tag %in% 3036 & Year %in% 2021)) %>%
   # Re-assign tag in 3762 record
   mutate(
-   proc.note  = ifelse(Tag %in% 3762 & Year %in% 2021, 'manuall fixed tag (see demo note)', proc.note),
+   proc.note  = ifelse(Tag %in% 3762 & Year %in% 2021, 'manually fixed tag (see demo note)', proc.note),
    edited = ifelse(Tag %in% 3762 & Year %in% 2021, TRUE, edited),
    Tag = ifelse(Tag %in% 3762 & Year %in% 2021, 3036, Tag)
   ) %>%
@@ -879,12 +893,6 @@ proc.demo = proc.demo %>%
   )
 
 
-################
-##### Assign IDs
-################
-
-proc.demo = proc.demo %>% mutate(plantid = paste0(Tag, "_", Plot, "_", Xcoor, Ycoor))
-
 ######################################################################
 ##### Check column types
 ######################################################################
@@ -943,7 +951,6 @@ proc.demo = proc.demo %>% mutate(umbel.diam = ifelse(umbel.diam %in% 'nA', NA, u
 ######################################################################
 
 # There are duplicate records for some reason for plant 3430 in plot 1
-
 raw.demo.list %>% lapply(function(x) x %>% filter(Tag %in% 3430))
 
 # the ones in plot 1 are duplicate records of the same plant
@@ -959,11 +966,98 @@ proc.demo = rbind(
     mutate(proc.note = "dupe records removed", edited = TRUE)
 )
 
-# other dupes?
+# other dupe records?
+proc.demo %>% group_by(Plot, Tag, Year) %>% filter(n() > 1)
+# Just the ones I already am aware of (in plots 2/5)
 
-proc.demo %>% group_by(plantid, Year) %>% filter(n() > 1)
-# none!
-  
+# notes about dupes?
+proc.demo %>% filter(grepl('[Dd]up[el]', demo.note), !edited)
+
+# Confusing note about tags 3428, 3380, and 7537
+proc.demo %>% filter(Tag %in% c(3880, 3428, 7537)) %>% arrange(Tag, Year)
+# Plant 3880 got changed to 7537
+
+proc.demo = proc.demo %>%
+  mutate(
+    edited = ifelse(Tag %in% 3880 & Plot %in% 13, TRUE, edited),
+    proc.note = ifelse(
+      Tag %in% 3880 & Plot %in% 13,
+      'tag changed from 3880 to 7537 in 2022',
+      proc.note
+    ), 
+    Tag = ifelse(Tag %in% 3880 & Plot %in% 13, 7537, Tag)
+  )
+
+# Records to fix/combine
+
+proc.demo %>% filter(grepl('fix', demo.note))
+
+# 5044 and 3361 (note mis-entered)
+proc.demo %>% filter(Tag %in% c(3361, 5044), Plot %in% 5)
+# Plant 3361 was not seen in 2021 or 2022, but new plant 5044 was added
+# 5044 is 3361
+# (But was recorded with tag 3361 in 2024)
+
+proc.demo = proc.demo %>%
+  filter(!(Tag %in% 3361 & Year %in% 2021:2023)) %>%
+  filter(!(Tag %in% 5044 & Year %in% 2024)) %>%
+  mutate(
+    edited = ifelse(Tag %in% 5044 & Plot %in% 5, TRUE, edited),
+    proc.note = ifelse(
+      Tag %in% 5044 & Plot %in% 5,
+      'tag changed from 5044 (old/dupe) to 3361 (still present in field)',
+      proc.note
+    ),
+    Ycoor = ifelse(Tag %in% 5044 & Plot %in% 5, 'A', Ycoor),
+    Tag = ifelse(Tag %in% 5044 & Plot %in% 5, 3361, Tag)
+  )
+
+
+################
+##### Assign IDs
+################
+
+# Plot ID assigned as such:
+# Tags that (after processing) appear multiple times in the same plot *in the
+# same year* get Tag_plot.coordinate
+# Tags that appear only once in a plot (overwhelming majority) get just tag_coord
+
+# These are the plots that are repeated within a plot
+proc.demo %>%
+  group_by(Plot, Tag) %>%
+  filter(any(duplicated(Year))) %>%
+  distinct(Tag, Plot)
+
+proc.demo = proc.demo %>% 
+  group_by(Plot, Tag) %>%
+  mutate(flag = any(duplicated(Year))) %>%
+  ungroup() %>%
+  mutate(
+    plantid = ifelse(
+      flag,
+      # If duplicates (i.e., multiple tags in same plot)
+      paste(paste(Tag, Plot, sep = '_'), paste0(Xcoor, Ycoor), sep = '.'),
+      # If no duplicates
+      paste(Tag, Plot, sep = '_')
+    )
+  ) %>%
+  select(-flag)
+
+# Tests:
+
+# - Just to make sure: are any plantids recycled within a plot (appearing more than once in a year)
+
+proc.demo %>%
+  group_by(plantid, Year) %>%
+  filter(any(duplicated(Plot)))
+
+# - Anyone here with different x *and* y coords?
+
+proc.demo %>%
+  group_by(plantid) %>%
+  filter(any(length(unique(Xcoor)) > 1 & length(unique(Ycoor)) > 1)) %>%
+  arrange(plantid)
+# None - great
 
 ######################################################################
 ##### Export what we currently have
@@ -976,12 +1070,6 @@ proc.demo %>%
     '01_data_cleaning/out/demo_all_cleaned.csv', 
     row.names = FALSE
   )
-
-######################################################################
-##### TO DO:
-######################################################################
-
-# - fix 2018 stalk heights with ifelse (see beginning of script)
 
 ######################################################################
 ##### Old code 
