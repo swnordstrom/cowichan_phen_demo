@@ -739,17 +739,23 @@ proc.demo = proc.demo %>%
 ### 3615
 raw.demo %>% filter(Tag %in% c(3615, 3745)) %>% arrange(Plot, Tag)
 proc.demo %>% filter(Tag %in% c(3615, 3745), Plot %in% 15) %>% arrange(Year, Tag)
-# say 3615 and 3745 are different plants
-# assume that if 3745 was alive in 2023, it would have been found
-# so, change tag in 2023 record to 3745
-proc.demo = proc.demo %>%
-  mutate(
-    proc.note = ifelse(Tag %in% 3615 & Plot %in% 15 & Year %in% 2023, 
-                       'tag manually edited; was 3615', 
-                       proc.note),
-    edited    = ifelse(Tag %in% 3615 & Plot %in% 15 & Year %in% 2023, TRUE, edited),
-    Tag       = ifelse(Tag %in% 3615 & Plot %in% 15 & Year %in% 2023, 3745, Tag)
-  )
+# these are the same plant
+# Remove dupe 2021 and 2022 records
+# Change all tags to 3615
+proc.demo = rbind(
+  proc.demo %>% filter(!(Tag %in% c(3615, 3745) & Plot %in% 15)),
+  proc.demo %>% 
+    filter(Tag %in% c(3615, 3745) & Plot %in% 15) %>%
+    # Remove the empty record for 3615 in 2021
+    # also remove the one in 2022 for 3615 - they're both empty anyway
+    filter(!(Year %in% 2021:2022 & Tag %in% 3615)) %>%
+    # Change tag
+    mutate(
+      proc.note = ifelse(Tag %in% 3745, 'tag was entered as 3745 (dupe)', proc.note),
+      edited = ifelse(Tag %in% 3745, TRUE, edited),
+      Tag = 3615
+    )
+)
 
 ### 5023
 raw.demo %>% filter(Tag %in% c(5023, 3807))
