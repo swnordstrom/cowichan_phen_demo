@@ -40,7 +40,6 @@ head(demo.flow)
 nrow(demo.flow)
 table(demo.flow$Year)
 
-
 # Dataset for seed analysis
 demo.seed = demo.flow %>%
   # Give only the records for which we have a record of seed set
@@ -87,269 +86,411 @@ demo.flow = demo.flow %>%
   filter(!(Plot %in% 2 & Year %in% 2024))
 
 
-# --- Umbel count dataset ------------------------------------------
+# # ----- MODEL SELECTION ------------------------------------------
+# 
+# # --- Umbel count model ------------------------------------------
+# 
+# # Strategy here: use a hurdle model
+# # - Response is number of umbels per plant
+# # - Hurdle portion (through zero-inflation) is the probability of (not) flowering
+# # - Umbel count is modeled with a zero-inflated Poisson distribution
+# 
+# # Test first for size-effects on both parts of the model
+# # Then test for treatment effects
+# # Then test for potential interactions
+# 
+# u_0 = glmmTMB(
+#   No.umbels ~ (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ (1 | Year) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_s_0 = glmmTMB(
+#   No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ (1 | Year) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_0_s = glmmTMB(
+#   No.umbels ~ (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_s_s = glmmTMB(
+#   No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# AIC(u_0, u_0_s, u_s_0, u_s_s) %>% mutate(daic = round(AIC - min(AIC), 2))
+# # Keep size in the models
+# 
+# # Treatment effects
+# 
+# u_s.t_s = glmmTMB(
+#   No.umbels ~ trt + size + (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_s_s.t = glmmTMB(
+#   No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ trt * size + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_st_s = glmmTMB(
+#   No.umbels ~ size * trt + (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_s_st = glmmTMB(
+#   No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ trt * size + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_s.ty_s = glmmTMB(
+#   No.umbels ~ size + trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_s_s.ty = glmmTMB(
+#   No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ size + trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_s.ty_s.ty = glmmTMB(
+#   No.umbels ~ size + trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ size + trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# AIC(u_s.t_s, u_s_s.t, u_st_s, u_s_st, u_s_s, u_s.ty_s, u_s_s.ty, u_s.ty_s.ty) %>% 
+#   mutate(daic = round(AIC - min(AIC), 2))
+# # Best performing model has treatment-year effect for probability of flowering
+# # But how large is the effect size?
+# 
+# summary(u_s_s.ty)
+# 
+# u_st_s.ty = glmmTMB(
+#   No.umbels ~ size * trt + (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ size + trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# u_s_st.ty = glmmTMB(
+#   No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
+#   family = 'truncated_poisson',
+#   ziformula = ~ size * trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
+#   data = demo.flow
+# )
+# 
+# AIC(u_st_s.ty, u_s_st.ty, u_s_s.ty) %>% mutate(daic = round(AIC - min(AIC), 2))
+# # No size-treatment effects
+# 
+# # Okay... compare model with year-varying effects with non-varying effects
+# 
+# expand.grid(size = (5:60)/10, trt = c('control', 'drought', 'irrigated')) %>%
+#   mutate(
+#     u.nrf = predict(u_s_s, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'response'),
+#     u.yrf = predict(u_s_s.ty, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'response')
+#   ) %>%
+#   pivot_longer(c(u.nrf, u.yrf), names_to = 'model', values_to = 'pred') %>%
+#   ggplot(aes(x = size, y = pred, linetype = model, colour = trt)) +
+#   geom_line() +
+#   scale_colour_manual(values = c('black', 'red', 'blue')) +
+#   scale_y_log10()
+# # interesting - the year-varying effects model looks like it always favors the controls
+# # i.e. control plants always produce more umbels
+# # presumably this is probability of flowering-related - smaller plants less likely to flower
+# 
+# expand.grid(size = (5:60)/10, trt = c('control', 'drought', 'irrigated')) %>%
+#   mutate(
+#     pred.umbl = predict(
+#       u_s_s.ty, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+#     )
+#   ) %>%
+#   ggplot(aes(x = size, y = pred.umbl, colour = trt)) +
+#   geom_point(
+#     data = demo.flow,
+#     aes(x = size, y = No.umbels),
+#     size = 3, position = position_jitter(height = 0.25), alpha = 0.2
+#   ) +
+#   geom_line() + # scale_y_log10()
+#   scale_colour_manual(values = c('black', 'red', 'blue'))
+# 
+# 
+# # --- Seed set model  
+# 
+# # Here, we'll also use a zero-inflated model
+# # - Probability of producing zero seed estimated with zero inflation term
+# # - Distribution of seeds after the zero inflation is modeled by a Negative Binomial
+# #   - doing this because it accurately captures overdispersion and because the 
+# #     data-generating process can also account for umbels that were simply not 
+# #     sufficiently pollinated
+# 
+# s_0 = glmmTMB(
+#   no.seeds ~ (1 | Plot / plantid),
+#   ziformula = ~ (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_0_y = glmmTMB(
+#   no.seeds ~ (1 | Plot / plantid),
+#   ziformula = ~ Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_y_0 = glmmTMB(
+#   no.seeds ~ Year + (1 | Plot / plantid),
+#   ziformula = ~ (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_y_y = glmmTMB(
+#   no.seeds ~ Year + (1 | Plot / plantid),
+#   ziformula = ~ Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# AIC(s_0, s_y_0, s_0_y, s_y_y) %>% arrange(AIC)
+# # Unsurprisingly, year effects supported in both models
+# 
+# s_s.y_y = glmmTMB(
+#   no.seeds ~ size + Year + (1 | Plot / plantid),
+#   ziformula = ~ Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_y_s.y = glmmTMB(
+#   no.seeds ~ Year + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_s.y_s.y = glmmTMB(
+#   no.seeds ~ size + Year + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# AIC(s_y_y, s_s.y_y, s_y_s.y, s_s.y_s.y) %>% mutate(daic = AIC - min(AIC))
+# 
+# # Include size in both
+# 
+# s_s.t.y_s.y = glmmTMB(
+#   no.seeds ~ trt + size + Year + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_s.y_s.t.y = glmmTMB(
+#   no.seeds ~ size + Year + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + trt + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_s.t.y_s.t.y = glmmTMB(
+#   no.seeds ~ trt + size + Year + (1 | Plot / plantid),
+#   ziformula = ~ trt + size + Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# AIC(s_s.y_s.y, s_s.t.y_s.y, s_s.y_s.t.y, s_s.t.y_s.t.y) %>% mutate(daic = round(AIC - min(AIC), 2))
+# # Eh actually not seeing evidence of a treatment effect here...
+# # Weird! it did show up for the poisson model...
+# 
+# s_st.y_s.y = glmmTMB(
+#   no.seeds ~ trt * size + Year + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_s.ty_s.y = glmmTMB(
+#   no.seeds ~ trt * Year + size + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_sy.ty_s.y = glmmTMB(
+#   no.seeds ~ trt * Year + trt * size + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_s.y_st.y = glmmTMB(
+#   no.seeds ~ size + Year + (1 | Plot / plantid),
+#   ziformula = ~ trt * size + Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_s.y_s.ty = glmmTMB(
+#   no.seeds ~ size + Year + (1 | Plot / plantid),
+#   ziformula = ~ trt * Year + size + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_s.y_st.ty = glmmTMB(
+#   no.seeds ~ size + Year + (1 | Plot / plantid),
+#   ziformula = ~ trt * Year + trt * size + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# AIC(s_st.y_s.y, s_s.ty_s.y, s_sy.ty_s.y, s_s.y_st.y, s_s.y_s.ty, s_s.y_st.ty, s_s.y_s.y) %>%
+#   arrange(AIC)
+# # Won't even bother with any of the models with the treatment interactions in
+# # the zero-inflation formula (their models look bad in this table)
+# 
+# 
+# summary(s_st.y_s.y)
+# 
+# # Number of umbels
+# 
+# s_st.y.u_s.y = glmmTMB(
+#   no.seeds ~ trt * size + phen.umbels + Year + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_st.y_s.y.u = glmmTMB(
+#   no.seeds ~ trt * size + Year + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + phen.umbels + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_st.y.u_s.y.u = glmmTMB(
+#   no.seeds ~ trt * size + phen.umbels + Year + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + phen.umbels + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# AIC(s_st.y_s.y, s_st.y.u_s.y, s_st.y_s.y.u, s_st.y.u_s.y.u) %>% arrange(AIC)
+# 
+# # Look for size-year interactions
+# 
+# s_sty_s.y.u = glmmTMB(
+#   no.seeds ~ trt * size * Year + (1 | Plot / plantid),
+#   ziformula = ~ size + Year + phen.umbels + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_st.y_sy.u = glmmTMB(
+#   no.seeds ~ trt * size + Year + (1 | Plot / plantid),
+#   ziformula = ~ size * Year + phen.umbels + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# s_sty_sy.u = glmmTMB(
+#   no.seeds ~ trt * size * Year + (1 | Plot / plantid),
+#   ziformula = ~ size * Year + phen.umbels + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   data = demo.seed
+# )
+# 
+# AIC(s_st.y_s.y.u, s_sty_s.y.u, s_st.y_sy.u, s_sty_sy.u) %>% arrange(AIC)
+# 
+# 
+# # Best mod is s_st.y_sy.u
+# 
+# summary(s_st.y_sy.u)
+# 
+# pred.seeds = expand.grid(
+#   Year = factor(2021:2024),
+#   size = (5:60)/10,
+#   trt = c('control', 'drought', 'irrigated'),
+#   phen.umbels = c(1, 5)
+# ) %>%
+#   mutate(
+#     pred.seed = predict(
+#       s_st.y_sy.u, newdata = ., 
+#       re.form = ~ 0, type = 'response',
+#       allow.new.levels = TRUE
+#     )
+#   )
+# 
+# pred.seeds %>% 
+#   mutate(phen.umbels = factor(phen.umbels)) %>%
+#   ggplot(aes(x = size, y = pred.seed, group = interaction(trt, phen.umbels))) +
+#   geom_line(aes(colour = trt, linetype = phen.umbels)) +
+#   scale_colour_manual(values = c('black', 'red', 'blue')) +
+#   scale_y_log10() +
+#   facet_wrap(~ Year)
+# 
+# # --- Recruit size model  ---------------------------------------
+# 
+# # Null model
+# r_0 = glmmTMB(size ~ (1 | Plot), data = demo.recr)
+# 
+# # A model with a year random effect
+# r_y = glmmTMB(size ~ (1 | Year) + (1 | Plot), data = demo.recr)
+# 
+# # A model with a treatment effect
+# r_t = glmmTMB(size ~ trt + (1 | Plot), data = demo.recr)
+# 
+# # A model with both year efect and treatment effect
+# r_t.y = glmmTMB(size ~ trt + (1 | Year) + (1 | Plot), data = demo.recr)
+# 
+# # A model with both year efect and treatment effect
+# r_ty = glmmTMB(size ~ trt + (1 | Year) + (1 | Year:trt) + (1 | Plot), data = demo.recr)
+# 
+# AIC(r_0, r_y, r_t, r_t.y, r_ty) %>% mutate(daic = round(AIC - min(AIC), 2))
+# # Interesting. Definite evidence for a year effect. Weak evidence of a treatment effect.
+# 
+# summary(r_t.y)
+# # The effect size is kinda marginal...
+# # Wait... drought plants are slightly larger than control plants
+# # Huh.
+# 
+# ggplot(demo.recr, aes(x = size, group = trt, fill = trt)) +
+#   geom_histogram(position = 'identity', alpha = 0.5, binwidth = 0.2) + 
+#   scale_fill_manual(values = c('black', 'red', 'blue'))
+# # hmm... 
 
-# Strategy here: use a hurdle model
-# - Response is number of umbels per plant
-# - Hurdle portion (through zero-inflation) is the probability of (not) flowering
-# - Umbel count is modeled with a zero-inflated Poisson distribution
-
-# Test first for size-effects on both parts of the model
-# Then test for treatment effects
-# Then test for potential interactions
-
-u_0 = glmmTMB(
-  No.umbels ~ (1 | Year) + (1 | Plot / plantid),
-  family = 'truncated_poisson',
-  ziformula = ~ (1 | Year) + (1 | Plot / plantid),
-  data = demo.flow
-)
-
-u_s_0 = glmmTMB(
-  No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
-  family = 'truncated_poisson',
-  ziformula = ~ (1 | Year) + (1 | Plot / plantid),
-  data = demo.flow
-)
-
-u_0_s = glmmTMB(
-  No.umbels ~ (1 | Year) + (1 | Plot / plantid),
-  family = 'truncated_poisson',
-  ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
-  data = demo.flow
-)
-
-u_s_s = glmmTMB(
-  No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
-  family = 'truncated_poisson',
-  ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
-  data = demo.flow
-)
-
-AIC(u_0, u_0_s, u_s_0, u_s_s) %>% mutate(daic = round(AIC - min(AIC), 2))
-# Keep size in the models
-
-# Treatment effects
-
-u_s.t_s = glmmTMB(
-  No.umbels ~ trt + size + (1 | Year) + (1 | Plot / plantid),
-  family = 'truncated_poisson',
-  ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
-  data = demo.flow
-)
-
-u_s_s.t = glmmTMB(
-  No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
-  family = 'truncated_poisson',
-  ziformula = ~ trt * size + (1 | Year) + (1 | Plot / plantid),
-  data = demo.flow
-)
-
-u_st_s = glmmTMB(
-  No.umbels ~ size * trt + (1 | Year) + (1 | Plot / plantid),
-  family = 'truncated_poisson',
-  ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
-  data = demo.flow
-)
-
-u_s_st = glmmTMB(
-  No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
-  family = 'truncated_poisson',
-  ziformula = ~ trt * size + (1 | Year) + (1 | Plot / plantid),
-  data = demo.flow
-)
-
-u_s.ty_s = glmmTMB(
-  No.umbels ~ size + trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
-  family = 'truncated_poisson',
-  ziformula = ~ size + (1 | Year) + (1 | Plot / plantid),
-  data = demo.flow
-)
+# --- Estimate predictions from model forming backbone of kernel -------
 
 u_s_s.ty = glmmTMB(
   No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
   family = 'truncated_poisson',
   ziformula = ~ size + trt + (1 | Year) + (1 | Year:trt) + (1 | Plot / plantid),
   data = demo.flow
-)
-
-AIC(u_s.t_s, u_s_s.t, u_st_s, u_s_st, u_s_s, u_s.ty_s, u_s_s.ty) %>% mutate(daic = round(AIC - min(AIC), 2))
-# Best performing model has treatment-year effect for probability of flowering
-# But how large is the effect size?
-
-summary(u_s_s.ty)
-
-# Hmm... that irrigation effect actually is quite large
-# But there is a lot of uncertainty in both estimates
-# Going to say don't go with this model
-
-# Best model (aside from disfavored year-varying treatment effect model) has
-# just size for both submodels
-# Examine predictions:
-
-data.frame(size = (5:60)/10) %>%
-  mutate(
-    pred.umbl = predict(
-      u_s_s, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
-    )
-  ) %>%
-  ggplot(aes(x = size, y = pred.umbl)) +
-  geom_point(
-    data = demo.flow,
-    aes(x = size, y = No.umbels),
-    size = 3, position = position_jitter(height = 0.5), alpha = 0.2
-  ) +
-  geom_line() # + scale_y_log10()
-# Hmm... maybe doing some estimation... but that might be a year/random effect thing?
-
-# --- Seed set model  
-
-# Here, we'll also use a zero-inflated model
-# - Probability of producing zero seed estimated with zero inflation term
-# - Distribution of seeds after the zero inflation is modeled by a Negative Binomial
-#   - doing this because it accurately captures overdispersion and because the 
-#     data-generating process can also account for umbels that were simply not 
-#     sufficiently pollinated
-
-s_0 = glmmTMB(
-  no.seeds ~ (1 | Plot / plantid),
-  ziformula = ~ (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_0_y = glmmTMB(
-  no.seeds ~ (1 | Plot / plantid),
-  ziformula = ~ Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_y_0 = glmmTMB(
-  no.seeds ~ Year + (1 | Plot / plantid),
-  ziformula = ~ (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_y_y = glmmTMB(
-  no.seeds ~ Year + (1 | Plot / plantid),
-  ziformula = ~ Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-AIC(s_0, s_y_0, s_0_y, s_y_y) %>% arrange(AIC)
-# Unsurprisingly, year effects supported in both models
-
-s_s.y_y = glmmTMB(
-  no.seeds ~ size + Year + (1 | Plot / plantid),
-  ziformula = ~ Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_y_s.y = glmmTMB(
-  no.seeds ~ Year + (1 | Plot / plantid),
-  ziformula = ~ size + Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_s.y_s.y = glmmTMB(
-  no.seeds ~ size + Year + (1 | Plot / plantid),
-  ziformula = ~ size + Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-AIC(s_y_y, s_s.y_y, s_y_s.y, s_s.y_s.y) %>% mutate(daic = AIC - min(AIC))
-
-# Include size in both
-
-s_s.t.y_s.y = glmmTMB(
-  no.seeds ~ trt + size + Year + (1 | Plot / plantid),
-  ziformula = ~ size + Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_s.y_s.t.y = glmmTMB(
-  no.seeds ~ size + Year + (1 | Plot / plantid),
-  ziformula = ~ size + Year + trt + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_s.t.y_s.t.y = glmmTMB(
-  no.seeds ~ trt + size + Year + (1 | Plot / plantid),
-  ziformula = ~ trt + size + Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-AIC(s_s.y_s.y, s_s.t.y_s.y, s_s.y_s.t.y, s_s.t.y_s.t.y) %>% mutate(daic = AIC - min(AIC))
-# Eh actually not seeing evidence of a treatment effect here...
-# Weird! it did show up for the poisson model...
-
-s_st.y_s.y = glmmTMB(
-  no.seeds ~ trt * size + Year + (1 | Plot / plantid),
-  ziformula = ~ size + Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_s.ty_s.y = glmmTMB(
-  no.seeds ~ trt * Year + size + (1 | Plot / plantid),
-  ziformula = ~ size + Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_sy.t_s.y = glmmTMB(
-  no.seeds ~ trt * Year + size + (1 | Plot / plantid),
-  ziformula = ~ size + Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-AIC(s_s.y_s.y, s_s.t.y_s.y, s_st.y_s.y, s_s.ty_s.y, s_sy.t_s.y) %>% arrange(AIC)
-# Wait best model has treatment-size effect
-
-summary(s_st.y_s.y)
-
-# Number of umbels
-
-s_st.y.u_s.y = glmmTMB(
-  no.seeds ~ trt * size + phen.umbels + Year + (1 | Plot / plantid),
-  ziformula = ~ size + Year + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_st.y_s.y.u = glmmTMB(
-  no.seeds ~ trt * size + Year + (1 | Plot / plantid),
-  ziformula = ~ size + Year + phen.umbels + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-s_st.y.u_s.y.u = glmmTMB(
-  no.seeds ~ trt * size + phen.umbels + Year + (1 | Plot / plantid),
-  ziformula = ~ size + Year + phen.umbels + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-AIC(s_st.y_s.y, s_st.y.u_s.y, s_st.y_s.y.u, s_st.y.u_s.y.u) %>% arrange(AIC)
-
-# Look for size-year interactions
-
-s_sty_s.y.u = glmmTMB(
-  no.seeds ~ trt * size * Year + (1 | Plot / plantid),
-  ziformula = ~ size + Year + phen.umbels + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
 )
 
 s_st.y_sy.u = glmmTMB(
@@ -359,69 +500,7 @@ s_st.y_sy.u = glmmTMB(
   data = demo.seed
 )
 
-s_sty_sy.u = glmmTMB(
-  no.seeds ~ trt * size * Year + (1 | Plot / plantid),
-  ziformula = ~ size * Year + phen.umbels + (1 | Plot / plantid),
-  family = 'nbinom2',
-  data = demo.seed
-)
-
-AIC(s_st.y_s.y.u, s_sty_s.y.u, s_st.y_sy.u, s_sty_sy.u) %>% arrange(AIC)
-
-
-# Best mod is s_st.y_sy.u
-
-summary(s_st.y_sy.u)
-
-pred.seeds = expand.grid(
-  Year = factor(2021:2024),
-  size = (5:60)/10,
-  trt = c('control', 'drought', 'irrigated'),
-  phen.umbels = c(1, 5)
-) %>%
-  mutate(
-    pred.seed = predict(
-      s_st.y_sy.u, newdata = ., 
-      re.form = ~ 0, type = 'response',
-      allow.new.levels = TRUE
-    )
-  )
-
-pred.seeds %>% 
-  mutate(phen.umbels = factor(phen.umbels)) %>%
-  ggplot(aes(x = size, y = pred.seed, group = interaction(trt, phen.umbels))) +
-  geom_line(aes(colour = trt, linetype = phen.umbels)) +
-  scale_colour_manual(values = c('black', 'red', 'blue')) +
-  scale_y_log10() +
-  facet_wrap(~ Year)
-
-# --- Recruit size model  ---------------------------------------
-
-# Null model
-r_0 = glmmTMB(size ~ (1 | Plot), data = demo.recr)
-
-# A model with a year random effect
-r_y = glmmTMB(size ~ (1 | Year) + (1 | Plot), data = demo.recr)
-
-# A model with a treatment effect
-r_t = glmmTMB(size ~ trt + (1 | Plot), data = demo.recr)
-
-# A model with both year efect and treatment effect
 r_t.y = glmmTMB(size ~ trt + (1 | Year) + (1 | Plot), data = demo.recr)
-
-AIC(r_0, r_y, r_t, r_t.y) %>% mutate(daic = round(AIC - min(AIC), 2))
-# Interesting. Definite evidence for a year effect. Weak evidence of a treatment effect.
-
-summary(r_t.y)
-# The effect size is kinda marginal...
-# Wait... drought plants are slightly larger than control plants
-
-ggplot(demo.recr, aes(x = size, group = trt, fill = trt)) +
-  geom_histogram(position = 'identity', alpha = 0.5, binwidth = 0.2) + 
-  scale_fill_manual(values = c('black', 'blue', 'red'))
-
-
-# --- Estimate predictions from model forming backbone of kernel -------
 
 # Standard deviation (residual error) term from recruitment model
 sigma.recr = summary(r_t.y)$sigma
@@ -435,7 +514,7 @@ backbone = expand.grid(
   mutate(
     # Umbel count
     phen.umbels = predict(
-      u_s_s, newdata = ., 
+      u_s_s.ty, newdata = ., 
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
