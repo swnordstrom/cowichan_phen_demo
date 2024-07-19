@@ -54,6 +54,7 @@ demo.seed = rbind(
     group_by(Year, plantid) %>%
     mutate(miss.umbel = ifelse(phen.umbels < n(), 0, phen.umbels - n())) %>%
     ungroup() %>%
+    distinct(Year, plantid, .keep_all = TRUE) %>%
     uncount(miss.umbel) %>%
     mutate(no.seeds = 0)
 ) %>%
@@ -181,7 +182,7 @@ demo.flow = demo.flow %>%
 #   data = demo.flow
 # )
 # 
-# AIC(u_s.t_s, u_s_s.t, u_st_s, u_s_st, u_s_s, u_s.ty_s, u_s_s.ty, u_s.ty_s.ty) %>% 
+# AIC(u_s.t_s, u_s_s.t, u_st_s, u_s_st, u_s_s, u_s.ty_s, u_s_s.ty, u_s.ty_s.ty) %>%
 #   mutate(daic = round(AIC - min(AIC), 2))
 # # Best performing model has treatment-year effect for probability of flowering
 # # But how large is the effect size?
