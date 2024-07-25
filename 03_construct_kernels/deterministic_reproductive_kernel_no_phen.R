@@ -375,7 +375,6 @@ demo.flow = demo.flow %>%
 # # Won't even bother with any of the models with the treatment interactions in
 # # the zero-inflation formula (their models look bad in this table)
 # 
-# 
 # summary(s_st.y_s.y)
 # 
 # # Number of umbels
@@ -553,7 +552,8 @@ backbone %>%
   ggplot(aes(x = size.pre, y = seeds.total, group = trt)) +
   geom_line(aes(colour = trt)) +
   scale_colour_manual(values = c('black', 'red', 'blue'))
-# Plausible numbers
+# Plausible numbers up until hitting >500 seeds per plant...
+# that's a little extrapolat(ive? ory?)
 
 backbone %>%
   ggplot(aes(x = size.pre, y = size.cur, fill = p.size.cur)) + # fill = log(p.size.cur, base = 10))) +
@@ -563,6 +563,22 @@ backbone %>%
   facet_wrap(~ trt)
 # Lol, cool
 
+backbone %>%
+  mutate(p.size.cur = log(p.size.cur, base = 10)) %>%
+  ggplot(aes(x = size.pre, y = size.cur, fill = p.size.cur)) +
+  geom_raster() +
+  scale_fill_viridis_c() +
+  scale_y_reverse() +
+  facet_wrap(~ trt)
+
+# Check of "eviction" caused by lower boundary and recruit size distribution
+predict(
+  r_t.y, 
+  newdata = data.frame(trt = c('control', 'drought', 'irrigated')), 
+  allow.new.levels = TRUE, re.form = ~ 0
+) %>% 
+  pnorm(.5, mean = ., sd = sigma.recr)
+# tiny - ~10^-6
 
 # Export kernel in CSV form
 write.csv(
@@ -571,3 +587,450 @@ write.csv(
   '03_construct_kernels/out/deterministic_reprod_kernel_no_phen.csv'
 )
 
+# --- Sensitivity
+
+# Parameters to perform sensitivity analysis on:
+# - Probability of flowering model (i.e., ZI term in umbel model)
+#   - b_0 (intercept)
+#   - b_1 (size)
+# - Number of umbels produced (conditional part of umbel model)
+#   - b_0 (intercept)
+#   - b_1 (size)
+# - Probability of umbel failure (ZI term of the seed model)
+#   - b_0 (intercept)
+#   - b_1 (size)
+# - Number of seeds produced (conditional part of seed model)
+#   - b_0 (intercept)
+#   - b_1 (size)
+# - Recruit size
+#   - b_0 (intercept/mean)
+#   - sigma (standard deviation)
+
+# So ten perturbations
+
+# I don't think there's a neat way to dplyr this so gotta do it in a long, obnoxious way.
+
+# Define perturbation magnitude
+delta = .0001
+
+# Initialize a list for storing model outputs
+outputs = vector('list', length = 10)
+
+# Backbone for generating estimates
+backbone = expand.grid(
+  size = (5:60)/10,
+  size.cur = (5:60)/10,
+  trt = c('control', 'drought', 'irrigated'),
+  Year = factor(2021:2024)
+)
+
+# 1: flowering intercept
+
+outputs[[1]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = ., 
+      newparams = u_s_s.ty$fit$par %>%
+        (function(x) {
+          x[3] <- x[3] + delta
+          return(x)
+        }),
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
+  ) %>%
+  mutate(perturb.param = 'flow_int')
+
+# 2: flowering slope
+
+outputs[[2]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = ., 
+      newparams = u_s_s.ty$fit$par %>%
+        (function(x) {
+          x[4] <- x[4] + delta
+          return(x)
+        }),
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
+  ) %>%
+  mutate(perturb.param = 'flow_slope')
+
+# 3: Umbel count intercept
+
+outputs[[3]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = ., 
+      newparams = u_s_s.ty$fit$pars %>%
+        (function(x) {
+          x[1] <- x[1] + delta
+          return(x)
+        }),
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
+  ) %>%
+  mutate(perturb.param = 'numb_int')
+
+# 4: Umbel count slope
+outputs[[4]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = ., 
+      newparams = u_s_s.ty$fit$pars %>%
+        (function(x) {
+          x[2] <- x[2] + delta
+          return(x)
+        }),
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
+  ) %>%
+  mutate(perturb.param = 'numb_slope')
+
+# 5: Umbel success intercept
+
+outputs[[5]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      newparams = s_st.y_sy.u$fit$par %>%
+        (function(x) {
+          x[10] <- x[10] + delta
+          return(x)
+        }),
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
+  ) %>%
+  mutate(perturb.param = 'succ_int')
+
+# 6: Umbel success slope
+
+outputs[[6]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      newparams = s_st.y_sy.u$fit$par %>%
+        (function(x) {
+          x[11] <- x[11] + delta
+          return(x)
+        }),
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
+  ) %>%
+  mutate(perturb.param = 'succ_slope')
+
+# 7: Seed set intercept
+
+outputs[[7]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      newparams = s_st.y_sy.u$fit$par %>%
+        (function(x) {
+          x[1] <- x[1] + delta
+          return(x)
+        }),
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
+  ) %>%
+  mutate(perturb.param = 'seed_int')
+
+# 8: seed set slope
+outputs[[8]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      newparams = s_st.y_sy.u %>%
+        (function(x) {
+          x[4] <- x[4] + delta
+          return(x)
+        }),
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
+  ) %>%
+  mutate(perturb.param = 'seed_slope')
+
+# 9: Recruit size mean (intercept)
+
+outputs[[9]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .,
+      newparams = r_t.y$fit$par %>%
+        (function(x) {
+          x[1] <- x[1] + delta
+          return(x)
+        })
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
+  ) %>%
+  mutate(perturb.param = 'recr_int')
+
+# 10: Recruit standard deviation
+
+outputs[[10]] = backbone %>%
+  mutate(
+    # Umbel count
+    phen.umbels = predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+    )
+  ) %>%
+  mutate(
+    # Use this umbel count to get seeds/umbel
+    seeds.per.umbel = predict(
+      s_st.y_sy.u, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0
+    )
+  ) %>%
+  group_by(size, size.cur, trt) %>%
+  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  ungroup() %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = exp(seeds.per.umbel),
+    # Total umbels per plant
+    seeds.total = seeds.per.umbel * phen.umbels
+  ) %>%
+  mutate(
+    # Mean recruit size
+    recr.mean = predict(
+      r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .
+    ),
+    # Get the number of seeds produced for each size grouping
+    p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr + delta)
+  ) %>%
+  mutate(perturb.param = 'recr_sigma')
+
+outputs.all = do.call(rbind, outputs)
+
+write.csv(
+  outputs.all %>% select(size.pre = size, size.cur, trt, p.size.cur, perturb.param),
+  file = '03_construct_kernels/out/deterministic_repr_coef_perturbation_no_phen.csv',
+  row.names = FALSE
+)
