@@ -395,3 +395,128 @@ write.csv(
   file = '03_construct_kernels/out/deterministic_growsurv_kernel.csv',
   row.names = FALSE
 )
+
+
+# --- Sensitivities
+
+# Parameters of interest:
+# - NOT going to do survvial ATM because survival does not vary by treatment
+# - Growth model:
+#   - Intercept
+#   - Slope (size-dependence)
+#   - Residual (standard deviation term)
+
+# Perturbation amount
+delta = 0.0001
+
+# Get a list for outputs
+outputs = vector('list', 3)
+
+# Residual variance in growth models
+grow.sd = summary(g_st.ty)$sigma
+
+# Data frame to generate predictions for
+grow.surv.kernel = expand.grid(
+  size.prev = (5:60)/10,
+  size.cur = (5:60)/10,
+  trt = c('control', 'drought', 'irrigated')
+)
+
+# Start the perturbations
+
+# 1: Growth model intercept
+
+outputs[[1]] = grow.surv.kernel %>%
+  # Predicted survival
+  mutate(
+    pred.surv = predict(
+      newdata = .,
+      object = s_s, type = 'response',
+      re.form = ~ 0, allow.new.levels = TRUE
+    )
+  ) %>%
+  # Predicted growth
+  mutate(
+    pred.grow.mean = predict(
+      newdata = .,
+      object = g_st.ty, type = 'response',
+      newparams = g_st.ty$fit$par %>%
+        (function(x) {
+          x[1] <- x[1] + delta
+          return(x)
+        }),
+      re.form = ~ 0, allow.new.levels = TRUE
+    )
+  ) %>%
+  mutate(
+    p.grow.size = 0.1 * dnorm(size.cur, pred.grow.mean, grow.sd)
+  ) %>%
+  # Combine all together to get overall size distribution in next time step
+  mutate(p.size.cur = pred.surv * p.grow.size) %>%
+  mutate(perturb.param = 'grow_int')
+
+
+# 2 Growth model intercept
+
+outputs[[2]] = grow.surv.kernel %>%
+  # Predicted survival
+  mutate(
+    pred.surv = predict(
+      newdata = .,
+      object = s_s, type = 'response',
+      re.form = ~ 0, allow.new.levels = TRUE
+    )
+  ) %>%
+  # Predicted growth
+  mutate(
+    pred.grow.mean = predict(
+      newdata = .,
+      object = g_st.ty, type = 'response',
+      newparams = g_st.ty$fit$par %>%
+        (function(x) {
+          x[2] <- x[2] + delta
+          return(x)
+        }),
+      re.form = ~ 0, allow.new.levels = TRUE
+    )
+  ) %>%
+  mutate(
+    p.grow.size = 0.1 * dnorm(size.cur, pred.grow.mean, grow.sd)
+  ) %>%
+  # Combine all together to get overall size distribution in next time step
+  mutate(p.size.cur = pred.surv * p.grow.size) %>%
+  mutate(perturb.param = 'grow_slope')
+
+# 3 Growth model standard deviation
+
+outputs[[3]] = grow.surv.kernel %>%
+  # Predicted survival
+  mutate(
+    pred.surv = predict(
+      newdata = .,
+      object = s_s, type = 'response',
+      re.form = ~ 0, allow.new.levels = TRUE
+    )
+  ) %>%
+  # Predicted growth
+  mutate(
+    pred.grow.mean = predict(
+      newdata = .,
+      object = g_st.ty, type = 'response',
+      re.form = ~ 0, allow.new.levels = TRUE
+    )
+  ) %>%
+  mutate(
+    p.grow.size = 0.1 * dnorm(size.cur, pred.grow.mean, grow.sd + delta)
+  ) %>%
+  # Combine all together to get overall size distribution in next time step
+  mutate(p.size.cur = pred.surv * p.grow.size) %>%
+  mutate(perturb.param = 'grow_sigma')
+
+outputs.all = do.call(rbind, outputs)
+
+write.csv(
+  outputs.all %>% select(size.prev, size.cur, trt, p.size.cur, perturb.param),
+  file = '03_construct_kernels/out/deterministic_grow_coef_perturbation_no_phen.csv',
+  row.names = FALSE
+)
