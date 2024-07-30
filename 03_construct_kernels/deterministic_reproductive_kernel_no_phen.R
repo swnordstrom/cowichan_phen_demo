@@ -613,6 +613,9 @@ write.csv(
 # Define perturbation magnitude
 delta = .0001
 
+# Standard deviation (residual error) term from recruitment model
+sigma.recr = summary(r_t.y)$sigma
+
 # Initialize a list for storing model outputs
 outputs = vector('list', length = 10)
 
@@ -663,7 +666,16 @@ outputs[[1]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
   ) %>%
-  mutate(perturb.param = 'flow_int')
+  mutate(
+    perturb.param = 'flow_int',
+    orig.par.val = case_when(
+      trt %in% 'control' ~ u_s_s.ty$fit$par[3],
+      trt %in% 'drought' ~ u_s_s.ty$fit$par[3] + u_s_s.ty$fit$par[5],
+      trt %in% 'irrigated' ~ u_s_s.ty$fit$par[3] + u_s_s.ty$fit$par[6]
+    ) # u_s_s.ty$fit$par[3]
+  )
+
+any(is.na(outputs[[1]]$orig.par.val))
 
 # 2: flowering slope
 
@@ -704,7 +716,11 @@ outputs[[2]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
   ) %>%
-  mutate(perturb.param = 'flow_slope')
+  mutate(
+    perturb.param = 'flow_slope',
+    # there is no treatment-size effect on the zero-inflation term
+    orig.par.val = u_s_s.ty$fit$par[4]
+  )
 
 # 3: Umbel count intercept
 
@@ -745,7 +761,11 @@ outputs[[3]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
   ) %>%
-  mutate(perturb.param = 'numb_int')
+  mutate(
+    perturb.param = 'numb_int',
+    # there is no treatment effect on the umbel count model
+    orig.par.val = u_s_s.ty$fit$par[1]
+  )
 
 # 4: Umbel count slope
 outputs[[4]] = backbone %>%
@@ -785,7 +805,11 @@ outputs[[4]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
   ) %>%
-  mutate(perturb.param = 'numb_slope')
+  mutate(
+    perturb.param = 'numb_slope',
+    # no treatment-size effect in the umbel count model
+    orig.par.val = u_s_s.ty$fit$par[2]
+  )
 
 # 5: Umbel success intercept
 
@@ -826,7 +850,11 @@ outputs[[5]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
   ) %>%
-  mutate(perturb.param = 'succ_int')
+  mutate(
+    perturb.param = 'succ_int',
+    # no treatment effect on the model for umbel success intercept
+    orig.par.val = s_st.y_sy.u$fit$par[10]
+  )
 
 # 6: Umbel success slope
 
@@ -867,7 +895,11 @@ outputs[[6]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
   ) %>%
-  mutate(perturb.param = 'succ_slope')
+  mutate(
+    perturb.param = 'succ_slope',
+    # no treatment effect on umbel success slope
+    orig.par.val = s_st.y_sy.u$fit$par[11]
+  )
 
 # 7: Seed set intercept
 
@@ -908,7 +940,16 @@ outputs[[7]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
   ) %>%
-  mutate(perturb.param = 'seed_int')
+  mutate(
+    perturb.param = 'seed_int',
+    orig.par.val = case_when(
+      trt %in% 'control' ~ s_st.y_sy.u$fit$par[1],
+      trt %in% 'drought' ~ s_st.y_sy.u$fit$par[1] + s_st.y_sy.u$fit$par[2],
+      trt %in% 'irrigated' ~ s_st.y_sy.u$fit$par[1] + s_st.y_sy.u$fit$par[3]
+    ) # s_st.y_sy.u$fit$par[1]
+  )
+
+any(is.na(outputs[[7]]$orig.par.val))
 
 # 8: seed set slope
 outputs[[8]] = backbone %>%
@@ -923,7 +964,7 @@ outputs[[8]] = backbone %>%
     # Use this umbel count to get seeds/umbel
     seeds.per.umbel = predict(
       s_st.y_sy.u, newdata = .,
-      newparams = s_st.y_sy.u %>%
+      newparams = s_st.y_sy.u$fit$par %>%
         (function(x) {
           x[4] <- x[4] + delta
           return(x)
@@ -948,7 +989,16 @@ outputs[[8]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
   ) %>%
-  mutate(perturb.param = 'seed_slope')
+  mutate(
+    perturb.param = 'seed_slope',
+    orig.par.val = case_when(
+      trt %in% 'control' ~ s_st.y_sy.u$fit$par[4],
+      trt %in% 'drought' ~ s_st.y_sy.u$fit$par[4] + s_st.y_sy.u$fit$par[8],
+      trt %in% 'irrigated' ~ s_st.y_sy.u$fit$par[4] + s_st.y_sy.u$fit$par[9]
+    ) # s_st.y_sy.u$fit$par[4]
+  )
+
+any(is.na(outputs[[8]]$orig.par.val))
 
 # 9: Recruit size mean (intercept)
 
@@ -989,7 +1039,16 @@ outputs[[9]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr)
   ) %>%
-  mutate(perturb.param = 'recr_int')
+  mutate(
+    perturb.param = 'recr_int',
+    orig.par.val = case_when(
+      trt %in% 'control' ~ r_t.y$fit$par[1],
+      trt %in% 'drought' ~ r_t.y$fit$par[1] + r_t.y$fit$par[2],
+      trt %in% 'irrigated' ~ r_t.y$fit$par[1] + r_t.y$fit$par[3]
+    ) # r_t.y$fit$par[1]
+  )
+
+any(is.na(outputs[[9]]$orig.par.val))
 
 # 10: Recruit standard deviation
 
@@ -1025,12 +1084,15 @@ outputs[[10]] = backbone %>%
     # Get the number of seeds produced for each size grouping
     p.size.cur = 0.1 * seeds.total * dnorm(x = size.cur, mean = recr.mean, sd = sigma.recr + delta)
   ) %>%
-  mutate(perturb.param = 'recr_sigma')
+  mutate(
+    perturb.param = 'recr_sigma',
+    orig.par.val = sigma.recr
+  )
 
 outputs.all = do.call(rbind, outputs)
 
 write.csv(
-  outputs.all %>% select(size.pre = size, size.cur, trt, p.size.cur, perturb.param),
+  outputs.all %>% select(size.pre = size, size.cur, trt, p.size.cur, perturb.param, orig.par.val),
   file = '03_construct_kernels/out/deterministic_repr_coef_perturbation_no_phen.csv',
   row.names = FALSE
 )
