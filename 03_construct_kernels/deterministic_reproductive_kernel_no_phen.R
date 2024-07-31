@@ -509,7 +509,7 @@ backbone = expand.grid(
   size = (5:60)/10,
   size.cur = (5:60)/10,
   trt = c('control', 'drought', 'irrigated'),
-  Year = factor(2021:2024)
+  year = factor(2021:2024)
 ) %>%
   mutate(
     # Umbel count
@@ -518,22 +518,34 @@ backbone = expand.grid(
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
-    # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+    # # Use this umbel count to get seeds/umbel
+    # seeds.per.umbel = predict(
+    #   s_st.y_sy.u, newdata = .,
+    #   allow.new.levels = TRUE, re.form = ~ 0
+    # )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -624,7 +636,7 @@ backbone = expand.grid(
   size = (5:60)/10,
   size.cur = (5:60)/10,
   trt = c('control', 'drought', 'irrigated'),
-  Year = factor(2021:2024)
+  year = factor(2021:2024)
 )
 
 # 1: flowering intercept
@@ -642,22 +654,30 @@ outputs[[1]] = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
     # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -692,22 +712,30 @@ outputs[[2]] = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
     # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -736,23 +764,31 @@ outputs[[3]] = backbone %>%
         }),
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
-  ) %>%
+  ) %>%  
+  rename(Year = year) %>%
   mutate(
     # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -781,22 +817,30 @@ outputs[[4]] = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
     # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -821,27 +865,49 @@ outputs[[5]] = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
     # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
+    # seeds.per.umbel = predict(
+    #   s_st.y_sy.u, newdata = .,
+    #   newparams = s_st.y_sy.u$fit$par %>%
+    #     (function(x) {
+    #       x[10] <- x[10] + delta
+    #       return(x)
+    #     }),
+    #   allow.new.levels = TRUE, re.form = ~ 0
+    # )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        newparams = s_st.y_sy.u$fit$par %>%
+          (function(x) {
+            x[10] <- x[10] + delta
+            return(x)
+          }),
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       newparams = s_st.y_sy.u$fit$par %>%
         (function(x) {
           x[10] <- x[10] + delta
           return(x)
         }),
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -866,27 +932,50 @@ outputs[[6]] = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
-    # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
+  #   # Use this umbel count to get seeds/umbel
+  #   seeds.per.umbel = predict(
+  #     s_st.y_sy.u, newdata = .,
+  #     newparams = s_st.y_sy.u$fit$par %>%
+  #       (function(x) {
+  #         x[11] <- x[11] + delta
+  #         return(x)
+  #       }),
+  #     allow.new.levels = TRUE, re.form = ~ 0
+  #   )
+  # ) %>%
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       newparams = s_st.y_sy.u$fit$par %>%
         (function(x) {
           x[11] <- x[11] + delta
           return(x)
         }),
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      newparams = s_st.y_sy.u$fit$par %>%
+        (function(x) {
+          x[11] <- x[11] + delta
+          return(x)
+        }),
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -911,27 +1000,49 @@ outputs[[7]] = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
-    # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
+    # # Use this umbel count to get seeds/umbel
+    # seeds.per.umbel = predict(
+    #   s_st.y_sy.u, newdata = .,
+    #   newparams = s_st.y_sy.u$fit$par %>%
+    #     (function(x) {
+    #       x[1] <- x[1] + delta
+    #       return(x)
+    #     }),
+    #   allow.new.levels = TRUE, re.form = ~ 0
+    # )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       newparams = s_st.y_sy.u$fit$par %>%
         (function(x) {
           x[1] <- x[1] + delta
           return(x)
         }),
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      newparams = s_st.y_sy.u$fit$par %>%
+        (function(x) {
+          x[1] <- x[1] + delta
+          return(x)
+        }),
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -960,27 +1071,49 @@ outputs[[8]] = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
-    # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
+    # # Use this umbel count to get seeds/umbel
+    # seeds.per.umbel = predict(
+    #   s_st.y_sy.u, newdata = .,
+    #   newparams = s_st.y_sy.u$fit$par %>%
+    #     (function(x) {
+    #       x[4] <- x[4] + delta
+    #       return(x)
+    #     }),
+    #   allow.new.levels = TRUE, re.form = ~ 0
+    # )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       newparams = s_st.y_sy.u$fit$par %>%
         (function(x) {
           x[4] <- x[4] + delta
           return(x)
         }),
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      newparams = s_st.y_sy.u$fit$par %>%
+        (function(x) {
+          x[4] <- x[4] + delta
+          return(x)
+        }),
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -1010,22 +1143,30 @@ outputs[[9]] = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
     # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
@@ -1060,22 +1201,30 @@ outputs[[10]] = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
+  rename(Year = year) %>%
   mutate(
     # Use this umbel count to get seeds/umbel
-    seeds.per.umbel = predict(
-      s_st.y_sy.u, newdata = .,
-      allow.new.levels = TRUE, re.form = ~ 0
-    )
+    seeds.zinf.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'zlink'
+    ),
+    seeds.seed.linear =  predict(
+      s_st.y_sy.u, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      type = 'link'
+    ),
   ) %>%
-  group_by(size, size.cur, trt) %>%
-  summarise(across(c(phen.umbels, seeds.per.umbel), mean)) %>%
+  # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.cur, trt, phen.umbels) %>%
+  summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = exp(seeds.per.umbel),
+    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
+  select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
   mutate(
     # Mean recruit size
     recr.mean = predict(
