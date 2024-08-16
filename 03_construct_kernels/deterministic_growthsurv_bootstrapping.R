@@ -1,7 +1,9 @@
 # Script for generating bootstrapped survival-growth subkernels, including
 # perturbations
 # Outputs:
-# - 
+# - 100 bootstrapped growth+surv sub-kernels
+# - 100 bootstrapped perturbed growth+surv sub-kernels
+# - 100 parameter differences used to generate sub-kernels
 
 # --- Setup ---------------------------------------------------------
 
@@ -113,7 +115,7 @@ surv.boots = demo.surv.sizes %>%
   # bootstrap samples
   group_by(plantid, surv.year) %>%
   mutate(samp = 1:n.straps) %>%
-  # Perform the resampling, preserving plot and survival structure
+  # Perform the resampling, preserving plot and year structure
   group_by(Plot, surv.year, samp) %>%
   sample_n(size = n(), replace = TRUE) %>%
   ungroup() %>%
@@ -145,7 +147,7 @@ grow.boots = demo.grow %>%
   # bootstrap samples
   group_by(plantid, surv.year) %>%
   mutate(samp = 1:n.straps) %>%
-  # Perform the resampling, preserving plot and survival structure
+  # Perform the resampling, preserving plot and year structure
   group_by(Plot, surv.year, samp) %>%
   sample_n(size = n(), replace = TRUE) %>%
   ungroup() %>%
