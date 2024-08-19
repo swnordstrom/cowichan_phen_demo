@@ -152,7 +152,7 @@ ltre.lambda = split(
   # Convert phen column into a date type
   mutate(phen.date = as.Date(as.numeric(phen), format = '%b-%d')) %>%
   mutate(
-    obs.date = (grepl('^125', phen) & trt %in% 'control') | 
+    obs.phen = (grepl('^125', phen) & trt %in% 'control') | 
       (grepl('^122', phen) & trt %in% 'drought') |
       (grepl('^127', phen) & trt %in% 'irrigated')
   )
@@ -192,6 +192,7 @@ ltre.boot.lambda = split(
 
 # Get 95% bootstrapped intervals for all bootstrapped datasets
 
+# Bootstrapped intervals at each date for each treatment
 all.boot.intervals = all.boot.lambda %>%
   group_by(trt, phen.date) %>%
   reframe(
@@ -200,6 +201,8 @@ all.boot.intervals = all.boot.lambda %>%
   ) %>%
   pivot_wider(names_from = lohi, values_from = cibound)
 
+
+# Bootstrapped intervals just for just the observed LTRE days
 ltre.boot.intervals = ltre.boot.lambda %>%
   group_by(trt, phen.date) %>%
   reframe(
@@ -210,7 +213,7 @@ ltre.boot.intervals = ltre.boot.lambda %>%
 
 # Make plot
 
-all.lambda %>%
+lambda.trt.pan = all.lambda %>%
   ggplot(aes(x = phen.date, group = trt)) +
   geom_ribbon(
     data = all.boot.intervals,
@@ -249,6 +252,22 @@ boot.lambda.diff = all.boot.lambda %>%
   select(-c(drought, control, irrigated)) %>%
   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda')
 
+boot.lambda.diff.interval = boot.lambda.diff %>%
+  group_by(phen.date, contrast) %>%
+  reframe(
+    d.lambda = quantile(d.lambda, probs = c(0.025, 0.975)),
+    lohi = c('lo', 'hi')
+  ) %>%
+  pivot_wider(names_from = lohi, values_from = d.lambda) %>%
+  # Do a merge to get the observed mean d.lambda
+  merge(
+    y = all.lambda %>%
+      pivot_wider(names_from = trt, values_from = lambda) %>%
+      mutate(d.c = drought - control, i.c = irrigated - control) %>%
+      select(-c(drought, control, irrigated)) %>%
+      pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'mean.d.lambda')
+  )
+
 ltre.lambda.diff = all.boot.lambda %>%
   pivot_wider(names_from = trt, values_from = lambda) %>%
   mutate(d.c = drought - control, i.c = irrigated - control) %>%
@@ -256,7 +275,7 @@ ltre.lambda.diff = all.boot.lambda %>%
   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda') %>%
   filter(!is.na(d.lambda))
 
-boot.lambda.diff %>%
+lambda.contr.pan = boot.lambda.diff %>%
   mutate(
     contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
   ) %>%
@@ -268,15 +287,34 @@ boot.lambda.diff %>%
     linetype = 2, colour = 'gray'
   ) +
   geom_point(
-    aes(y = d.lambda, colour = contrast),
+    aes(y = d.lambda),
     position = position_jitter(width = 1), alpha = 0.25
+  ) +
+  geom_point(
+    data = boot.lambda.diff.interval %>%
+      mutate(
+        contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+      ),
+    aes(y = mean.d.lambda),
+    size = 4, shape = 21, stroke = 2
+  ) +
+  geom_segment(
+    data = boot.lambda.diff.interval %>%
+      mutate(
+        contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+      ),
+    aes(xend = phen.date, y = lo, yend = hi)
   ) +
   # scale_shape_manual(values = c(1, 19)) +
   labs(x = 'Mean bud date', y = expression(Delta~lambda)) +
-  guides(colour = 'none') +
-  scale_colour_manual(values = c('red', 'blue')) +
+  guides(colour = 'none', fill = 'none') +
+  # scale_colour_manual(values = c('red', 'blue')) +
+  # scale_fill_manual(values = c('red', 'blue')) +
   facet_wrap(~ contrast, nrow = 2) +
   theme(panel.background = element_blank())
 
+plot_grid(
+  lambda.trt.pan, lambda.contr.pan, nrow = 1
+)
 
-# Also - maybe a good idea to have figures that show the lambda contrasts (significance testing)
+# good start
