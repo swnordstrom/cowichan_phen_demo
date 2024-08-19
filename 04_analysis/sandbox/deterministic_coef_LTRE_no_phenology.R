@@ -253,8 +253,7 @@ compare.results %>%
   geom_segment(aes(x = -.01, xend = .03, y = -.01, yend = .03), linetype = 3) +
   geom_point(aes(colour = contrast, shape = p.germ), size = 3) +
   scale_colour_manual(values = c('red', 'blue'))
-# Okay, this is incorrect.
-# Least wrong for small germination rates...
+# KING!!!!!!
 
 coef.ltre.df %>% 
   filter(contrib != 0) %>%
@@ -269,8 +268,6 @@ coef.ltre.df %>%
     legend.position = 'none'
   )
 
-# bleh
-# plot coefficient differences I guess
 coef.ltre.df %>%
   filter(coef.diff != 0) %>%
   # mutate(coef.sign = coef > 0, sv.sign)
@@ -310,14 +307,7 @@ coef.ltre.df %>%
   ) %>%
   group_by(contrast, p.germ, vital) %>%
   summarise(sum.contrib = sum(contrib)) %>%
-  filter(sum.contrib != 0) %>%
+  #filter(sum.contrib != 0) %>%
   ggplot(aes(x = p.germ, y = sum.contrib, colour = contrast, shape = vital)) +
   geom_point(position = position_dodge(width = 0.5), size = 4) +
   scale_colour_manual(values = c('red', 'blue'))
-# yes... something obviously wrong here!
-# should be some negative values at the very least for reproduction in irrigated treatments here!
-
-# CURRENT GUESS as to what is wrong:
-# some nonlinear averaging with the way that we're averaging seed set estimates across years
-# perhaps the zero-inflation is not being taken into account?
-# see what the default for `response` is in predict.glmmTMB()
