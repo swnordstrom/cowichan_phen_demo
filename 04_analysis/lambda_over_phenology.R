@@ -59,9 +59,7 @@ head(kernel.all.df)
 # Get lambda estimates for each treatment on each mean buddate
 # note: these will be only point estimates of lambda; uncertainty will come from
 # bootstrapped estimates
-all.lambda = split(
-  kernel.all.df, kernel.all.df[,c("trt", "phen")], sep = '_'
-) %>%
+all.lambda = split(kernel.all.df, kernel.all.df[,c("trt", "phen")], sep = '_', drop = TRUE) %>%
   # Split the kernel data up by phenology/treatment and convert each into matrix form
   lapply(
     function(df) {
@@ -98,7 +96,8 @@ kernel.all.boot.df = merge(
 # Split this and convert to matrix form, then estimate lambda from matrices
 # (also slowish)
 all.boot.lambda = split(
-  kernel.all.boot.df, kernel.all.boot.df[,c("trt", "boot", "mean.phen")], sep = '_', drop = TRUE
+  kernel.all.boot.df, kernel.all.boot.df[,c("trt", "boot", "mean.phen")], 
+  sep = '_', drop = TRUE
 ) %>%
   lapply(
     function(df) {
@@ -112,8 +111,8 @@ all.boot.lambda = split(
   # Get eigenvalues
   sapply(function(x) Re(eigen(x)$values[1])) %>%
   data.frame(lambda = .) %>%
-  mutate(tbp = row.names(.)) %>%
-  separate(tbp, into = c('trt', 'boot', 'phen'), sep = '_') %>%
+  mutate(ttbp = row.names(.)) %>%
+  separate(ttbp, into = c('trt', 'boot', 'phen'), sep = '_') %>%
   # Convert phen column into a date type
   mutate(phen.date = as.Date(as.numeric(phen), format = '%b-%d'))
 
@@ -131,7 +130,7 @@ kernel.ltre.df = merge(
 
 # Convert to get matrices and eigenvalues
 ltre.lambda = split(
-  kernel.ltre.df, kernel.ltre.df[,c("trt", "phen")], sep = '_', drop = TRUE
+  kernel.ltre.df, kernel.ltre.df[,c("trt", "trt.phen", "phen")], sep = '_', drop = TRUE
 ) %>%
   # Split the kernel data up by phenology/treatment and convert each into matrix form
   lapply(
@@ -139,7 +138,7 @@ ltre.lambda = split(
       df %>%
         arrange(size.prev, size.cur) %>%
         pivot_wider(names_from = size.prev, values_from = p.size.cur) %>%
-        select(-c(trt, phen, size.cur)) %>%
+        select(-c(trt, trt.phen, phen, size.cur)) %>%
         as.matrix()
     }
   ) %>% 
@@ -148,14 +147,9 @@ ltre.lambda = split(
   # Convert to data frame with treatrment/phen info
   data.frame(lambda = .) %>%
   mutate(trt_phen = row.names(.)) %>%
-  separate(trt_phen, into = c('trt', 'phen'), sep = '_') %>%
+  separate(trt_phen, into = c('trt', 'trt.phen', 'phen'), sep = '_') %>%
   # Convert phen column into a date type
-  mutate(phen.date = as.Date(as.numeric(phen), format = '%b-%d')) %>%
-  mutate(
-    obs.phen = (grepl('^125', phen) & trt %in% 'control') | 
-      (grepl('^122', phen) & trt %in% 'drought') |
-      (grepl('^127', phen) & trt %in% 'irrigated')
-  )
+  mutate(phen.date = as.Date(as.numeric(phen), format = '%b-%d'))
 
 # Get bootstrapped LTRE kernels
 # (will take a sec to run)
@@ -169,24 +163,22 @@ kernel.boot.ltre.df = merge(
   select(-c(p.size.cur.g, p.size.cur.f))
 
 ltre.boot.lambda = split(
-  kernel.boot.ltre.df, kernel.boot.ltre.df[,c("trt", "boot", "mean.phen")], sep = '_', drop = TRUE
+  kernel.boot.ltre.df, kernel.boot.ltre.df[,c("trt", 'trt.phen', "boot")], sep = '_', drop = TRUE
 ) %>%
   lapply(
     function(df) {
       df %>%
         arrange(size.prev, size.cur) %>%
         pivot_wider(names_from = size.prev, values_from = p.size.cur) %>%
-        select(-c(trt, mean.phen, boot, size.cur)) %>%
+        select(-c(trt, trt.phen, boot, size.cur)) %>%
         as.matrix()
     }
   ) %>%
   # Get eigenvalues
   sapply(function(x) Re(eigen(x)$values[1])) %>%
   data.frame(lambda = .) %>%
-  mutate(tbp = row.names(.)) %>%
-  separate(tbp, into = c('trt', 'boot', 'phen'), sep = '_') %>%
-  # Convert phen column into a date type
-  mutate(phen.date = as.Date(as.numeric(phen), format = '%b-%d'))
+  mutate(ttb = row.names(.)) %>%
+  separate(ttb, into = c('trt', 'trt.phen', 'boot'), sep = '_')
 
 # # Summaries for plots
 
@@ -204,12 +196,38 @@ all.boot.intervals = all.boot.lambda %>%
 
 # Bootstrapped intervals just for just the observed LTRE days
 ltre.boot.intervals = ltre.boot.lambda %>%
-  group_by(trt, phen.date) %>%
+  group_by(trt, trt.phen) %>%
   reframe(
     cibound = quantile(lambda, c(0.025, 0.975)),
     lohi = c('lo', 'hi')
   ) %>%
   pivot_wider(names_from = lohi, values_from = cibound)
+
+# Read in phen dates for mean phen among treatments:
+source('03_construct_kernels/prepare_demo_data_repr.R')
+
+# Fit phen model
+d_t = glmmTMB(
+  phen.julian ~ trt + Year + (1 | Plot / plantid),
+  data = phen
+)
+
+annual.phen.dates = expand.grid(
+  trt = c('control', 'drought', 'irrigated'),
+  Year = factor(2021:2024)
+) %>%
+  mutate(
+    mean.phen = predict(d_t, newdata = ., allow.new.levels = TRUE, re.form = ~ 0)
+  ) %>%
+  # Convert to date format (for plotting)
+  mutate(phen.date = as.Date(mean.phen, format = '%b-%d')) %>%
+  mutate(
+    ydodge = case_when(
+      trt %in% 'control' ~ 0.915,
+      trt %in% 'drought' ~ 0.9175,
+      trt %in% 'irrigated' ~ 0.9125
+    )
+  )
 
 # Make plot
 
@@ -226,12 +244,13 @@ lambda.trt.pan = all.lambda %>%
   #   aes(xend = phen.date, y = lo, yend = hi, colour = trt)
   # ) +
   geom_point(
-    data = ltre.lambda %>%
-      # remove unobserved treatments
-      # (these shouldn't even be in here...)
-      filter(!(grepl("^127", phen) & trt %in% 'drought')) %>%
-      filter(!(grepl('^122', phen) & trt %in% 'irrigated')), 
-    aes(y = lambda, colour = trt, shape = obs.phen), size = 4
+    data = annual.phen.dates,
+    aes(x = phen.date, y = ydodge, colour = trt),
+    size = 10, shape = '*'
+  ) +
+  geom_point(
+    data = ltre.lambda %>% mutate(phen.date = as.Date(as.numeric(phen), format = '%b-%d')),
+    aes(y = lambda, colour = trt, shape = (trt == trt.phen)), size = 4
   ) +
   scale_shape_manual(values = c(1, 19)) +
   scale_colour_manual(values = c('black', 'red', 'blue')) +
@@ -242,6 +261,8 @@ lambda.trt.pan = all.lambda %>%
     panel.background = element_blank(),
     legend.position = 'none'
   )
+
+lambda.trt.pan
 
 # But... plot bootstrapped treatment differences over time
 # (first need to assemble these)
@@ -298,6 +319,15 @@ lambda.contr.pan = boot.lambda.diff %>%
     aes(y = mean.d.lambda),
     size = 4, shape = 21, stroke = 2
   ) +
+  geom_point(
+    # y limits here found by:
+    # ggplot_build(lambda.contr.pan)$layout$panel_scales_y
+    data = annual.phen.dates %>%
+      filter(!(trt %in% 'control')) %>%
+      mutate(contrast = paste(trt, 'vs. control')),
+    aes(x = phen.date, y = -0.007, colour = contrast),
+    shape = '*', size = 10
+  ) +
   geom_segment(
     data = boot.lambda.diff.interval %>%
       mutate(
@@ -308,7 +338,7 @@ lambda.contr.pan = boot.lambda.diff %>%
   # scale_shape_manual(values = c(1, 19)) +
   labs(x = 'Mean bud date', y = expression(Delta~lambda)) +
   guides(colour = 'none', fill = 'none') +
-  # scale_colour_manual(values = c('red', 'blue')) +
+  scale_colour_manual(values = c('red', 'blue')) +
   # scale_fill_manual(values = c('red', 'blue')) +
   facet_wrap(~ contrast, nrow = 2) +
   theme(panel.background = element_blank())
