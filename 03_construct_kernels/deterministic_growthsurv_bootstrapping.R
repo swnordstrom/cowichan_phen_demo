@@ -370,6 +370,6 @@ cbind(
   grow.slope_irrigated = unlist(grow.boots[,-(1:2)][2] + grow.boots[,-(1:2)][6])
 ) %>%
   write.csv(
-    file = '03_construct_kernels/out/growsurv_bootstrapped_perturbed_params.scv',
+    file = '03_construct_kernels/out/growsurv_bootstrapped_perturbed_params.csv',
     row.names = FALSE, na = ''
   )
