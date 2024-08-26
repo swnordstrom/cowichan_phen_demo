@@ -176,6 +176,41 @@ recr.boot = demo.recr %>%
   mutate(mod = 'recr', i = 1:n.straps) %>%
   select(mod, i, everything())
 
+# Phenology bootstrapping
+
+phen.boot = phen %>%
+  # Add an 'obs.no' for distinguishing umbels
+  group_by(plantid, Year) %>%
+  mutate(obs.no = 1:n()) %>%
+  ungroup() %>%
+  uncount(weights = n.straps) %>%
+  # Label these entries with a `samp` (sample) column to delineate different
+  # bootstrap samples
+  group_by(plantid, Year, obs.no) %>%
+  mutate(samp = 1:n()) %>%
+  # Perform the resampling, preserving plot and survival structure
+  group_by(Plot, Year, samp) %>%
+  sample_n(size = n(), replace = TRUE) %>%
+  ungroup() %>%  
+  # Split the dataset by each sample and re-fit the umbel success/seed model
+  split(.$samp) %>%
+  mclapply(
+    function(df) {
+      glmmTMB(
+        phen.julian ~ trt + Year + (1 | Plot / plantid),
+        data = df
+      ) %>%
+        # extract model parameters
+        (function(mod) mod$fit$par)
+    },
+    mc.cores = 6
+  ) %>%
+  # Combine into single data frame
+  do.call(rbind, .) %>%
+  data.frame() %>%
+  mutate(mod = 'phen', i = 1:n.straps) %>%
+  select(mod, i, everything())
+
 # # Un-biasing the bootstrapped estimates
 # Manually shifting individual columns of the bootstrap to have the mean of
 # boostrapped samples be identical to the parameter values of the true model
@@ -198,10 +233,18 @@ recr.boot[,-(1:2)] = recr.boot[-(1:2)] + matrix(
   nrow = n.straps, ncol = length(r_t.y$fit$par), byrow = TRUE
 )
 
+# Phenology estimate bootstraps
+phen.boot[,-(1:2)] = phen.boot[-(1:2)] + matrix(
+  (d_t$fit$par - colMeans(phen.boot[,-(1:2)])),
+  nrow = n.straps, ncol = length(d_t$fit$par), byrow = TRUE
+)
+
+
 # very small differences, all numerical rounding
 (colMeans(flow.numb.boot[,-(1:2)]) - u_s_s.ty$fit$par)
 (colMeans(succ.seed.boot[,-(1:2)]) - s_st.p_s.u.p2$fit$par)
 (colMeans(recr.boot[,-(1:2)]) - r_t.y$fit$par)
+(colMeans(phen.boot[,-(1:2)]) - d_t$fit$par)
 
 # --- Full-phenology kernel --------------------------------------------------
 
@@ -310,30 +353,105 @@ trt.mean.buddates = expand.grid(trt = c('control', 'drought', 'irrigated'), Year
       newdata = expand.grid(trt = c('control', 'drought', 'irrigated'), Year = factor(2021:2024))
     )
   ) %>%
-  group_by(trt) %>%
-  summarise(mean.bud = mean(mean.bud))
+  group_by(trt.phen = trt) %>%
+  summarise(mean.phen = mean(mean.bud))
 
-# Use this to get a kernel backbone for each treatment-bud day combo
-bootstrap.ltre.backbone = expand.grid(
+# Boostrap out 
+
+phen.backbone = expand.grid(
+  trt = c('control', 'drought', 'irrigated'),
+  Year = factor(2021:2024)
+)
+
+# There is probably a sleeker way to do this but I will leave it at this for now:
+
+phen.list.out = vector('list', length = n.straps)
+
+for (i in 1:n.straps) {
+  phen.list.out[[i]] = phen.backbone %>%
+    mutate(
+      pred.phen = predict(
+        d_t, newdata = phen.backbone, allow.new.levels = TRUE, re.form = ~ 0,
+        newparams = phen.boot[i, -(1:2)]
+      ) 
+    ) %>%
+    group_by(trt) %>%
+    summarise(mean.phen = mean(pred.phen)) %>%
+    mutate(boot = i)
+  
+  # print(i)
+}
+
+phen.boot.trt = do.call(rbind, phen.list.out) %>% mutate(boot = as.numeric(boot))
+
+boot.ltre.backbone = expand.grid(
   size = (5:60)/10,
   size.nex = (5:60)/10,
-  trt = c('control', 'drought', 'irrigated'),
-  mean.phen = trt.mean.buddates$mean.bud,
-  Year = factor(2021:2024)
+  Year = 2021:2024,
+  boot = 1:n.straps,
+  # This column will be used for manipulating the phenology date and the vital
+  # rate estimation
+  trt.phen.idx = 1:7
 ) %>%
-  # Going to get rid of the treatment-phen combos we did not observe
-  # (which will therefore not be included in the LTRE)
-  filter(!(trt %in% 'drought' & floor(mean.phen) == 126)) %>%
-  filter(!(trt %in% 'irrigated' & floor(mean.phen) == 122)) %>%
-  # center the phenology column
-  mutate(phen.c = mean.phen - mean(round(seed$mean.phen)))
+  merge(
+    data.frame(
+      trt.phen.idx = 1:7,
+      trt.phen = c('drought', 'control', 'irrigated', 'control', 'drought', 'irrigated', 'control'),
+      trt.rate = c('drought', 'drought', 'irrigated', 'irrigated', 'control', 'control', 'control')
+    )
+  ) %>%
+  # This column is superfluous now
+  select(-trt.phen.idx) %>%
+  # Now merge in to get the buddates for the trt.phen column
+  merge(phen.boot.trt, by.x = c('trt.phen', 'boot'), by.y = c('trt', 'boot')) %>%
+  rename(trt = trt.rate) %>%
+  mutate(phen.c = mean.phen - round(mean(seed$mean.phen))) %>%
+  select(-mean.phen)
+
+# Use this to get a kernel backbone for each treatment-bud day combo
+# bootstrap.ltre.backbone = expand.grid(
+#   size = (5:60)/10,
+#   size.nex = (5:60)/10,
+#   trt = c('control', 'drought', 'irrigated'),
+#   mean.phen = trt.mean.buddates$mean.bud,
+#   Year = factor(2021:2024)
+# ) %>%
+#   # Going to get rid of the treatment-phen combos we did not observe
+#   # (which will therefore not be included in the LTRE)
+#   filter(!(trt %in% 'drought' & floor(mean.phen) == 126)) %>%
+#   filter(!(trt %in% 'irrigated' & floor(mean.phen) == 122)) %>%
+
+# bootstrap.ltre.backbone = expand.grid(
+#   size = (5:60)/10,
+#   size.nex = (5:60)/10,
+#   Year = 2021:2024,
+#   # This column will be used for manipulating the phenology date and the vital
+#   # rate estimation
+#   trt.phen.idx = 1:7
+# ) %>%
+#   merge(
+#     data.frame(
+#       trt.phen.idx = 1:7,
+#       # Treatment associated with the buddates used for umbel success + seeds
+#       trt.phen = c('drought', 'control', 'irrigated', 'control', 'drought', 'irrigated', 'control'),
+#       # Treatment associated with direct treatment effects on vital rates
+#       trt.rate = c('drought', 'drought', 'irrigated', 'irrigated', 'control', 'control', 'control')
+#     )
+#   ) %>%
+#   merge(trt.mean.buddates) %>%
+#   # center the phenology column and rename the `trt` column so it can be used in
+#   # vital rate estimates
+#   mutate(
+#     phen.c = mean.phen - mean(round(seed$mean.phen))
+#   )
 
 # Start a list for storing the bootstrapped LTREs
 boots.ltre.list = vector('list', length = n.straps)
 
 for (i in 1:n.straps) {
   
-  boots.ltre.list[[i]] = bootstrap.ltre.backbone %>%
+  boots.ltre.list[[i]] = boot.ltre.backbone %>%
+    filter(boot %in% i) %>%
     # Rename to not put the year random effect in these predictions
     rename(year = Year) %>%
     mutate(
@@ -364,7 +482,7 @@ for (i in 1:n.straps) {
     ) %>%
     # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
     mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-    group_by(size, size.nex, trt, phen.c, phen.umbels) %>%
+    group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
     summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
     ungroup() %>%
     mutate(
@@ -387,8 +505,6 @@ for (i in 1:n.straps) {
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
-    # Re-center phenology column
-    mutate(mean.phen = phen.c + round(mean(seed$mean.phen))) %>%
     # Add a column for distinguishing bootstrapped samples
     mutate(boot = paste0('b', i)) %>%
     # Remove unnecessary columns
@@ -425,7 +541,8 @@ for (i in 1:n.straps) {
   
   # Parameter 1: probability of flowering intercept
 
-  this.boot[[1]] = bootstrap.ltre.backbone %>%
+  this.boot[[1]] = boot.ltre.backbone %>%
+    filter(boot %in% i) %>%
     rename(year = Year) %>%
     mutate(
       # Umbel count
@@ -456,7 +573,7 @@ for (i in 1:n.straps) {
     ) %>%
     # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
     mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-    group_by(size, size.nex, trt, phen.c, phen.umbels) %>%
+    group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
     summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
     ungroup() %>%
     mutate(
@@ -477,12 +594,13 @@ for (i in 1:n.straps) {
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
-    select(-c(phen.umbels, seeds.per.umbel, seeds.total, recr.mean)) %>%
+    select(-c(phen.umbels, phen.c, seeds.per.umbel, seeds.total, recr.mean)) %>%
     mutate(param = 'flow.int')
   
   # Seed set intercept (conditional model)
   
-  this.boot[[2]] = bootstrap.ltre.backbone %>%
+  this.boot[[2]] = boot.ltre.backbone %>%
+    filter(boot %in% i) %>%
     rename(year = Year) %>%
     mutate(
       # Umbel count
@@ -513,7 +631,7 @@ for (i in 1:n.straps) {
     ) %>%
     # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
     mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-    group_by(size, size.nex, trt, phen.c, phen.umbels) %>%
+    group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
     summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
     ungroup() %>%
     mutate(
@@ -534,12 +652,13 @@ for (i in 1:n.straps) {
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
-    select(-c(phen.umbels, seeds.per.umbel, seeds.total, recr.mean)) %>%
+    select(-c(phen.umbels, phen.c, seeds.per.umbel, seeds.total, recr.mean)) %>%
     mutate(param = 'seed.int')
   
   # Seed set slope (conditional model) 
   
-  this.boot[[3]] = bootstrap.ltre.backbone %>%
+  this.boot[[3]] = boot.ltre.backbone %>%
+    filter(boot %in% i) %>%
     rename(year = Year) %>%
     mutate(
       # Umbel count
@@ -570,7 +689,7 @@ for (i in 1:n.straps) {
     ) %>%
     # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
     mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-    group_by(size, size.nex, trt, phen.c, phen.umbels) %>%
+    group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
     summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
     ungroup() %>%
     mutate(
@@ -591,13 +710,14 @@ for (i in 1:n.straps) {
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
-    select(-c(phen.umbels, seeds.per.umbel, seeds.total, recr.mean)) %>%
+    select(-c(phen.umbels, phen.c, seeds.per.umbel, seeds.total, recr.mean)) %>%
     mutate(param = 'seed.slope')
   
   
   # 4: recruit size intercept
   
-  this.boot[[4]] = bootstrap.ltre.backbone %>%
+  this.boot[[4]] = boot.ltre.backbone %>%
+    filter(boot %in% i) %>%
     rename(year = Year) %>%
     mutate(
       # Umbel count
@@ -623,7 +743,7 @@ for (i in 1:n.straps) {
     ) %>%
     # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
     mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-    group_by(size, size.nex, trt, phen.c, phen.umbels) %>%
+    group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
     summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
     ungroup() %>%
     mutate(
@@ -649,12 +769,13 @@ for (i in 1:n.straps) {
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
-    select(-c(phen.umbels, seeds.per.umbel, seeds.total, recr.mean)) %>%
+    select(-c(phen.umbels, phen.c, seeds.per.umbel, seeds.total, recr.mean)) %>%
     mutate(param = 'recr.int')
   
   # 5: phenology effects on umbel success
   
-  this.boot[[5]] = bootstrap.ltre.backbone %>%
+  this.boot[[5]] = boot.ltre.backbone %>%
+    filter(boot %in% i) %>%
     rename(year = Year) %>%
     mutate(
       # Umbel count
@@ -686,7 +807,7 @@ for (i in 1:n.straps) {
     ) %>%
     # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
     mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-    group_by(size, size.nex, trt, phen.c, phen.umbels) %>%
+    group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
     summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
     ungroup() %>%
     mutate(
@@ -707,12 +828,13 @@ for (i in 1:n.straps) {
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
-    select(-c(phen.umbels, seeds.per.umbel, seeds.total, recr.mean)) %>%
+    select(-c(phen.umbels, phen.c, seeds.per.umbel, seeds.total, recr.mean)) %>%
     mutate(param = 'phen.succ')
   
   # 6: phen effects on seed set
   
-  this.boot[[6]] = bootstrap.ltre.backbone %>%
+  this.boot[[6]] = boot.ltre.backbone %>%
+    filter(boot %in% i) %>%
     rename(year = Year) %>%
     mutate(
       # Umbel count
@@ -744,7 +866,288 @@ for (i in 1:n.straps) {
     ) %>%
     # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
     mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-    group_by(size, size.nex, trt, phen.c, phen.umbels) %>%
+    group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
+    summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
+    ungroup() %>%
+    mutate(
+      # Transform from linear scale to response scale
+      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      # Total umbels per plant
+      seeds.total = seeds.per.umbel * phen.umbels
+    ) %>%
+    select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
+    mutate(
+      # Mean recruit size
+      recr.mean = predict(
+        r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .,
+        newparams = recr.boot[i,-(1:2)]
+      ),
+      # Get the number of seeds produced for each size grouping
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+    ) %>%
+    # Rename column
+    rename(size.prev = size) %>%
+    select(-c(phen.umbels, phen.c, seeds.per.umbel, seeds.total, recr.mean)) %>%
+    mutate(param = 'phen.seed')
+  
+  print(i)
+  
+  # combine into data frame and add a labeling column
+  fr.pert.boot[[i]] = do.call(rbind, this.boot) %>% mutate(boot = paste0('b', i))
+  
+}
+
+# Export data frame (wide-pivoted)
+do.call(rbind, fr.pert.boot) %>%
+  pivot_wider(names_from = boot, values_from = p.size.cur) %>%
+  write.csv(
+    file = '03_construct_kernels/out/deterministic_reprod_perturb_bootstraps.csv',
+    row.names = FALSE, na = ''
+  )
+
+# # # # Code recycled above
+# # # # Phenology bootstrapping
+# 
+# # Predict the mean buddate from each bootstrapped model
+# 
+# phen.backbone = expand.grid(
+#   trt = c('control', 'drought', 'irrigated'),
+#   Year = factor(2021:2024)
+# )
+# 
+# # I'm sure there is a sleeker way to do this... but, feeling lazy now.
+# 
+# phen.list.out = vector('list', length = n.straps)
+# 
+# for (i in 1:n.straps) {
+#   phen.list.out[[i]] = phen.backbone %>%
+#     mutate(
+#       pred.phen = predict(
+#         d_t, newdata = phen.backbone, allow.new.levels = TRUE, re.form = ~ 0,
+#         newparams = phen.boot[i, -(1:2)]
+#       ) 
+#     ) %>%
+#     group_by(trt) %>%
+#     summarise(mean.phen = mean(pred.phen)) %>%
+#     mutate(boot = i)
+#   
+#   # print(i)
+# }
+# 
+# phen.boot.trt = do.call(rbind, phen.list.out) %>% mutate(boot = as.numeric(boot))
+# 
+# phen.boot.backbone = expand.grid(
+#     size = (5:60)/10,
+#     size.nex = (5:60)/10,
+#     Year = 2021:2024,
+#     boot = 1:n.straps,
+#     # This column will be used for manipulating the phenology date and the vital
+#     # rate estimation
+#     trt.phen.idx = 1:7
+# ) %>%
+#   merge(
+#     data.frame(
+#       trt.phen.idx = 1:7,
+#       trt.phen = c('drought', 'control', 'irrigated', 'control', 'drought', 'irrigated', 'control'),
+#       trt.rate = c('drought', 'drought', 'irrigated', 'irrigated', 'control', 'control', 'control')
+#     )
+#   ) %>%
+#   # This column is superfluous now
+#   select(-trt.phen.idx) %>%
+#   # Now merge in to get the buddates for the trt.phen column
+#   merge(phen.boot.trt, by.x = c('trt.phen', 'boot'), by.y = c('trt', 'boot')) %>%
+#   rename(trt = trt.rate) %>%
+#   mutate(phen.c = mean.phen - round(mean(seed$mean.phen))) %>%
+#   select(-mean.phen)
+  
+# List to store outputs
+phen.boot.list = vector('list', length = n.straps)
+
+# Bootstrap with observed values:
+
+for (i in 1:n.straps) {
+  
+  phen.boot.list[[i]] = phen.boot.backbone %>%
+    filter(boot %in% i) %>%
+    # Rename to not put the year random effect in these predictions
+    rename(year = Year) %>%
+    mutate(
+      # Umbel count
+      phen.umbels = predict(
+        u_s_s.ty, newdata = ., 
+        # use bootstrapped parameters
+        newparams = flow.numb.boot[i, -(1:2)],
+        allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
+      )
+    ) %>%
+    rename(Year = year) %>%
+    mutate(
+      # Model predictions at treatment means
+      # (doing this on linear scale for each for easier averaging)
+      seeds.zinf.linear =  predict(
+        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        # use bootstrapped parameters
+        newparams = succ.seed.boot[i,-(1:2)],
+        type = 'zlink'
+      ),
+      seeds.seed.linear =  predict(
+        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        # use bootstrapped parameters
+        newparams = succ.seed.boot[i,-(1:2)],
+        type = 'link'
+      ),
+    ) %>%
+    # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+    mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
+    group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
+    summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
+    ungroup() %>%
+    mutate(
+      # Transform from linear scale to response scale
+      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      # Total umbels per plant
+      seeds.total = seeds.per.umbel * phen.umbels
+    ) %>%
+    select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
+    mutate(
+      # Mean recruit size
+      recr.mean = predict(
+        r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .,
+        # use bootstrapped parameters
+        newparams = recr.boot[i, -(1:2)]
+      ),
+      # Get the number of seeds produced for each size grouping
+      # (note: 'betad' parameter here is the log of the residual variance from the model fit)
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+    ) %>%
+    # Rename column
+    rename(size.prev = size) %>%
+    # Re-center phenology column and add 'boot' column
+    mutate(
+      mean.phen = phen.c + round(mean(seed$mean.phen)),
+      boot = paste0('b', i)
+    ) %>%
+    # Remove unnecessary columns
+    select(-c(phen.umbels, seeds.per.umbel, seeds.total, recr.mean, phen.c))
+  
+  print(i)
+  
+}
+
+do.call(rbind, phen.boot.list) %>%
+  select(-mean.phen) %>%
+  pivot_wider(names_from = boot, values_from = p.size.cur) %>%
+  write.csv(
+    '03_construct_kernels/out/deterministic_reprod_phen_bootstrap.csv',
+    na = '', row.names = FALSE
+  )
+
+# Bootstrap perturbations
+
+phen.boot.pert.list = vector('list', n.straps)
+
+for (i in 1:n.straps) {
+  
+  # Set up a list for storing outputs
+  # (will rbind this at the end of the loop to make one data frame per loop
+  # iteration, then store that as the ith element of the list)
+  this.boot = vector('list', 2)
+  
+  # Perturb phen for umbel success
+  
+  this.boot[[1]] = phen.boot.backbone %>%
+    filter(boot %in% i) %>%
+    rename(year = Year) %>%
+    mutate(
+      # Umbel count
+      phen.umbels = predict(
+        u_s_s.ty, newdata = .,
+        allow.new.levels = TRUE, re.form = ~ 0, type = 'response',
+        newparams = flow.numb.boot[i,-(1:2)]
+      )
+    ) %>%
+    rename(Year = year) %>%
+    # Perturb phen variable (for only the zinf term)
+    mutate(phen.c = phen.c + delta) %>%
+    mutate(
+      # Model predictions for seed set on linear (link) scale for averaging
+      seeds.zinf.linear =  predict(
+        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        type = 'zlink',
+        newparams = succ.seed.boot[i,-(1:2)]
+      )
+    ) %>%
+    # Reset the phen variable (so conditional is unaffected)
+    mutate(phen.c = phen.c - delta) %>%
+    mutate(
+      seeds.seed.linear =  predict(
+        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        type = 'link',
+        newparams = succ.seed.boot[i,-(1:2)]
+      ),
+    ) %>%
+    # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+    mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
+    group_by(size, size.nex, trt, phen.c, trt.phen, phen.umbels) %>%
+    summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
+    ungroup() %>%
+    mutate(
+      # Transform from linear scale to response scale
+      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      # Total umbels per plant
+      seeds.total = seeds.per.umbel * phen.umbels
+    ) %>%
+    select(-c(seeds.zinf.linear, seeds.seed.linear)) %>%
+    mutate(
+      # Mean recruit size
+      recr.mean = predict(
+        r_t.y, allow.new.levels = TRUE, re.form = ~ 0, newdata = .,
+        newparams = recr.boot[i,-(1:2)]
+      ),
+      # Get the number of seeds produced for each size grouping
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+    ) %>%
+    # Rename column
+    rename(size.prev = size) %>%
+    select(-c(phen.umbels, seeds.per.umbel, seeds.total, recr.mean)) %>%
+    mutate(param = 'phen.succ')
+  
+  # 6: phen effects on seed set
+  
+  this.boot[[2]] = phen.boot.backbone %>%
+    filter(boot %in% i) %>%
+    rename(year = Year) %>%
+    mutate(
+      # Umbel count
+      phen.umbels = predict(
+        u_s_s.ty, newdata = .,
+        allow.new.levels = TRUE, re.form = ~ 0, type = 'response',
+        newparams = flow.numb.boot[i,-(1:2)]
+      )
+    ) %>%
+    rename(Year = year) %>%
+    mutate(
+      # Model predictions for seed set on linear (link) scale for averaging
+      seeds.zinf.linear =  predict(
+        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        type = 'zlink',
+        newparams = succ.seed.boot[i,-(1:2)]
+      )
+    ) %>%
+    # Perturb phen variable (for only the cond term)
+    mutate(phen.c = phen.c + delta) %>%
+    mutate(
+      seeds.seed.linear =  predict(
+        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        type = 'link',
+        newparams = succ.seed.boot[i,-(1:2)]
+      ),
+      # Reset the phen variable
+      phen.c = phen.c - delta
+    ) %>%
+    # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
+    mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
+    group_by(size, size.nex, trt, phen.c, trt.phen, phen.umbels) %>%
     summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
     ungroup() %>%
     mutate(
@@ -771,21 +1174,17 @@ for (i in 1:n.straps) {
   print(i)
   
   # combine into data frame and add a labeling column
-  fr.pert.boot[[i]] = do.call(rbind, this.boot) %>% mutate(boot = paste0('b', i))
+  phen.boot.pert.list[[i]] = do.call(rbind, this.boot) %>% mutate(boot = paste0('b', i))
   
 }
 
-# Export data frame (wide-pivoted)
-do.call(rbind, fr.pert.boot) %>%
-  # re-center phenology and get rid of the centered phen column
-  mutate(mean.phen = phen.c + round(mean(seed$mean.phen))) %>%
+do.call(rbind, phen.boot.pert.list) %>%
   select(-phen.c) %>%
   pivot_wider(names_from = boot, values_from = p.size.cur) %>%
   write.csv(
-    file = '03_construct_kernels/out/deterministic_reprod_perturb_bootstraps.csv',
-    row.names = FALSE, na = ''
+    '03_construct_kernels/out/deterministic_reprod_phen_perturb_boostraps.csv',
+    na = '', row.names = FALSE
   )
-  
 
 # Export the parameter estimates from each bootstrap
 
@@ -803,7 +1202,10 @@ cbind(
   seed.slope_irrigated = unlist(succ.seed.boot[,-(1:2)][4] + succ.seed.boot[,-(1:2)][10]),
   recr.int_control = unlist(recr.boot[,-(1:2)][1]),
   recr.int_drought = unlist(recr.boot[,-(1:2)][1] + recr.boot[,-(1:2)][2]),
-  recr.int_irrigated = unlist(recr.boot[,-(1:2)][1] + recr.boot[,-(1:2)][3])
+  recr.int_irrigated = unlist(recr.boot[,-(1:2)][1] + recr.boot[,-(1:2)][3]),
+  phen_control = phen.boot.trt %>% filter(trt %in% 'control') %>% pull(mean.phen),
+  phen_drought = phen.boot.trt %>% filter(trt %in% 'drought') %>% pull(mean.phen),
+  phen_irrigated = phen.boot.trt %>% filter(trt %in% 'irrigated') %>% pull(mean.phen)
 ) %>%
   write.csv(
     file = '03_construct_kernels/out/reprod_bootstrapped_perturbed_params.csv',
