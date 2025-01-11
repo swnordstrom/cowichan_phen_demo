@@ -233,6 +233,7 @@ s_py2 = glmmTMB(
 
 AIC(s_0, s_p, s_p2, s_py, s_py2) %>% mutate(daic = round(AIC - min(AIC), 2))
 # same result when considering first bud date
+# but very little AIC support...
 
 ### Growth
 
@@ -306,7 +307,9 @@ g_my2 = glmmTMB(
   data = phen.subsq.grow
 )
 
-AIC(g_ty, g_m, g_m2, g_my, g_my2)
+AIC(g_ty, g_m, g_m2, g_my, g_my2) %>%
+  mutate(daic = round(AIC - min(AIC), 2)) %>%
+  arrange(daic)
 # hmm...
 # well at least there's no polynomial effect
 # the year-centered means and overall means have the same effect.
@@ -349,6 +352,7 @@ phen.subsq.grow %>%
   geom_point(size = 3, position = position_jitter(width = 1/4))
 # seems unlikely
 
+# Does the phen effect vary by year?
 g_my = glmmTMB(
   size.tp1 ~ size.t * Year + trt * Year + phen.mean.c * Year + (1 | Plot / plantid),
   data = phen.subsq.grow
@@ -368,6 +372,59 @@ AIC(g_my, g_mt, g_ms, g_m)
 # phew... these models suck
 
 # Okay so there is a very small growth trade-off to budding later
+
+# Some visuals here:
+
+
+phen.grow.backbone = expand.grid(
+  size.t = c(5:60)/10,
+  Year = 2021:2023,
+  trt = c('control', 'drought', 'irrigated'),
+  phen.mean.c = c(-4:4) * 7
+) 
+
+phen.grow.backbone %>%
+  filter(phen.mean.c %in% c(-28, 28)) %>%
+  mutate(
+    pg = predict(g_m, type = 'response', newdata = ., re.form = ~ 0, allow.new.levels = TRUE),
+    Year = factor(Year)
+  ) %>%
+  ggplot(aes(x = size.t, y = pg, colour = trt, linetype = Year)) +
+  annotate('segment', x = .5, xend = 6, y = .5, yend = 6, linetype = 5, colour = 'gray') +
+  geom_line() +
+  scale_colour_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(~ phen.mean.c)
+# Hmm okay yeah that makes some sense
+
+phen.grow.backbone %>%
+  mutate(
+    pg = predict(g_m, type = 'response', newdata = ., re.form = ~ 0, allow.new.levels = TRUE),
+    Year = factor(Year)
+  ) %>%
+  ggplot(aes(x = size.t, y = pg, colour = phen.mean.c, group = phen.mean.c)) +
+  annotate('segment', x = .5, xend = 6, y = .5, yend = 6, linetype = 5, colour = 'gray') +
+  geom_point(
+    data = phen.subsq.grow,
+    aes(y = size.tp1, fill = phen.mean.c), shape = 21, size = 2, colour = 'black'
+  ) +
+  geom_line(linewidth = 1.2) +
+  scale_colour_gradient2(
+    low = 'magenta', high = 'yellow', mid = 'black', midpoint = 0,
+    'mean bud date', breaks = (-2:2) * 14
+  ) +
+  scale_fill_gradient2(
+    low = 'magenta', high = 'yellow', mid = 'black', midpoint = 0,
+    'mean bud date', breaks = (-2:2) * 14
+  ) +
+  guides(fill = 'none') +
+  labs(x = 'Size in year t', y = 'Size in year t+1') +
+  facet_wrap(~ paste(trt, Year)) +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'top'
+  )
+# Good
+
 
 ### AOV-style partitioning of variance in bud date?
 # note - only four years... lots of uncertainty in that year-variance estimate...
