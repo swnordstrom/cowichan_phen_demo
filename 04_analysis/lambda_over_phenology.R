@@ -8,6 +8,7 @@
 library(ggplot2)
 library(tidyr)
 library(dplyr)
+library(glmmTMB)
 library(cowplot)
 
 rm(list = ls())
@@ -15,22 +16,19 @@ rm(list = ls())
 # # Get point estimates for kernels estimated across a phenology range
 
 # Growth + survival kernel
-growsurv = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel.csv') %>%
-  # (note: at some point I should go back and re-export this file without these columns,
-  # after which this line of code should be deleted)
-  select(-c(pred.surv, pred.grow.mean, p.grow.size))
+growsurv.all = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen.csv')
 # Reproductive kernel (all phenology)
 reprodct.all = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen.csv')
 # Reproductive kernel (for LTRE only)
-reprodct.ltre = read.csv('03_construct_kernels/out/determinstic_reprod_kernel_phen_ltre.csv')
+# reprodct.ltre = read.csv('03_construct_kernels/out/determinstic_reprod_kernel_phen_ltre.csv')
 
 # # Get bootstrapped intervals
 # Growth + survival 
-gs.boot = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap.csv')
-# Reproductive (all phenology)
+gs.boot = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap250.csv')
+# Reproductive (all phenology)a
 fr.boot.all = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_allphen.csv')
 # Reproductive (for LTRE only)
-fr.boot.ltre = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_ltre.csv')
+fr.boot.ltre = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_ltre_250.csv')
 
 head(growsurv)
 head(reprodct.all)
@@ -44,15 +42,17 @@ p.germ = .001
 
 kernel.all.df = merge(
   # Survival + growth subkernel
-  growsurv,
+  growsurv.all,
   # Reproductive subkernels (for *each phenology*)
   reprodct.all,
-  by.x = c('size.prev', 'size.cur', 'trt'), by.y = c('size.prev', 'size.nex', 'trt'),
+  by.x = c('size.prev', 'size.cur', 'trt', 'phen'), by.y = c('size.prev', 'size.nex', 'trt', 'phen'),
   suffixes = c('.g', '.r')
 ) %>%
   # Combine growth and survival entries into single kernel entry
-  mutate(p.size.cur = p.size.cur.g + p.size.cur.r * p.germ) %>%
-  select(-c(p.size.cur.g, p.size.cur.r))
+  mutate(
+    p.size.cur = pred.surv * (pv.grow.size * (1 - prob.flower) + pf.grow.size * prob.flower) + (p.size.cur * p.germ)
+  ) %>%
+  select(-c(pred.surv, pv.grow.size, pf.grow.size, prob.flower))
 
 head(kernel.all.df)
 
@@ -252,14 +252,18 @@ lambda.trt.pan = all.lambda %>%
     data = ltre.lambda %>% mutate(phen.date = as.Date(as.numeric(phen), format = '%b-%d')),
     aes(y = lambda, colour = trt, shape = (trt == trt.phen)), size = 4
   ) +
-  scale_shape_manual(values = c(1, 19)) +
-  scale_colour_manual(values = c('black', 'red', 'blue')) +
-  scale_fill_manual(values = c('black', 'red', 'blue')) +
+  scale_shape_manual(values = c(NA, 19)) +
+  # scale_colour_manual(values = c('black', 'red', 'blue')) +
+  # scale_fill_manual(values = c('black', 'red', 'blue')) +
+  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), 'treatment') +
+  scale_fill_manual(values = c('black', 'goldenrod', 'dodgerblue'), 'treatment') +
   guides(shape = 'none') +
-  labs(x = 'Mean bud date') +
+  labs(x = 'Mean bud date', y = expression(lambda)) +
   theme(
     panel.background = element_blank(),
-    legend.position = 'none'
+    legend.position = 'top'
+    # legend.position = 'inside',
+    # legend.position.inside = c(0.8, 0.8)
   )
 
 lambda.trt.pan
@@ -298,7 +302,12 @@ ltre.lambda.diff = all.boot.lambda %>%
 
 lambda.contr.pan = boot.lambda.diff %>%
   mutate(
-    contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+    # contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+    contrast = ifelse(
+      contrast %in% 'd.c',
+      'i) drought vs. control',
+      'ii) irrigated vs. control'
+    )
   ) %>%
   ggplot(aes(x = phen.date, group = contrast)) +
   annotate(
@@ -314,7 +323,12 @@ lambda.contr.pan = boot.lambda.diff %>%
   geom_point(
     data = boot.lambda.diff.interval %>%
       mutate(
-        contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+        # contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+        contrast = ifelse(
+          contrast %in% 'd.c',
+          'i) drought vs. control',
+          'ii) irrigated vs. control'
+        )
       ),
     aes(y = mean.d.lambda),
     size = 4, shape = 21, stroke = 2
@@ -324,27 +338,52 @@ lambda.contr.pan = boot.lambda.diff %>%
     # ggplot_build(lambda.contr.pan)$layout$panel_scales_y
     data = annual.phen.dates %>%
       filter(!(trt %in% 'control')) %>%
-      mutate(contrast = paste(trt, 'vs. control')),
+      mutate(
+        # contrast - paste(trt, 'vs. control')),
+        contrast = ifelse(
+          trt %in% 'drought',
+          'i) drought vs. control',
+          'ii) irrigated vs. control'
+        )
+      ),
     aes(x = phen.date, y = -0.007, colour = contrast),
     shape = '*', size = 10
   ) +
   geom_segment(
     data = boot.lambda.diff.interval %>%
       mutate(
-        contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+        # contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+        contrast = ifelse(
+          contrast %in% 'd.c',
+          'i) drought vs. control',
+          'ii) irrigated vs. control'
+        )
       ),
     aes(xend = phen.date, y = lo, yend = hi)
   ) +
   # scale_shape_manual(values = c(1, 19)) +
   labs(x = 'Mean bud date', y = expression(Delta~lambda)) +
   guides(colour = 'none', fill = 'none') +
-  scale_colour_manual(values = c('red', 'blue')) +
+  # scale_colour_manual(values = c('red', 'blue')) +
   # scale_fill_manual(values = c('red', 'blue')) +
+  scale_colour_manual(values = c('goldenrod', 'dodgerblue')) +
   facet_wrap(~ contrast, nrow = 2) +
   theme(panel.background = element_blank())
 
-plot_grid(
-  lambda.trt.pan, lambda.contr.pan, nrow = 1
-)
+# lambda.legend = get_plot_component(
+#   lambda.trt.pan + theme(legend.position = 'top'),
+#   pattern = 'guide-box', return_all = TRUE
+# )[[4]]
 
-# good start
+plot_grid(
+  lambda.trt.pan, lambda.contr.pan, 
+  labels = c('a)', 'b)'),
+  nrow = 1
+) %>%
+  save_plot(
+    filename = '04_analysis/figures/draft_figures/lambdas_phen.png',
+    base_height = 5, base_width = 8
+  )
+
+# legend needs to be smaller... now sure how to do this and keep size consistent...
+
