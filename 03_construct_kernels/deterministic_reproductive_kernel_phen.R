@@ -86,6 +86,12 @@ nrow(backbone)
 
 all.phen.kernel = backbone %>%
   mutate(
+    # Probability of flowering
+    # (not used in this script, but used for phen-growth trade-off)
+    prob.flower = 1 - predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'
+    ),
     # Umbel count
     phen.umbels = predict(
       u_s_s.ty, newdata = ., 
@@ -105,7 +111,7 @@ all.phen.kernel = backbone %>%
   ) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
   mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
-  group_by(size, size.nex, trt, phen.c, phen.umbels) %>%
+  group_by(size, size.nex, trt, phen.c, phen.umbels, prob.flower) %>%
   summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
@@ -130,6 +136,7 @@ all.phen.kernel = backbone %>%
 write.csv(
   all.phen.kernel %>% 
     mutate(phen = phen.c + round(mean(seed$mean.phen))) %>% 
+    # select(-c(phen.umbels, recr.mean, seeds.per.umbel, seeds.total, phen.c))
     select(-c(phen.umbels, recr.mean, seeds.per.umbel, seeds.total, phen.c)),
   file = '03_construct_kernels/out/deterministic_reprod_kernel_phen.csv',
   row.names = FALSE, na = ''
@@ -172,12 +179,18 @@ ltre.backbone = expand.grid(
   rename(trt = trt.rate) %>% 
   # center the phenology column and rename the `trt` column so it can be used in
   # vital rate estimates
-  mutate(phen.c = mean.phen - mean(round(seed$mean.phen)))
+  mutate(phen.c = mean.phen - round(mean(seed$mean.phen)))
 
 ltre.kernel = ltre.backbone %>%
   # Rename to not put the year random effect in these predictions
   rename(year = Year) %>%
   mutate(
+    # Probability of flowering
+    # (not used in this script, but used for phen-growth trade-off)
+    prob.flower = 1 - predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'
+    ),
     # Umbel count
     phen.umbels = predict(
       u_s_s.ty, newdata = ., 
@@ -199,7 +212,7 @@ ltre.kernel = ltre.backbone %>%
   ) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
   mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
+  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels, prob.flower) %>%
   summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
@@ -276,7 +289,7 @@ ltre.kernel = ltre.backbone %>%
 #   rename(size.prev = size)
 
 head(ltre.kernel)
-head(ltre.control.kernel)
+# head(ltre.control.kernel)
 
 # Do some formatting and export
 # rbind(ltre.kernel, ltre.control.kernel) %>%
