@@ -24,9 +24,7 @@ rm(list = ls())
 # - fr is flowering + reproduction
 
 # Growth + survival subkernel
-gs.obsv = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel.csv') %>% 
-  # (will likely remove the following call when the data frame is next updated/exported)
-  select(-c(pred.surv, pred.grow.mean, p.grow.size))
+gs.obsv = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen_ltre.csv')
 # Flowering + reproduction subkernel
 fr.obsv = read.csv('03_construct_kernels/out/determinstic_reprod_kernel_phen_ltre.csv')
 
@@ -36,12 +34,9 @@ fr.obsv = read.csv('03_construct_kernels/out/determinstic_reprod_kernel_phen_ltr
 
 # Growth perturbed kernels
 # (why is the filename 'no_phen'... growth coefficients don't have any phen at all...)
-gs.obsv.pert = read.csv('03_construct_kernels/out/deterministic_grow_coef_perturbation_no_phen.csv') %>%
+gs.obsv.pert = read.csv('03_construct_kernels/out/deterministic_grow_coef_perturbation_phen.csv') %>%
   rename(size.nex = size.cur, param = perturb.param, orig.parval = orig.par.val) %>%
-  mutate(param = gsub('\\_', '.', param)) %>%
-  # Going to take out the survival terms here because they don't vary by treatment
-  # (same with the growth standard deviation)
-  filter(!grepl('surv', param), !param %in% 'grow.sigma')
+  mutate(param = gsub('\\_', '.', param))
 
 # Reproductive perturbed kernels
 fr.obsv.pert = read.csv('03_construct_kernels/out/deterministic_repr_coef_perturbation_phen.csv')
@@ -49,24 +44,24 @@ fr.obsv.pert = read.csv('03_construct_kernels/out/deterministic_repr_coef_pertur
 
 # --- Read in kernels from bootstrapped resampling
 
-gs.boot = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap.csv')
-fr.boot = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_ltre.csv')
+gs.boot = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap250.csv')
+fr.boot = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_ltre_250.csv')
 
 
 # --- Read in perturbed kernels from bootstrapped sampling
 
-gs.boot.pert = read.csv('03_construct_kernels/out/deterministic_growsurv_perturb_bootstraps.csv')
-fr.boot.pert = read.csv('03_construct_kernels/out/deterministic_reprod_perturb_bootstraps.csv')
+gs.boot.pert = read.csv('03_construct_kernels/out/deterministic_growsurv_perturb_bootstraps250.csv')
+fr.boot.pert = read.csv('03_construct_kernels/out/deterministic_reprod_perturb_bootstraps_250.csv')
 
 
 # --- Read in parameters used in bootstrapping
 # (these give the differences in beta in the LTRE)
 
-gs.pert.pars = read.csv('03_construct_kernels/out/growsurv_bootstrapped_perturbed_params.csv') %>%
+gs.pert.pars = read.csv('03_construct_kernels/out/growsurv_bootstrapped_perturbed_params250.csv') %>%
   pivot_longer(-boot, names_to = 'rate_trt', values_to = 'parval') %>%
   separate(rate_trt, into = c('rate', 'trt'), sep = '_')
 
-fr.pert.pars = read.csv('03_construct_kernels/out/reprod_bootstrapped_perturbed_params.csv') 
+fr.pert.pars = read.csv('03_construct_kernels/out/reprod_bootstrapped_perturbed_params250.csv') 
 # Do this in two steps because this file also contains the phen dates used in the bootstarp
 
 # Dates used in phen bootstrapping
@@ -103,11 +98,13 @@ p.germ = .001
 # --- Observed kernel
 obsv.kernel.df = merge(
   gs.obsv, fr.obsv,
-  by.x = c('size.prev', 'size.cur', 'trt'), by.y = c('size.prev', 'size.nex', 'trt'),
-  suffixes = c('.g', '.r')
+  by.x = c('size.prev', 'size.cur', 'trt', 'trt.phen', 'phen'), 
+  by.y = c('size.prev', 'size.nex', 'trt', 'trt.phen', 'phen'),
 ) %>%
-  mutate(p.size.cur = p.size.cur.g + p.size.cur.r * p.germ) %>%
-  select(-c(p.size.cur.g, p.size.cur.r))
+  mutate(
+    p.size.cur = pred.surv * (pv.grow.size * (1 - prob.flower) + pf.grow.size * prob.flower) + (p.size.cur * p.germ)
+  ) %>%
+  select(-c(pred.surv, pv.grow.size, pf.grow.size, prob.flower))
 
 
 # --- Perturbed kernels (just point estimates, not bootstrapped)
@@ -121,22 +118,28 @@ obsv.pert.kernel.df = rbind(
     # need to remove some columns
     gs.obsv %>% rename(size.nex = size.cur), 
     fr.obsv.pert,
-    by = c('size.prev', 'size.nex', 'trt'),
-    suffixes = c('.g', '.f')
+    by = c('size.prev', 'size.nex', 'trt', 'trt.phen', 'phen')
   ) %>%
-    select(size.prev, size.nex, trt, trt.phen, p.size.cur.g, p.size.cur.f, param, orig.parval),
+    select(
+      size.prev, size.nex, trt, trt.phen, phen, pv.grow.size, pf.grow.size, 
+      pred.surv, prob.flower, p.size.cur, param, orig.parval
+    ),
   merge(
     gs.obsv.pert, 
-    fr.obsv %>% rename(mean.phen = phen),
-    by = c('size.prev', 'size.nex', 'trt'),
-    suffixes = c('.g', '.f')
+    fr.obsv,
+    by = c('size.prev', 'size.nex', 'trt', 'trt.phen', 'phen'),
   ) %>%
-    select(size.prev, size.nex, trt, trt.phen, p.size.cur.g, p.size.cur.f, param, orig.parval)
+    select(
+      size.prev, size.nex, trt, trt.phen, phen, pv.grow.size, pf.grow.size, 
+      pred.surv, prob.flower, p.size.cur, param, orig.parval
+    )
 ) %>%
-  mutate(p.size.cur = p.size.cur.g + p.size.cur.f * p.germ) %>%
-  select(-c(p.size.cur.g, p.size.cur.f))
+  mutate(
+    p.size.cur = pred.surv * (pv.grow.size * (1 - prob.flower) + pf.grow.size * prob.flower) + (p.size.cur * p.germ)
+  ) %>%
+  select(-c(pred.surv, pv.grow.size, pf.grow.size, prob.flower))
 
-
+  
 # --- Bootstrapped kernel, unperturbed
 # (this takes some time - also merging by bootstrap sample number)
 boot.kernel.df = merge(
@@ -247,7 +250,7 @@ midp.phen.kernel.df = obsv.kernel.df %>%
   pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'mentry', values_drop_na = TRUE)
 
 midp.phen.pert.kernel.df = obsv.pert.kernel.df %>%
-  select(-orig.parval) %>%
+  select(-c(orig.parval, phen)) %>%
   # subsetting out ONLY the phenology-related vital rates
   filter(grepl('phen', param)) %>%
   # NOTE: pivoting out by trt.phen instead of trt (because we're averaging
@@ -360,7 +363,7 @@ midp.obsv.lambda = split(
 # Get lambdas for the midpoint perturbed matrices
 midp.pert.lambda = split(
   midp.pert.kernel.df,
-  midp.pert.kernel.df[,c("contrast", 'trt.phen', 'param')],
+  midp.pert.kernel.df[,c("contrast", 'trt.phen', 'phen', 'param')],
   sep = '_', drop = TRUE
 ) %>%
   lapply(
@@ -368,14 +371,14 @@ midp.pert.lambda = split(
       df %>%
         arrange(size.prev, size.nex) %>%
         pivot_wider(names_from = size.prev, values_from = mentry) %>%
-        select(-c(contrast, trt.phen, param, size.nex)) %>%
+        select(-c(contrast, trt.phen, param, phen, size.nex)) %>%
         as.matrix()
     }
   ) %>%
   sapply(function(x) Re(eigen(x)$values[1])) %>%
   data.frame(lambda = .) %>%
   mutate(c_pg = row.names(.)) %>%
-  separate(c_pg, into = c('contrast', 'trt.phen', 'param'), sep = '_')  
+  separate(c_pg, into = c('contrast', 'trt.phen', 'phen', 'param'), sep = '_')  
 
 # Get lambdas for the midpoint of the bootstrapped observed matrices
 # (takes a sec to run - mclapply may be useful...)
@@ -512,7 +515,7 @@ rm(
 
 midp.obsv.sens = merge(
   midp.obsv.lambda, midp.pert.lambda,
-  by = c('contrast', 'trt.phen'), suffixes = c('.orig', '.pert')
+  by = c('contrast', 'trt.phen', 'phen'), suffixes = c('.orig', '.pert')
 ) %>%
   # NOTE the delta value is hard-coded in here
   mutate(sv = (lambda.pert - lambda.orig) / .0001) %>%
@@ -559,11 +562,12 @@ midp.phen.boot.sens = merge(
 # For the observed datasets, these were stored in the observed perturbed data frames
 # For the bootstrap dataset, these were stored in separate CSVs
 
-obsv.param.diffs = rbind(gs.obsv.pert, fr.obsv.pert %>% select(-c(trt.phen, mean.phen))) %>%
+obsv.param.diffs = rbind(
+  gs.obsv.pert %>% distinct(trt, param, orig.parval), 
+  fr.obsv.pert %>% distinct(trt, param, orig.parval)
+) %>%
   # get rid of the phen 
   filter(!grepl('phen', param)) %>%
-  # distinct (because we only need original parameter values once)
-  distinct(trt, param, orig.parval) %>%
   # Get differences between treatments
   pivot_wider(names_from = trt, values_from = orig.parval) %>%
   mutate(d.c = drought - control, i.c = irrigated - control) %>%
@@ -681,7 +685,7 @@ ltre.dlambda.compare = merge(
 
 ltre.dlambda.compare %>%
   mutate(relerr = (csum - d.lambda) / d.lambda)
-# Slightly negatively biased, but all by <1% of the true lambda difference
+# Okay better than before! 3/4 are <1% and the final one is at 2.5%...
 
 # ------------------------------------------------------                  
 # ------ Combine contributions by rate (not param) -----
@@ -733,7 +737,6 @@ boot.trt.ltre %>%
   ggplot(aes(x = rate, y = contrib, colour = contrast)) +
   geom_point(position = position_dodge(width = 0.25), alpha = 0.5)
 
-# This is backwards...
 
 obsv.phen.ltre %>%
   # think about which trt we want...
@@ -757,13 +760,13 @@ control.ltre.all = rbind(
     select(-trt.phen) %>%
     # marker for type of observation
     mutate(varb = 'alpha', samp = 'obsv', type = 'trt'),
-  # --- Bootstrapped treatment effects
-  boot.trt.ltre %>%
-    # give me LTRE values for the control dates and remove unneeded columns
-    filter(trt.phen %in% 'control') %>%
-    select(-c(trt.phen, samp)) %>%
-    # marker for type of observation
-    mutate(varb = 'alpha', samp = 'boot', type = 'trt'),
+  # # --- Bootstrapped treatment effects
+  # boot.trt.ltre %>%
+  #   # give me LTRE values for the control dates and remove unneeded columns
+  #   filter(trt.phen %in% 'control') %>%
+  #   select(-c(trt.phen, samp)) %>%
+  #   # marker for type of observation
+  #   mutate(varb = 'alpha', samp = 'boot', type = 'trt'),
   # --- Observed phenology effects (within treatment)
   obsv.phen.ltre %>%
     # give me LTRE values where the reference date is the control
@@ -772,23 +775,24 @@ control.ltre.all = rbind(
     select(-trt) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
-    mutate(varb = 'beta', samp = 'obsv', type = 'phen'),
-  # --- Bootstrapped phenology effects
-  boot.phen.ltre %>%
-    # give me LTRE values where the reference date is the control
-    # and remove unnecessary columns
-    filter(trt %in% 'control') %>%
-    select(-c(trt, samp)) %>%
-    # Rename column for column agreement
-    rename(contrast = contrast.phen) %>%
-    mutate(varb = 'beta', samp = 'boot', type = 'phen')
+    mutate(varb = 'beta', samp = 'obsv', type = 'phen')# ,
+  # # --- Bootstrapped phenology effects
+  # boot.phen.ltre %>%
+  #   # give me LTRE values where the reference date is the control
+  #   # and remove unnecessary columns
+  #   filter(trt %in% 'control') %>%
+  #   select(-c(trt, samp)) %>%
+  #   # Rename column for column agreement
+  #   rename(contrast = contrast.phen) %>%
+  #   mutate(varb = 'beta', samp = 'boot', type = 'phen')
 ) %>%
   mutate(ltre.varb = paste0(varb, '[', rate, ']'))
 
 control.ltre.all %>%
   mutate(ltre.varb = paste0(varb, '[', rate, ']')) %>%
   ggplot(aes(x = ltre.varb, y = contrib)) +
-  geom_point(aes(shape = samp, size = samp, colour = type)) +
+  geom_point(aes(shape = samp, alpha = samp, size = samp, colour = type)) +
+  scale_alpha_manual(values = c(0.1, 1)) +
   scale_shape_manual(values = c(1, 19)) +
   scale_size_manual(values = c(1, 4)) +
   scale_colour_manual(values = c('gray11', 'gray66')) +
@@ -798,10 +802,10 @@ control.ltre.all %>%
 # ugly.
 
 control.ltre.summ = merge(
-  control.ltre.all %>% filter(samp %in% 'obsv') %>% select(-c(varb, rate, samp)),
+  control.ltre.all %>% filter(samp %in% 'obsv') %>% select(-c(rate, samp)),
   control.ltre.all %>%
     filter(samp %in% 'boot') %>%
-    group_by(contrast, ltre.varb) %>%
+    group_by(contrast, ltre.varb, varb) %>%
     reframe(
       cilim = quantile(contrib, probs = c(0.025, 0.975)),
       lohi = c('lo', 'hi')
