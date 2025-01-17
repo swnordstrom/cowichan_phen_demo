@@ -9,6 +9,7 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(cowplot)
+library(ggpattern)
 
 rm(list = ls())
 
@@ -814,17 +815,31 @@ control.ltre.summ %>%
     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
   ) %>%
   ggplot(aes(x = ltre.varb)) +
-  geom_col(aes(y = contrib, fill = contrast)) +
-  geom_segment(aes(xend = ltre.varb, y = lo, yend = hi)) +
-  scale_x_discrete(labels = scales::label_parse()) +
-  scale_fill_manual(values = c('red', 'blue')) +
+  geom_col_pattern(
+    aes(y = contrib, fill = contrast, pattern = varb),
+    colour = 'gray22',
+    pattern_colour = 'gray22', pattern_fill = 'gray22',
+    pattern_density = 0.025
+  ) +
+  geom_segment(aes(xend = ltre.varb, y = lo, yend = hi), linewidth = 1.2) +
+  scale_x_discrete(
+    labels = scales::label_parse(),
+    limits = c(
+      'alpha[grow]', 'alpha[flow]', 'alpha[seed]', 'alpha[recr]', 
+      'beta[grow]', 'beta[succ]', 'beta[seed]'
+    )
+  ) +
+  scale_pattern_manual(values = c('stripe', 'crosshatch')) +
+  # scale_fill_manual(values = c('red', 'blue')) +
+  scale_fill_manual(values = c('goldenrod', 'dodgerblue')) +
   facet_wrap(~ contr.pretty) +
-  guides(fill = 'none')
+  labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
+  guides(fill = 'none', pattern = 'none') +
+  theme(panel.background = element_blank())
 
-# Okay... something funny is going on with the growth
-# Asymmetric, contributions perhaps are non-normal...
-# (plot above also kind of suggested these bootstraps were not normally distributed...)
+ggsave('04_analysis/figures/ltre_fig.png', width = 8, height = 5)
 
+# distribution of bootstrap estimates - normal?
 control.ltre.all %>% 
   filter(samp %in% 'boot') %>% 
   group_by(ltre.varb, contrast) %>%
