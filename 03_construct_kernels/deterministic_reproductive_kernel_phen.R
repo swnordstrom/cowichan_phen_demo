@@ -20,16 +20,6 @@ source('03_construct_kernels/prepare_demo_data_repr.R')
 # -------------------------------------------------------
 # =======================================================
 
-# === Phenology model ===
-# Response: day of umbel budding (continuous julian date)
-# Predictors: year (factor/categorical) and treatment (factor)
-d_t = glmmTMB(
-  phen.julian ~ trt + Year + (1 | Plot / plantid),
-  data = phen
-)
-
-# summary(d_t)
-
 # === Flowering/umbel count model ===
 u_s_s.ty = glmmTMB(
   No.umbels ~ size + (1 | Year) + (1 | Plot / plantid),
@@ -135,7 +125,7 @@ all.phen.kernel = backbone %>%
 # Export
 write.csv(
   all.phen.kernel %>% 
-    mutate(phen = phen.c + round(mean(seed$mean.phen))) %>% 
+    mutate(phen = phen.c + phen.ctrl.mean) %>% 
     # select(-c(phen.umbels, recr.mean, seeds.per.umbel, seeds.total, phen.c))
     select(-c(phen.umbels, recr.mean, seeds.per.umbel, seeds.total, phen.c)),
   file = '03_construct_kernels/out/deterministic_reprod_kernel_phen.csv',
@@ -144,17 +134,6 @@ write.csv(
 
 
 # === Kernel at observed phenolgoy dates (for LTRE) ===
-
-# This is actually a better way to do the LTRE backbone I think:
-trt.mean.buddates = expand.grid(trt = c('control', 'drought', 'irrigated'), Year = factor(2021:2024)) %>%
-  mutate(
-    mean.bud = predict(
-      d_t, re.form = ~ 0, allow.new.levels = TRUE,
-      newdata = expand.grid(trt = c('control', 'drought', 'irrigated'), Year = factor(2021:2024))
-    )
-  ) %>%
-  group_by(trt) %>%
-  summarise(mean.phen = mean(mean.bud))
 
 ltre.backbone = expand.grid(
   size = (5:60)/10,
@@ -174,12 +153,12 @@ ltre.backbone = expand.grid(
     )
   ) %>%
   # Merge with estimated mean bud date per treatment
-  merge(trt.mean.buddates, by.x = 'trt.phen', by.y = 'trt') %>%
+  merge(phen.treatment.means, by.x = 'trt.phen', by.y = 'trt') %>%
   # Rename trt column so it is used in models
   rename(trt = trt.rate) %>% 
   # center the phenology column and rename the `trt` column so it can be used in
   # vital rate estimates
-  mutate(phen.c = mean.phen - round(mean(seed$mean.phen)))
+  mutate(phen.c = mean.phen - phen.ctrl.mean)
 
 ltre.kernel = ltre.backbone %>%
   # Rename to not put the year random effect in these predictions
@@ -294,7 +273,7 @@ head(ltre.kernel)
 # Do some formatting and export
 # rbind(ltre.kernel, ltre.control.kernel) %>%
 ltre.kernel %>%
-  mutate(phen = phen.c + round(mean(seed$mean.phen))) %>%
+  mutate(phen = phen.c + phen.ctrl.mean) %>%
   select(-c(phen.umbels, recr.mean, seeds.per.umbel, seeds.total, phen.c)) %>%
   write.csv(
     file = '03_construct_kernels/out/determinstic_reprod_kernel_phen_ltre.csv',
@@ -324,8 +303,10 @@ ltre.kernel %>%
 # - Phenology
 #   - phen effect on umbel success
 #   - phen effect on seed set
+#     - linear term
+#     - quadratic term
 
-# Overall number of effects: six to test here
+# Overall number of effects: seven to test here
 
 perturb.list = vector(length = 6, mode = 'list')
 
@@ -342,6 +323,12 @@ u_s_s.ty$fit$par
 perturb.list[[1]] = ltre.backbone %>%
   rename(year = Year) %>%
   mutate(
+    # Probability of flowering
+    # (not used in this script, but used for phen-growth trade-off)
+    prob.flower = 1 - predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'
+    ),
     # Umbel count
     phen.umbels = predict(
       u_s_s.ty, newdata = .,
@@ -367,7 +354,7 @@ perturb.list[[1]] = ltre.backbone %>%
   ) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
   mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
+  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels, prob.flower) %>%
   summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
@@ -389,10 +376,11 @@ perturb.list[[1]] = ltre.backbone %>%
   rename(size.prev = size) %>%
   mutate(
     param = 'flow.int',
-    orig.parval = case_when(
-      trt %in% 'control' ~ u_s_s.ty$fit$par[3],
-      trt %in% 'drought' ~ u_s_s.ty$fit$par[3] + u_s_s.ty$fit$par[5],
-      trt %in% 'irrigated' ~ u_s_s.ty$fit$par[3] + u_s_s.ty$fit$par[6]
+    orig.parval = case_match(
+      trt,
+      'control' ~ u_s_s.ty$fit$par[3],
+      'drought' ~ u_s_s.ty$fit$par[3] + u_s_s.ty$fit$par[5],
+      'irrigated' ~ u_s_s.ty$fit$par[3] + u_s_s.ty$fit$par[6]
     )
   )
 
@@ -404,6 +392,12 @@ s_st.p_s.u.p2$fit$par
 perturb.list[[2]] = ltre.backbone %>%
   rename(year = Year) %>%
   mutate(
+    # Probability of flowering
+    # (not used in this script, but used for phen-growth trade-off)
+    prob.flower = 1 - predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'
+    ),
     # Umbel count
     phen.umbels = predict(
       u_s_s.ty, newdata = .,
@@ -429,7 +423,7 @@ perturb.list[[2]] = ltre.backbone %>%
   ) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
   mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
+  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels, prob.flower) %>%
   summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
@@ -451,10 +445,11 @@ perturb.list[[2]] = ltre.backbone %>%
   rename(size.prev = size) %>%
   mutate(
     param = 'seed.int',
-    orig.parval = case_when(
-      trt %in% 'control' ~ s_st.p_s.u.p2$fit$par[1],
-      trt %in% 'drought' ~ s_st.p_s.u.p2$fit$par[1] + s_st.p_s.u.p2$fit$par[2],
-      trt %in% 'irrigated' ~ s_st.p_s.u.p2$fit$par[1] + s_st.p_s.u.p2$fit$par[3]
+    orig.parval = case_match(
+      trt,
+      'control' ~ s_st.p_s.u.p2$fit$par[1],
+      'drought' ~ s_st.p_s.u.p2$fit$par[1] + s_st.p_s.u.p2$fit$par[2],
+      'irrigated' ~ s_st.p_s.u.p2$fit$par[1] + s_st.p_s.u.p2$fit$par[3]
     )
   )
 
@@ -466,6 +461,12 @@ s_st.p_s.u.p2$fit$par
 perturb.list[[3]] = ltre.backbone %>%
   rename(year = Year) %>%
   mutate(
+    # Probability of flowering
+    # (not used in this script, but used for phen-growth trade-off)
+    prob.flower = 1 - predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'
+    ),
     # Umbel count
     phen.umbels = predict(
       u_s_s.ty, newdata = .,
@@ -491,7 +492,7 @@ perturb.list[[3]] = ltre.backbone %>%
   ) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
   mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
+  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels, prob.flower) %>%
   summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
@@ -513,10 +514,11 @@ perturb.list[[3]] = ltre.backbone %>%
   rename(size.prev = size) %>%
   mutate(
     param = 'seed.slope',
-    orig.parval = case_when(
-      trt %in% 'control' ~ s_st.p_s.u.p2$fit$par[4],
-      trt %in% 'drought' ~ s_st.p_s.u.p2$fit$par[4] + s_st.p_s.u.p2$fit$par[9],
-      trt %in% 'irrigated' ~ s_st.p_s.u.p2$fit$par[4] + s_st.p_s.u.p2$fit$par[10]
+    orig.parval = case_match(
+      trt,
+      'control' ~ s_st.p_s.u.p2$fit$par[4],
+      'drought' ~ s_st.p_s.u.p2$fit$par[4] + s_st.p_s.u.p2$fit$par[9],
+      'irrigated' ~ s_st.p_s.u.p2$fit$par[4] + s_st.p_s.u.p2$fit$par[10]
     )
   )
 
@@ -529,6 +531,12 @@ r_t.y$fit$par
 perturb.list[[4]] = ltre.backbone %>%
   rename(year = Year) %>%
   mutate(
+    # Probability of flowering
+    # (not used in this script, but used for phen-growth trade-off)
+    prob.flower = 1 - predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'
+    ),
     # Umbel count
     phen.umbels = predict(
       u_s_s.ty, newdata = .,
@@ -548,8 +556,8 @@ perturb.list[[4]] = ltre.backbone %>%
     ),
   ) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
-  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels, prob.flower) %>%
   summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
@@ -576,10 +584,11 @@ perturb.list[[4]] = ltre.backbone %>%
   rename(size.prev = size) %>%
   mutate(
     param = 'recr.int',
-    orig.parval = case_when(
-      trt %in% 'control' ~ r_t.y$fit$par[1],
-      trt %in% 'drought' ~ r_t.y$fit$par[1] + r_t.y$fit$par[2],
-      trt %in% 'irrigated' ~ r_t.y$fit$par[1] + r_t.y$fit$par[3]
+    orig.parval = case_match(
+      trt,
+      'control' ~ r_t.y$fit$par[1],
+      'drought' ~ r_t.y$fit$par[1] + r_t.y$fit$par[2],
+      'irrigated' ~ r_t.y$fit$par[1] + r_t.y$fit$par[3]
     )
   )
 
@@ -588,6 +597,12 @@ perturb.list[[4]] = ltre.backbone %>%
 perturb.list[[5]] = ltre.backbone %>%
   rename(year = Year) %>%
   mutate(
+    # Probability of flowering
+    # (not used in this script, but used for phen-growth trade-off)
+    prob.flower = 1 - predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'
+    ),
     # Umbel count
     phen.umbels = predict(
       u_s_s.ty, newdata = .,
@@ -603,8 +618,8 @@ perturb.list[[5]] = ltre.backbone %>%
       s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
     )
-    # Reset the phen variable (so conditional is unaffected)
   ) %>%
+  # Reset the phen variable (so conditional is unaffected)
   mutate(phen.c = phen.c - delta) %>%
   mutate(
     seeds.seed.linear =  predict(
@@ -613,8 +628,8 @@ perturb.list[[5]] = ltre.backbone %>%
     ),
   ) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
-  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels, prob.flower) %>%
   summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
@@ -639,11 +654,18 @@ perturb.list[[5]] = ltre.backbone %>%
     orig.parval = phen.c
   )
 
-# 6: phen effects on seed set
+
+# 6: phen effects on seed set (linear term)
 
 perturb.list[[6]] = ltre.backbone %>%
   rename(year = Year) %>%
   mutate(
+    # Probability of flowering
+    # (not used in this script, but used for phen-growth trade-off)
+    prob.flower = 1 - predict(
+      u_s_s.ty, newdata = .,
+      allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'
+    ),
     # Umbel count
     phen.umbels = predict(
       u_s_s.ty, newdata = .,
@@ -664,13 +686,13 @@ perturb.list[[6]] = ltre.backbone %>%
     seeds.seed.linear =  predict(
       s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'link'
-    ),
-    # Reset the phen variable
-    phen.c = phen.c - delta
+    )
   ) %>%
+  # Reset the phen variable
+  mutate(phen.c = phen.c - delta) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
-  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear),) %>%
-  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels) %>%
+  mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
+  group_by(size, size.nex, trt, trt.phen, phen.c, phen.umbels, prob.flower) %>%
   summarise(across(c(seeds.zinf.linear, seeds.seed.linear), ~ mean(.x, na.rm = TRUE))) %>%
   ungroup() %>%
   mutate(
@@ -696,7 +718,7 @@ perturb.list[[6]] = ltre.backbone %>%
   )
 
 perturb.df = do.call(rbind, perturb.list) %>%
-  mutate(mean.phen = phen.c + round(mean(seed$mean.phen))) %>%
+  mutate(phen = phen.c + phen.ctrl.mean) %>%
   select(-c(phen.c, phen.umbels, seeds.per.umbel, seeds.total, recr.mean))
 
 write.csv(
