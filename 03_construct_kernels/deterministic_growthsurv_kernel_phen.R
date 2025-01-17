@@ -15,6 +15,7 @@ library(glmmTMB)
 
 rm(list = ls())
 
+# Read in demo data and merge with treatment info
 all.data = merge(
   x = read.csv('01_data_cleaning/out/demo_phen_seed_2016-2024_final.csv'),
   y = read.csv('00_raw_data/plot_treatments.csv'),
@@ -24,6 +25,12 @@ all.data = merge(
 nrow(all.data)
 head(all.data)
 
+# Read in phenology means
+phen.treatment.means = read.csv('03_construct_kernels/phen_treatment_means.csv')
+# Mean that will be used for centering
+phen.ctrl.mean = phen.treatment.means$mean.phen[phen.treatment.means$trt %in% 'control']
+
+# We're interested only in plants that are in demo for this analysis
 all.demo = all.data %>% 
   filter(in.demo) %>%
   distinct(plantid, Year, .keep_all = TRUE)
@@ -52,7 +59,9 @@ demo.surv = merge(
   by.y = c('Plot', 'plantid', 'Year', 'trt'),
   suffixes = c('', '.pre'),
   all.x = FALSE, all.y = FALSE
-)
+) %>%
+  # Change years to factors
+  mutate(across(contains('year'), as.factor))
 
 head(demo.surv)
 # should be less than 1
@@ -66,7 +75,7 @@ demo.surv.sizes = demo.surv %>%
       Leaf.length.pre > 0 & No.leaves.pre > 0
   ) %>%
   # Get rid of 2016 records because the sizes are not reliable
-  filter(prev.year > 2016) %>%
+  filter(!(prev.year %in% 2016)) %>%
   # Add size columns
   mutate(size.prev = log(No.leaves.pre * Leaf.length.pre))
 
@@ -79,7 +88,7 @@ demo.grow = demo.surv.sizes %>%
   mutate(size.cur = log(Leaf.length * No.leaves))
 
 # Finally: subset surv dataset to not include 2023-2024 surv
-demo.surv.sizes = demo.surv.sizes %>% filter(surv.year < 2024)
+demo.surv.sizes = demo.surv.sizes %>% filter(!(surv.year %in% 2024))
 
 # Get phenology dataset
 # this is for merging in with growth dataset, so relevant measure is by plant (not by umbel)
@@ -95,32 +104,17 @@ phen.by.plant.for.growth = all.data %>%
   # give me the mean bud date for each plant
   group_by(plantid, Year) %>%
   summarise(phen.mean = mean(phen.julian)) %>%
-  ungroup()
+  ungroup() %>%
+  # Change year to factor
+  mutate(Year = as.factor(Year))
 
 demo.grow = merge(
   demo.grow, phen.by.plant.for.growth, 
   by.x = c('prev.year', 'plantid'), by.y = c('Year', 'plantid'),
   all.x = TRUE, all.y = FALSE
 ) %>%
-  mutate(phen.mean.c = phen.mean - round(mean(phen.mean, na.rm = TRUE)))
-
-# Phenology for mean bud date by phenology
-# i.e., for umbel
-# This is used for getting dates for LTRE
-# Umbel-level budding phenology data
-
-phen.by.umbel.for.ltre = all.data %>% 
-  filter(in.phen) %>%
-  # Split out the bud dates for bud date models; the most umbels seen in a
-  # plant is 12, so use separate() to kick these out and then pivot_long to get
-  # one row per umbel
-  # (first - need to get one row per plant - do a distinct())
-  distinct(Year, plantid, .keep_all = TRUE) %>%
-  separate_wider_delim(phen.julis, names = paste0('uu', 1:12), delim = ';', too_few = 'align_start') %>%
-  pivot_longer(starts_with('uu'), names_to = 'umbel.number', values_to = 'phen.julian') %>%
-  filter(!is.na(phen.julian)) %>%
-  mutate(phen.julian = as.numeric(gsub('\\s', '', phen.julian))) %>%
-  mutate(Year = factor(Year))
+  # Center mean around control
+  mutate(phen.c = phen.mean - phen.ctrl.mean)
 
 
 # ------------------------------------------------
@@ -143,21 +137,19 @@ g_st.ty = glmmTMB(
 
 # Growth-phen model
 g_phen = glmmTMB(
-  size.cur ~ size.prev * prev.year + trt * prev.year + phen.mean.c + (1 | Plot / plantid),
-  data = demo.grow %>% filter(!is.na(phen.mean.c))
+  size.cur ~ size.prev * prev.year + trt * prev.year + phen.c + (1 | Plot / plantid),
+  data = demo.grow %>% filter(!is.na(phen.c))
 )
 
-# Phen (umbel, treatment effects) model
-d_t = glmmTMB(
-  phen.julian ~ trt + Year + (1 | Plot / plantid),
-  data = phen.by.umbel.for.ltre
-)
 
 # --- Extract parameters needed
 
 # Residual variance in growth models
 gv.sd = summary(g_st.ty)$sigma
 gf.sd = summary(g_phen)$sigma
+
+# Phenology effect per day
+phen.effect = g_phen$fit$par[7]
 
 # --- Construct and work with data frame
 
@@ -166,8 +158,7 @@ grow.surv.kernel = expand.grid(
   size.prev = (5:60)/10,
   size.cur = (5:60)/10,
   trt = c('control', 'drought', 'irrigated'),
-  year = 2021:2023,
-  phen.mean.c = -28:28
+  phen.c = -28:28
 )
 
 grow.surv.kernel = grow.surv.kernel %>%
@@ -190,18 +181,11 @@ grow.surv.kernel = grow.surv.kernel %>%
   ) %>%
   # Model with phenology
   # Need to change name of year column to get annual predictions
-  rename(prev.year = year) %>%
-  mutate(
-    phen.grow.mean = predict(
-      newdata = .,
-      object = g_phen, type = 'response',
-      re.form = ~ 0, allow.new.levels = TRUE
-    )
-  ) %>%
-  # Take the average of the growth kernel across years
-  group_by(size.prev, size.cur, trt, phen.mean.c, pred.surv, pred.grow.mean) %>%
-  summarise(phen.grow.mean = mean(phen.grow.mean)) %>%
-  ungroup() %>%
+  mutate(phen.grow.mean = pred.grow.mean + phen.effect * phen.c) %>%
+  # # Take the average of the growth kernel across years
+  # group_by(size.prev, size.cur, trt, phen.c, pred.surv, pred.grow.mean) %>%
+  # summarise(phen.grow.mean = mean(phen.grow.mean)) %>%
+  # ungroup() %>%
   # Predicted distribution of sizes in next time step
   mutate(
     pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
@@ -209,17 +193,17 @@ grow.surv.kernel = grow.surv.kernel %>%
   )
 
 grow.surv.kernel %>%
-  filter(phen.mean.c %in% c(-28, 28)) %>%
+  filter(phen.c %in% c(-28, 28)) %>%
   mutate(p.size.cur = pred.surv * pf.grow.size) %>%
   ggplot(aes(x = size.prev, y = size.cur)) +
   geom_tile(aes(fill = p.size.cur)) +
   scale_y_reverse() +
   scale_fill_viridis_c() +
-  facet_wrap(phen.mean.c ~ trt)
+  facet_wrap(trt ~ phen.c, nrow = 3)
 # Not that different
 
 grow.surv.kernel %>%
-  filter(phen.mean.c %in% 0) %>%
+  filter(phen.c %in% 0) %>%
   pivot_longer(c(pv.grow.size, pf.grow.size), names_to = 'model', values_to = 'p.grow.size') %>%
   mutate(p.size.cur = pred.surv * p.grow.size) %>%
   ggplot(aes(x = size.prev, y = size.cur)) +
@@ -231,8 +215,8 @@ grow.surv.kernel %>%
 
 write.csv(
   grow.surv.kernel %>%
-    mutate(phen = phen.mean.c + round(mean(phen.by.plant.for.growth$phen.mean))) %>%
-    select(-c(phen.mean.c, phen.grow.mean, pred.grow.mean)),
+    mutate(phen = phen.c + phen.ctrl.mean) %>%
+    select(-c(phen.c, phen.grow.mean, pred.grow.mean)),
   file = '03_construct_kernels/out/deterministic_growsurv_kernel_phen.csv',
   row.names = FALSE
 )
@@ -240,23 +224,12 @@ write.csv(
 
 # --- Lambda estimates for LTRE
 
-# Mean bud date for each treatment
-trt.mean.buddates = expand.grid(trt = c('control', 'drought', 'irrigated'), Year = factor(2021:2024)) %>%
-  mutate(
-    mean.bud = predict(
-      d_t, re.form = ~ 0, allow.new.levels = TRUE,
-      newdata = expand.grid(trt = c('control', 'drought', 'irrigated'), Year = factor(2021:2024))
-    )
-  ) %>%
-  group_by(trt) %>%
-  summarise(mean.phen = mean(mean.bud))
-
 # LTRE backbone (combinations of treatment used to estimate vital rate and
 # treatment used for phenology)
 ltre.backbone = expand.grid(
   size.prev = (5:60)/10,
   size.cur  = (5:60)/10,
-  year = 2021:2023,
+  # year = 2021:2023,
   # This column will be used for manipulating the phenology date and the vital
   # rate estimation
   trt.phen.idx = 1:7
@@ -271,12 +244,12 @@ ltre.backbone = expand.grid(
     )
   ) %>%
   # Merge with estimated mean bud date per treatment
-  merge(trt.mean.buddates, by.x = 'trt.phen', by.y = 'trt') %>%
+  merge(phen.treatment.means, by.x = 'trt.phen', by.y = 'trt') %>%
   # Rename trt column so it is used in models
   rename(trt = trt.rate) %>% 
   # center the phenology column and rename the `trt` column so it can be used in
   # vital rate estimates
-  mutate(phen.mean.c = mean.phen - round(mean(phen.by.plant.for.growth$phen.mean)))
+  mutate(phen.c = mean.phen - phen.ctrl.mean)
 
 # Get kernel
 ltre.kernel = ltre.backbone %>%
@@ -298,19 +271,11 @@ ltre.kernel = ltre.backbone %>%
     )
   ) %>%
   # Model with phenology
-  # Need to change name of year column to get annual predictions
-  rename(prev.year = year) %>%
-  mutate(
-    phen.grow.mean = predict(
-      newdata = .,
-      object = g_phen, type = 'response',
-      re.form = ~ 0, allow.new.levels = TRUE
-    )
-  ) %>%
-  # Take the average of the growth kernel across years
-  group_by(size.prev, size.cur, trt, trt.phen, phen.mean.c, pred.surv, pred.grow.mean) %>%
-  summarise(phen.grow.mean = mean(phen.grow.mean)) %>%
-  ungroup() %>%
+  mutate(phen.grow.mean = pred.grow.mean + phen.effect * phen.c) %>%
+  # # Take the average of the growth kernel across years
+  # group_by(size.prev, size.cur, trt, trt.phen, phen.c, pred.surv, pred.grow.mean) %>%
+  # summarise(phen.grow.mean = mean(phen.grow.mean)) %>%
+  # ungroup() %>%
   # Predicted distribution of sizes in next time step
   mutate(
     pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
@@ -320,8 +285,8 @@ ltre.kernel = ltre.backbone %>%
 # Export
 write.csv(
   ltre.kernel %>%
-    mutate(phen = phen.mean.c + round(mean(phen.by.plant.for.growth$phen.mean))) %>%
-    select(-c(phen.mean.c, phen.grow.mean, pred.grow.mean)),
+    mutate(phen = phen.c + phen.ctrl.mean) %>%
+    select(-c(phen.c, mean.phen, phen.grow.mean, pred.grow.mean, trt.phen.idx)),
   file = '03_construct_kernels/out/deterministic_growsurv_kernel_phen_ltre.csv',
   row.names = FALSE
 )
@@ -329,104 +294,30 @@ write.csv(
 
 # --- Sensitivities
 
-# Parameters of interest:
-# - Survival model
-#   - Intercept
-#   - Slope (size-dependence)
-# - Growth model:
-#   - Intercept
-#   - Slope (size-dependence)
-# - 
+# Parameters of interest to us (vary by either/both of treatment and budding phenology)
+# - Growth model (no phenology):
+#   - Treatment intercept term
+#   - Treatment slope (trt:size.prev term)
+# - Growth model (with phenology)
+#   - Phenology term
+# (conundrum... are the treatment intercepts in the two models independent of
+# each other?) (I suppose we can treat these as growth of a flowering plant and
+# growth of a vegetative plant...)
 
 # Perturbation amount
 delta = 0.0001
 
 # Get a list for outputs
-outputs = vector('list', 5)
-
-# Residual variance in growth models
-grow.sd = summary(g_st.ty)$sigma
-
-# Data frame to generate predictions for
-grow.surv.kernel = expand.grid(
-  size.prev = (5:60)/10,
-  size.cur = (5:60)/10,
-  trt = c('control', 'drought', 'irrigated')
-)
+outputs = vector('list', 3)
 
 # Start the perturbations
 
-# 1: Survival model intercept
-outputs[[1]] = grow.surv.kernel %>%
-  # Predicted survival
-  mutate(
-    pred.surv = predict(
-      newdata = .,
-      object = s_s, type = 'response',
-      newparams = s_s$fit$par %>%
-        (function(x) {
-          x[1] <- x[1] + delta
-          return(x)
-        }),
-      re.form = ~ 0, allow.new.levels = TRUE
-    )
-  ) %>%
-  # Predicted growth
-  mutate(
-    pred.grow.mean = predict(
-      newdata = .,
-      object = g_st.ty, type = 'response',
-      re.form = ~ 0, allow.new.levels = TRUE
-    )
-  ) %>%
-  mutate(
-    p.grow.size = 0.1 * dnorm(size.cur, pred.grow.mean, grow.sd)
-  ) %>%
-  # Combine all together to get overall size distribution in next time step
-  mutate(p.size.cur = pred.surv * p.grow.size) %>%
-  mutate(
-    perturb.param = 'surv_int',
-    # no treatment effects on survival
-    orig.par.val = s_s$fit$par[1]
-  )
+# 1: Growth model (no phen) treatment intercept term
 
-# 2: Survival model 
-outputs[[2]] = grow.surv.kernel %>%
-  # Predicted survival
-  mutate(
-    pred.surv = predict(
-      newdata = .,
-      object = s_s, type = 'response',
-      newparams = s_s$fit$par %>%
-        (function(x) {
-          x[2] <- x[2] + delta
-          return(x)
-        }),
-      re.form = ~ 0, allow.new.levels = TRUE
-    )
-  ) %>%
-  # Predicted growth
-  mutate(
-    pred.grow.mean = predict(
-      newdata = .,
-      object = g_st.ty, type = 'response',
-      re.form = ~ 0, allow.new.levels = TRUE
-    )
-  ) %>%
-  mutate(
-    p.grow.size = 0.1 * dnorm(size.cur, pred.grow.mean, grow.sd)
-  ) %>%
-  # Combine all together to get overall size distribution in next time step
-  mutate(p.size.cur = pred.surv * p.grow.size) %>%
-  mutate(
-    perturb.param = 'surv_slope',
-    # no treatment effects on survival size dependence
-    orig.par.val = s_s$fit$par[2]
-  )
+# intercept (control) is first parameter listed ([1]), 
+# drought and control effects on intercept are [3] and [4]
 
-# 3: Growth model intercept
-
-outputs[[3]] = grow.surv.kernel %>%
+outputs[[1]] = ltre.backbone %>%
   # Predicted survival
   mutate(
     pred.surv = predict(
@@ -448,24 +339,32 @@ outputs[[3]] = grow.surv.kernel %>%
       re.form = ~ 0, allow.new.levels = TRUE
     )
   ) %>%
+  # Model with phenology
+  mutate(phen.grow.mean = pred.grow.mean + phen.effect * phen.c) %>%
+  # Take the average of the growth kernel across years
+  # group_by(size.prev, size.cur, trt, trt.phen, phen.c, pred.surv, pred.grow.mean) %>%
+  # summarise(phen.grow.mean = mean(phen.grow.mean)) %>%
+  # ungroup() %>%
+  # Predicted distribution of sizes in next time step
   mutate(
-    p.grow.size = 0.1 * dnorm(size.cur, pred.grow.mean, grow.sd)
+    pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
+    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gf.sd)
   ) %>%
-  # Combine all together to get overall size distribution in next time step
-  mutate(p.size.cur = pred.surv * p.grow.size) %>%
+  # Add in perturbation information
   mutate(
-    perturb.param = 'grow_int',
-    orig.par.val = case_when(
-      trt %in% 'control' ~ g_st.ty$fit$par[1],
-      trt %in% 'drought' ~ g_st.ty$fit$par[1] + g_st.ty$fit$par[3],
-      trt %in% 'irrigated' ~ g_st.ty$fit$par[1] + g_st.ty$fit$par[4]
+    perturb.param = 'grow.int',
+    orig.par.val = case_match(
+      trt,
+      'control' ~ g_st.ty$fit$par[1],
+      'drought' ~ g_st.ty$fit$par[1] + g_st.ty$fit$par[3],
+      'irrigated' ~ g_st.ty$fit$par[1] + g_st.ty$fit$par[4]
     ) # g_st.ty$fit$par[1]
   )
 
+# 2: Growth model (no phen) slope; slope parameter (control) is [2] param listed,
+# the drought and irrigated slope effect terms resp. are [5] and [6]
 
-# 4: Growth model intercept
-
-outputs[[4]] = grow.surv.kernel %>%
+outputs[[2]] = ltre.backbone %>%
   # Predicted survival
   mutate(
     pred.surv = predict(
@@ -476,6 +375,7 @@ outputs[[4]] = grow.surv.kernel %>%
   ) %>%
   # Predicted growth
   mutate(
+    # Model with no phenology
     pred.grow.mean = predict(
       newdata = .,
       object = g_st.ty, type = 'response',
@@ -487,23 +387,31 @@ outputs[[4]] = grow.surv.kernel %>%
       re.form = ~ 0, allow.new.levels = TRUE
     )
   ) %>%
+  # Model with phenology
+  mutate(phen.grow.mean = pred.grow.mean + phen.effect * phen.c) %>%
+  # # Take the average of the growth kernel across years
+  # group_by(size.prev, size.cur, trt, trt.phen, phen.c, pred.surv, pred.grow.mean) %>%
+  # summarise(phen.grow.mean = mean(phen.grow.mean)) %>%
+  # ungroup() %>%
+  # Predicted distribution of sizes in next time step
   mutate(
-    p.grow.size = 0.1 * dnorm(size.cur, pred.grow.mean, grow.sd)
+    pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
+    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gf.sd)
   ) %>%
-  # Combine all together to get overall size distribution in next time step
-  mutate(p.size.cur = pred.surv * p.grow.size) %>%
+  # Add in perturbation information
   mutate(
-    perturb.param = 'grow_slope',
-    orig.par.val = case_when(
-      trt %in% 'control' ~ g_st.ty$fit$par[2],
-      trt %in% 'drought' ~ g_st.ty$fit$par[2] + g_st.ty$fit$par[5],
-      trt %in% 'irrigated' ~ g_st.ty$fit$par[2] + g_st.ty$fit$par[6]
+    perturb.param = 'grow.slope',
+    orig.par.val = case_match(
+      trt,
+      'control' ~ g_st.ty$fit$par[2],
+      'drought' ~ g_st.ty$fit$par[2] + g_st.ty$fit$par[5],
+      'irrigated' ~ g_st.ty$fit$par[2] + g_st.ty$fit$par[6]
     ) # g_st.ty$fit$par[2]
   )
 
-# 5: Growth model standard deviation
+# 3: Growth model phenology effect
 
-outputs[[5]] = grow.surv.kernel %>%
+outputs[[3]] = ltre.backbone %>%
   # Predicted survival
   mutate(
     pred.surv = predict(
@@ -514,26 +422,42 @@ outputs[[5]] = grow.surv.kernel %>%
   ) %>%
   # Predicted growth
   mutate(
+    # Model with no phenology
     pred.grow.mean = predict(
       newdata = .,
       object = g_st.ty, type = 'response',
       re.form = ~ 0, allow.new.levels = TRUE
     )
   ) %>%
+  # Model with phenology
+  mutate(phen.grow.mean = pred.grow.mean + (phen.c + delta) * phen.effect) %>%
+  # # Take the average of the growth kernel across years
+  # group_by(size.prev, size.cur, trt, trt.phen, phen.c, pred.surv, pred.grow.mean) %>%
+  # summarise(phen.grow.mean = mean(phen.grow.mean)) %>%
+  # ungroup() %>%
+  # Predicted distribution of sizes in next time step
   mutate(
-    p.grow.size = 0.1 * dnorm(size.cur, pred.grow.mean, grow.sd + delta)
+    pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
+    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gf.sd)
   ) %>%
-  # Combine all together to get overall size distribution in next time step
-  mutate(p.size.cur = pred.surv * p.grow.size) %>%
+  # Add in perturbation information
   mutate(
-    perturb.param = 'grow_sigma',
-    orig.par.val = grow.sd
+    perturb.param = 'phen.grow',
+    orig.par.val = phen.c
   )
 
-outputs.all = do.call(rbind, outputs)
+
+# Bind them all together
+outputs.all = do.call(rbind, outputs) %>%
+  # De-center phenology
+  mutate(phen = phen.c + phen.ctrl.mean)
 
 write.csv(
-  outputs.all %>% select(size.prev, size.cur, trt, p.size.cur, perturb.param, orig.par.val),
-  file = '03_construct_kernels/out/deterministic_grow_coef_perturbation_no_phen.csv',
+  outputs.all %>% 
+    select(
+      size.prev, size.cur, trt, trt.phen, phen, 
+      pred.surv, pv.grow.size, pf.grow.size, perturb.param, orig.par.val
+    ),
+  file = '03_construct_kernels/out/deterministic_grow_coef_perturbation_phen.csv',
   row.names = FALSE
 )
