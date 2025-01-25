@@ -10,6 +10,12 @@ all.data = merge(
   by.x = 'Plot', by.y = 'plot'
 )
 
+# Read in phenology means
+phen.treatment.means = read.csv('03_construct_kernels/phen_treatment_means.csv')
+# Mean that will be used for centering
+phen.ctrl.mean = phen.treatment.means$mean.phen[phen.treatment.means$trt %in% 'control']
+
+
 # Dataset for flowering (additional processing below)
 demo.flow = all.data %>%
   # Get only plants that are:
@@ -116,5 +122,5 @@ seed = rbind(
     uncount(miss.umbel) %>%
     mutate(no.seeds = 0)
 ) %>%
-  mutate(phen.c = mean.phen - round(mean(mean.phen))) %>%
+  mutate(phen.c = mean.phen - phen.ctrl.mean) %>%
   mutate(size = log(No.leaves * Leaf.length))
