@@ -865,16 +865,19 @@ control.ltre.summ = merge(
 ) %>%
   ungroup()
 
-control.ltre.summ %>%
+pa = control.ltre.summ %>%
   mutate(
     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
   ) %>%
   ggplot(aes(x = ltre.varb)) +
-  geom_col_pattern(
-    aes(y = contrib, fill = contrast, pattern = varb),
-    colour = 'gray22',
-    pattern_colour = 'gray22', pattern_fill = 'gray22',
-    pattern_density = 0.025
+  # geom_col_pattern(
+  #   aes(y = contrib, fill = contrast, pattern = varb),
+  #   colour = 'gray22',
+  #   pattern_colour = 'gray22', pattern_fill = 'gray22',
+  #   pattern_density = 0.025
+  # ) +
+  geom_col(
+    aes(y = contrib, fill = contrast), colour = 'gray22'
   ) +
   geom_segment(aes(xend = ltre.varb, y = lo, yend = hi), linewidth = 1.2) +
   scale_x_discrete(
@@ -882,15 +885,21 @@ control.ltre.summ %>%
     limits = c(
       'alpha[grow]', 'alpha[flow]', 'alpha[seed]', 'alpha[recr]', 
       'beta[grow]', 'beta[succ]', 'beta[seed]'
-    )
+    ),
+    guide = guide_axis(n.dodge = 2)
   ) +
   scale_pattern_manual(values = c('stripe', 'crosshatch')) +
-  # scale_fill_manual(values = c('red', 'blue')) +
   scale_fill_manual(values = c('goldenrod', 'dodgerblue')) +
   facet_wrap(~ contr.pretty) +
   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
   guides(fill = 'none', pattern = 'none') +
-  theme(panel.background = element_blank())
+  theme(
+    panel.background = element_blank(),
+    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
+    axis.text.x = element_text(size = 9),
+    axis.text.y = element_text(size = 7),
+    strip.text = element_text(size = 7)
+  )
 
 ggsave('04_analysis/figures/ltre_fig.png', width = 8, height = 5)
 
@@ -904,3 +913,205 @@ control.ltre.all %>%
 # ah... lack of normality looks to be common
 # may be a result of small sample size
 
+# Combinations across treatments
+
+obsv.contribs = rbind(
+  # --- Observed treatment effects
+  obsv.trt.ltre %>%
+    # give me LTRE values for the control dates and remove column
+    filter(trt.phen %in% 'control') %>%
+    select(-trt.phen) %>%
+    # marker for type of observation
+    mutate(varb = 'alpha', type = 'trt'),
+  # --- Observed phenology effects (within treatment)
+  obsv.phen.ltre %>%
+    # give me LTRE values where the reference date is the control
+    # and remove unnecessary column
+    filter(trt %in% 'control') %>%
+    select(-trt) %>%
+    # Rename column for column agreement
+    rename(contrast = contrast.phen) %>%
+    mutate(varb = 'beta', type = 'phen')
+)
+
+boot.contribs = rbind(
+  # --- Bootstrapped treatment effects
+  boot.trt.ltre %>%
+    # give me LTRE values for the control dates and remove unneeded columns
+    filter(trt.phen %in% 'control') %>%
+    select(-trt.phen) %>%
+    # marker for type of observation
+    mutate(varb = 'alpha', type = 'trt'),
+  # --- Bootstrapped phenology effects
+  boot.phen.ltre %>%
+    # give me LTRE values where the reference date is the control
+    # and remove unnecessary columns
+    filter(trt %in% 'control') %>%
+    select(-trt) %>%
+    # Rename column for column agreement
+    rename(contrast = contrast.phen) %>%
+    mutate(varb = 'beta', type = 'phen')
+) 
+
+head(boot.contribs)
+# Aggregations to do:
+# - Growth vs. reproduction
+# - Treatment vs. phenology (alpha vs. beta)
+
+obsv.by.demo.type = obsv.contribs %>%
+  group_by(contrast, demo = ifelse(rate %in% 'grow', rate, 'repr'), type) %>%
+  summarise(contrib = sum(contrib)) %>%
+  ungroup()
+
+boot.by.demo.type = boot.contribs %>%
+  group_by(contrast, samp, demo = ifelse(rate %in% 'grow', rate, 'repr'), type) %>%
+  summarise(contrib = sum(contrib)) %>%
+  ungroup()
+
+boot.by.demo.type.summ = boot.by.demo.type %>%
+  group_by(contrast, demo, type) %>%
+  reframe(
+    cilim = quantile(contrib, probs = c(0.025, 0.975)),
+    lohi = c('lo', 'hi')
+  ) %>%
+  pivot_wider(names_from = lohi, values_from = cilim) %>%
+  mutate(contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'))
+
+head(boot.by.demo.type)
+
+pb = obsv.by.demo.type %>%
+  mutate(
+    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'),
+    demo = ifelse(demo %in% 'grow', 'growth', 'reproduction')
+  ) %>%
+  ggplot(aes(x = type, y = contrib)) +
+  geom_col(aes(fill = contr.pretty), colour = 'gray22') +
+  geom_segment(
+    data = boot.by.demo.type.summ %>% mutate(demo = ifelse(demo %in% 'grow', 'growth', 'reproduction')),
+    aes(xend = type, y = lo, yend = hi),
+    linewidth = 1.2
+  ) +
+  scale_fill_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_x_discrete(
+    limits = c('trt', 'phen'), labels = c('treatment', 'phenology'),
+    guide = guide_axis(n.dodge = 2)
+  ) +
+  guides(fill = 'none') +
+  labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
+  facet_nested( ~ contr.pretty + demo) +
+  theme(
+    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
+    panel.background = element_blank(),
+    axis.text = element_text(size = 7),
+    strip.text = element_text(size = 7)
+  )
+
+obsv.by.demo = obsv.by.demo.type %>%
+  group_by(demo, contrast) %>%
+  summarise(contrib = sum(contrib)) %>%
+  ungroup()
+
+obsv.by.type = obsv.by.demo.type %>%
+  group_by(type, contrast) %>%
+  summarise(contrib = sum(contrib)) %>%
+  ungroup()
+
+boot.by.demo = boot.by.demo.type %>%
+  group_by(demo, contrast, samp) %>%
+  summarise(contrib = sum(contrib)) %>%
+  ungroup()
+
+boot.by.type = boot.by.demo.type %>%
+  group_by(type, contrast, samp) %>%
+  summarise(contrib = sum(contrib)) %>%
+  ungroup()
+
+boot.by.demo.summ = boot.by.demo %>%
+  group_by(contrast, demo) %>%
+  reframe(
+    cilim = quantile(contrib, probs = c(0.025, 0.975)),
+    lohi = c('lo', 'hi')
+  ) %>%
+  pivot_wider(names_from = lohi, values_from = cilim) %>%
+  mutate(
+    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
+  )
+
+boot.by.type.summ = boot.by.type %>%
+  group_by(contrast, type) %>%
+  reframe(
+    cilim = quantile(contrib, probs = c(0.025, 0.975)),
+    lohi = c('lo', 'hi')
+  ) %>%
+  pivot_wider(names_from = lohi, values_from = cilim) %>%
+  mutate(
+    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
+  )
+
+pc = obsv.by.demo %>%
+  mutate(
+    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
+  ) %>%
+  ggplot(aes(x = demo, y = contrib)) +
+  geom_col(aes(fill = contr.pretty), colour = 'gray22') +
+  geom_segment(
+    data = boot.by.demo.summ,
+    aes(xend = demo, y = lo, yend = hi),
+    linewidth = 1.2
+  ) +
+  scale_fill_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_colour_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_x_discrete(labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)) +
+  scale_y_continuous(limits = c(-0.005, 0.0185)) +
+  labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
+  guides(fill = 'none') +
+  facet_wrap( ~ contr.pretty, nrow = 1) +
+  theme(
+    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
+    panel.background = element_blank(),
+    axis.text = element_text(size = 7),
+    strip.text = element_text(size = 7)
+  )
+
+pd = obsv.by.type %>%
+  mutate(
+    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
+  ) %>%
+  ggplot(aes(x = type, y = contrib)) +
+  geom_col(aes(fill = contrast), colour = 'gray22') +
+  geom_segment(
+    data = boot.by.type.summ,
+    aes(xend = type, y = lo, yend = hi),
+    linewidth = 1.2
+  ) +
+  scale_fill_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_colour_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_x_discrete(
+    limits = c('trt', 'phen'), labels = c('treatment', 'phenology'),
+    guide = guide_axis(n.dodge = 2)
+  ) +
+  scale_y_continuous(limits = c(-0.005, 0.0185)) +
+  labs(x = '', y = '') +
+  guides(fill = 'none') +
+  facet_wrap( ~ contr.pretty, nrow = 1) +
+  theme(
+    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
+    panel.background = element_blank(),
+    # axis.text.x = element_text(angle = 45),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text = element_text(size = 7),
+    strip.text = element_text(size = 7)
+  )
+
+# plot limits
+# ggplot_build(pa)$layout$panel_scales_y[[1]]$range$range
+
+
+left.panel = plot_grid(
+  pb, plot_grid(pc, pd, labels = c('c)', 'd)'), rel_widths = c(1.1, 1)), nrow = 2, labels = c('b)', '')
+)
+
+plot_grid(pa, left.panel, ncol = 2, labels = c('a)', '')) %>%
+  save_plot(filename = '04_analysis/figures/ltre_fig_fourpanel.png', base_width = 8, base_height = 5)
+          
