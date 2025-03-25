@@ -18,10 +18,10 @@ source('03_construct_kernels/prepare_demo_data_repr.R')
 # Response: number of seeds (negative binomial distribution) of an umbel
 # Predictors: treatment (categorical), year (factor) , mean budding date of
 # plant (centered, continuous), plant size (continuous)
-s_st.p_s.u.p2 = glmmTMB(
+s_st.p_s.u.p = glmmTMB(
   no.seeds ~ trt * size + Year + phen.c + (1 | Plot / plantid),
   family = 'nbinom2',
-  ziformula = ~ size + phen.umbels + Year + poly(phen.c, 2) + (1 | Plot / plantid),
+  ziformula = ~ size + phen.umbels + Year + phen.c + (1 | Plot / plantid),
   data = seed
 )
 
@@ -44,8 +44,8 @@ seed.lin.preds = expand.grid(
   phen.c = (-4:4)*7
 ) %>%
   mutate(
-    zlnk = predict(s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'zlink'),
-    link = predict(s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'link'),
+    zlnk = predict(s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'zlink'),
+    link = predict(s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'link'),
   )
 
 seed.preds = seed.lin.preds %>%
@@ -86,7 +86,8 @@ pan.a = seed.preds %>%
     alpha = 0.125, size = 2
   ) +
   geom_line(
-    aes(y = p.succ, group = trt)
+    aes(y = p.succ, group = trt),
+    colour = 'gray77', linewidth = 1.2
   ) +
   scale_y_continuous(breaks = (0:4)/4) +
   scale_shape_manual(values = c(4, 19)) +
@@ -111,11 +112,7 @@ pan.b = seed.preds %>%
     aes(y = no.seeds, colour = trt),
     alpha = 0.125, size = 2
   ) +
-  geom_line(
-    aes(
-      y = s.cond, group = trt, colour = trt
-    )
-  ) +
+  geom_line(aes(y = s.cond, group = trt, colour = trt), linewidth = 1.2) +
   scale_y_log10() +
   # scale_linewidth_manual(values = c(1, 0.5, 0.5)) +
   scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue')) +
@@ -126,7 +123,7 @@ pan.b = seed.preds %>%
     panel.background = element_blank()
   )
 
-# wow this fucking blows, fucking awful, fuck
+# Not great.
 
 pan.c = seed.preds %>%
   # filter(phen.umbels < 2) %>%
@@ -141,11 +138,11 @@ pan.c = seed.preds %>%
     aes(y = n.seeds, colour = trt, shape = n.seeds.lab),
     alpha = 0.125, size = 2
   ) +
-  geom_line(aes(y = n.seed, group = trt, colour = trt)) +
+  geom_line(aes(y = n.seed, group = trt, colour = trt), linewidth = 1.2) +
   scale_y_log10() +
   # scale_linewidth_manual(values = c(1, 0.5, 0.5)) +
   scale_shape_manual(values = c(4, 19)) +
-  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue')) +
+  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), 'treatment') +
   labs(x = '', y = 'Seeds per umbel') +
   theme(
     legend.position = 'none',
@@ -154,7 +151,7 @@ pan.c = seed.preds %>%
 
 leg.z = get_plot_component(
   pan.c +
-    guides(shape = guide_legend('umbel fate')) +
+    guides(shape = guide_legend('umbel fate'), colour = guide_legend('')) +
     theme(legend.position = 'top'),
   'guide-box',
   return_all = TRUE
@@ -165,6 +162,7 @@ leg.z = get_plot_component(
 
 plot_grid(
   NULL, leg.z, NULL, pan.a, pan.b, pan.c, byrow = TRUE,
+  labels = c('', '', '', 'a', 'b', 'c'),
   nrow = 2, rel_heights = c(0.1, 1)
 ) %>%
   save_plot(
