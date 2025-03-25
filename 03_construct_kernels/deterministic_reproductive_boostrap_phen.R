@@ -25,7 +25,7 @@ rm(list = ls())
 source('03_construct_kernels/prepare_demo_data_repr.R')
 
 # Read in bootstrapped phen estimates
-# done in script `phenology_bootstrapped_estimares.R`
+# done in script `phenology_bootstrapped_estimates.R`
 phen.boot.trt = read.csv('03_construct_kernels/out/phenology_bootstrapped_means.csv') %>%
   # Convert to long data frame
   pivot_longer(-boot, names_to = 'trt', values_to = 'mean.phen')
@@ -46,10 +46,17 @@ u_s_s.ty = glmmTMB(
 # Response: number of seeds (negative binomial distribution) of an umbel
 # Predictors: treatment (categorical), year (factor) , mean budding date of
 # plant (centered, continuous), plant size (continuous)
-s_st.p_s.u.p2 = glmmTMB(
+# s_st.p_s.u.p2 = glmmTMB(
+#   no.seeds ~ trt * size + Year + phen.c + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   ziformula = ~ size + phen.umbels + Year + poly(phen.c, 2) + (1 | Plot / plantid),
+#   data = seed
+# )
+
+s_st.p_s.u.p = glmmTMB(
   no.seeds ~ trt * size + Year + phen.c + (1 | Plot / plantid),
   family = 'nbinom2',
-  ziformula = ~ size + phen.umbels + Year + poly(phen.c, 2) + (1 | Plot / plantid),
+  ziformula = ~ size + phen.umbels + Year + phen.c + (1 | Plot / plantid),
   data = seed
 )
 
@@ -130,7 +137,7 @@ succ.seed.boot = seed %>%
       glmmTMB(
         no.seeds ~ trt * size + Year + phen.c + (1 | Plot / plantid),
         family = 'nbinom2',
-        ziformula = ~ size + phen.umbels + Year + poly(phen.c, 2) + (1 | Plot / plantid),
+        ziformula = ~ size + phen.umbels + Year + phen.c + (1 | Plot / plantid),
         data = df
       ) %>%
         # extract model parameters
@@ -188,8 +195,8 @@ flow.numb.boot[,-(1:2)] = flow.numb.boot[,-(1:2)] + matrix(
 
 # Success/seed bootstraps
 succ.seed.boot[,-(1:2)] = succ.seed.boot[,-(1:2)] + matrix(
-  (s_st.p_s.u.p2$fit$par - colMeans(succ.seed.boot[,-(1:2)])), 
-  nrow = n.straps, ncol = length(s_st.p_s.u.p2$fit$par), byrow = TRUE,
+  (s_st.p_s.u.p$fit$par - colMeans(succ.seed.boot[,-(1:2)])), 
+  nrow = n.straps, ncol = length(s_st.p_s.u.p$fit$par), byrow = TRUE,
 )
 
 # Recruit size bootstraps
@@ -200,7 +207,7 @@ recr.boot[,-(1:2)] = recr.boot[-(1:2)] + matrix(
 
 # very small differences, all numerical rounding
 (colMeans(flow.numb.boot[,-(1:2)]) - u_s_s.ty$fit$par)
-(colMeans(succ.seed.boot[,-(1:2)]) - s_st.p_s.u.p2$fit$par)
+(colMeans(succ.seed.boot[,-(1:2)]) - s_st.p_s.u.p$fit$par)
 (colMeans(recr.boot[,-(1:2)]) - r_t.y$fit$par)
 
 ### Write these to a CSV because they take forever to run
@@ -235,7 +242,7 @@ bootstrap.full.backbone = expand.grid(
   size = (5:60)/10,
   size.nex = (5:60)/10,
   trt = c('control', 'drought', 'irrigated'),
-  phen.c = (-4:4) * 7,
+  phen.c = (-3:3) * 7,
   Year = 2021:2024
 )
 
@@ -269,13 +276,13 @@ for (i in 1:n.straps) {
       # Model predictions at treatment means
       # (doing this on linear scale for each for easier averaging)
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         # use bootstrapped parameters
         newparams = succ.seed.boot[i,-(1:2)],
         type = 'zlink'
       ),
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         # use bootstrapped parameters
         newparams = succ.seed.boot[i,-(1:2)],
         type = 'link'
@@ -288,7 +295,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -379,13 +386,13 @@ for (i in 1:n.straps) {
       # Model predictions at treatment means
       # (doing this on linear scale for each for easier averaging)
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         # use bootstrapped parameters
         newparams = succ.seed.boot[i,-(1:2)],
         type = 'zlink'
       ),
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         # use bootstrapped parameters
         newparams = succ.seed.boot[i,-(1:2)],
         type = 'link'
@@ -398,7 +405,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -427,7 +434,7 @@ for (i in 1:n.straps) {
   
 }
 
-wtarc# Combine into one data frame and export (pivot wider to save space)
+# Combine into one data frame and export (pivot wider to save space)
 do.call(rbind, boots.ltre.list) %>%
   # pivot_wider(names_from = boot, values_from = p.size.cur) %>%
   write.csv(
@@ -480,12 +487,12 @@ for (i in 1:n.straps) {
     mutate(
       # Model predictions for seed set on linear (link) scale for averaging
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'zlink',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'link',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
@@ -497,7 +504,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -539,12 +546,12 @@ for (i in 1:n.straps) {
     mutate(
       # Model predictions for seed set on linear (link) scale for averaging
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'zlink',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         newparams = succ.seed.boot[i,-(1:2)] %>%
           # apply the perturbation
           (function(x) {
@@ -561,7 +568,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -603,12 +610,12 @@ for (i in 1:n.straps) {
     mutate(
       # Model predictions for seed set on linear (link) scale for averaging
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'zlink',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         newparams = succ.seed.boot[i,-(1:2)] %>%
           # apply the perturbation
           (function(x) {
@@ -625,7 +632,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -668,12 +675,12 @@ for (i in 1:n.straps) {
     mutate(
       # Model predictions for seed set on linear (link) scale for averaging
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'zlink',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'link',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
@@ -685,7 +692,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -734,7 +741,7 @@ for (i in 1:n.straps) {
     mutate(
       # Model predictions for seed set on linear (link) scale for averaging
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'zlink',
         newparams = succ.seed.boot[i,-(1:2)]
       )
@@ -743,7 +750,7 @@ for (i in 1:n.straps) {
     mutate(phen.c = phen.c - delta) %>%
     mutate(
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'link',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
@@ -755,7 +762,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -797,7 +804,7 @@ for (i in 1:n.straps) {
     mutate(
       # Model predictions for seed set on linear (link) scale for averaging
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'zlink',
         newparams = succ.seed.boot[i,-(1:2)]
       )
@@ -806,7 +813,7 @@ for (i in 1:n.straps) {
     mutate(phen.c = phen.c + delta) %>%
     mutate(
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'link',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
@@ -820,7 +827,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -934,13 +941,13 @@ for (i in 1:n.straps) {
       # Model predictions at treatment means
       # (doing this on linear scale for each for easier averaging)
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         # use bootstrapped parameters
         newparams = succ.seed.boot[i,-(1:2)],
         type = 'zlink'
       ),
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         # use bootstrapped parameters
         newparams = succ.seed.boot[i,-(1:2)],
         type = 'link'
@@ -953,7 +960,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -1021,7 +1028,7 @@ for (i in 1:n.straps) {
     mutate(
       # Model predictions for seed set on linear (link) scale for averaging
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'zlink',
         newparams = succ.seed.boot[i,-(1:2)]
       )
@@ -1030,7 +1037,7 @@ for (i in 1:n.straps) {
     mutate(phen.c = phen.c - delta) %>%
     mutate(
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'link',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
@@ -1042,7 +1049,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%
@@ -1078,7 +1085,7 @@ for (i in 1:n.straps) {
     mutate(
       # Model predictions for seed set on linear (link) scale for averaging
       seeds.zinf.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'zlink',
         newparams = succ.seed.boot[i,-(1:2)]
       )
@@ -1087,7 +1094,7 @@ for (i in 1:n.straps) {
     mutate(phen.c = phen.c + delta) %>%
     mutate(
       seeds.seed.linear =  predict(
-        s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+        s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
         type = 'link',
         newparams = succ.seed.boot[i,-(1:2)]
       ),
@@ -1101,7 +1108,7 @@ for (i in 1:n.straps) {
     ungroup() %>%
     mutate(
       # Transform from linear scale to response scale
-      seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+      seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
       # Total umbels per plant
       seeds.total = seeds.per.umbel * phen.umbels
     ) %>%

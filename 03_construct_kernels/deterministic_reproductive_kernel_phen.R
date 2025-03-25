@@ -28,14 +28,25 @@ u_s_s.ty = glmmTMB(
   data = demo.flow
 )
 
+# Mean effect of irrigation on flowering:
+# coefficient 0.55808, irrigation reduces odds of flowering by 1 - exp(-.55808) = ~ 43%
+# drought effect on flowering is quite small
+
 # === Seed model ===
 # Response: number of seeds (negative binomial distribution) of an umbel
 # Predictors: treatment (categorical), year (factor) , mean budding date of
 # plant (centered, continuous), plant size (continuous)
-s_st.p_s.u.p2 = glmmTMB(
+# s_st.p_s.u.p2 = glmmTMB(
+#   no.seeds ~ trt * size + Year + phen.c + (1 | Plot / plantid),
+#   family = 'nbinom2',
+#   ziformula = ~ size + phen.umbels + Year + poly(phen.c, 2) + (1 | Plot / plantid),
+#   data = seed
+# )
+
+s_st.p_s.u.p = glmmTMB(
   no.seeds ~ trt * size + Year + phen.c + (1 | Plot / plantid),
   family = 'nbinom2',
-  ziformula = ~ size + phen.umbels + Year + poly(phen.c, 2) + (1 | Plot / plantid),
+  ziformula = ~ size + phen.umbels + Year + phen.c + (1 | Plot / plantid),
   data = seed
 )
 
@@ -65,7 +76,7 @@ backbone = expand.grid(
   size = (5:60)/10,
   size.nex = (5:60)/10,
   trt = c('control', 'drought', 'irrigated'),
-  phen.c = -28:28,
+  phen.c = -21:21,
   year = 2021:2024
 )
 
@@ -91,11 +102,11 @@ all.phen.kernel = backbone %>%
   mutate(Year = year) %>%
   mutate(
    seeds.zinf.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
     ),
     seeds.seed.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'link'
     ),
   ) %>%
@@ -106,7 +117,7 @@ all.phen.kernel = backbone %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+    seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
@@ -173,11 +184,11 @@ ltre.kernel = ltre.backbone %>%
     # Model predictions at treatment means
     # (doing this on linear scale for each for easier averaging)
     seeds.zinf.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
     ),
     seeds.seed.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'link'
     ),
   ) %>%
@@ -188,7 +199,7 @@ ltre.kernel = ltre.backbone %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+    seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
@@ -280,11 +291,11 @@ perturb.list[[1]] = ltre.backbone %>%
   mutate(
     # Model predictions for seed set on linear (link) scale for averaging
     seeds.zinf.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
     ),
     seeds.seed.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'link'
     ),
   ) %>%
@@ -295,7 +306,7 @@ perturb.list[[1]] = ltre.backbone %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+    seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
@@ -322,7 +333,7 @@ perturb.list[[1]] = ltre.backbone %>%
 
 # Seed set intercept (conditional model)
 
-s_st.p_s.u.p2$fit$par
+s_st.p_s.u.p$fit$par
 # Intercept is [1], drought is [2], irr is [3]
 
 perturb.list[[2]] = ltre.backbone %>%
@@ -344,12 +355,12 @@ perturb.list[[2]] = ltre.backbone %>%
   mutate(
     # Model predictions for seed set on linear (link) scale for averaging
     seeds.zinf.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
     ),
     seeds.seed.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
-      newparams = s_st.p_s.u.p2$fit$par %>%
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      newparams = s_st.p_s.u.p$fit$par %>%
         (function(x) {
           x[1] <- x[1] + delta
           return(x)
@@ -364,7 +375,7 @@ perturb.list[[2]] = ltre.backbone %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+    seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
@@ -383,15 +394,15 @@ perturb.list[[2]] = ltre.backbone %>%
     param = 'seed.int',
     orig.parval = case_match(
       trt,
-      'control' ~ s_st.p_s.u.p2$fit$par[1],
-      'drought' ~ s_st.p_s.u.p2$fit$par[1] + s_st.p_s.u.p2$fit$par[2],
-      'irrigated' ~ s_st.p_s.u.p2$fit$par[1] + s_st.p_s.u.p2$fit$par[3]
+      'control' ~ s_st.p_s.u.p$fit$par[1],
+      'drought' ~ s_st.p_s.u.p$fit$par[1] + s_st.p_s.u.p$fit$par[2],
+      'irrigated' ~ s_st.p_s.u.p$fit$par[1] + s_st.p_s.u.p$fit$par[3]
     )
   )
 
 # Seed set slope (conditional model) 
 
-s_st.p_s.u.p2$fit$par
+s_st.p_s.u.p$fit$par
 # slope is 4, drought is 9, irr is 10
 
 perturb.list[[3]] = ltre.backbone %>%
@@ -413,12 +424,12 @@ perturb.list[[3]] = ltre.backbone %>%
   mutate(
     # Model predictions for seed set on linear (link) scale for averaging
     seeds.zinf.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
     ),
     seeds.seed.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
-      newparams = s_st.p_s.u.p2$fit$par %>%
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      newparams = s_st.p_s.u.p$fit$par %>%
         (function(x) {
           x[4] <- x[4] + delta
           return(x)
@@ -433,7 +444,7 @@ perturb.list[[3]] = ltre.backbone %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+    seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
@@ -452,9 +463,9 @@ perturb.list[[3]] = ltre.backbone %>%
     param = 'seed.slope',
     orig.parval = case_match(
       trt,
-      'control' ~ s_st.p_s.u.p2$fit$par[4],
-      'drought' ~ s_st.p_s.u.p2$fit$par[4] + s_st.p_s.u.p2$fit$par[9],
-      'irrigated' ~ s_st.p_s.u.p2$fit$par[4] + s_st.p_s.u.p2$fit$par[10]
+      'control' ~ s_st.p_s.u.p$fit$par[4],
+      'drought' ~ s_st.p_s.u.p$fit$par[4] + s_st.p_s.u.p$fit$par[9],
+      'irrigated' ~ s_st.p_s.u.p$fit$par[4] + s_st.p_s.u.p$fit$par[10]
     )
   )
 
@@ -483,11 +494,11 @@ perturb.list[[4]] = ltre.backbone %>%
   mutate(
     # Model predictions for seed set on linear (link) scale for averaging
     seeds.zinf.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
     ),
     seeds.seed.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'link'
     ),
   ) %>%
@@ -498,7 +509,7 @@ perturb.list[[4]] = ltre.backbone %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+    seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
@@ -551,7 +562,7 @@ perturb.list[[5]] = ltre.backbone %>%
   mutate(
       # Model predictions for seed set on linear (link) scale for averaging
     seeds.zinf.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
     )
   ) %>%
@@ -559,7 +570,7 @@ perturb.list[[5]] = ltre.backbone %>%
   mutate(phen.c = phen.c - delta) %>%
   mutate(
     seeds.seed.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'link'
     ),
   ) %>%
@@ -570,7 +581,7 @@ perturb.list[[5]] = ltre.backbone %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+    seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
@@ -612,7 +623,7 @@ perturb.list[[6]] = ltre.backbone %>%
   mutate(
     # Model predictions for seed set on linear (link) scale for averaging
     seeds.zinf.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
     )
   ) %>%
@@ -620,7 +631,7 @@ perturb.list[[6]] = ltre.backbone %>%
   mutate(phen.c = phen.c + delta) %>%
   mutate(
     seeds.seed.linear =  predict(
-      s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'link'
     )
   ) %>%
@@ -633,7 +644,7 @@ perturb.list[[6]] = ltre.backbone %>%
   ungroup() %>%
   mutate(
     # Transform from linear scale to response scale
-    seeds.per.umbel = (1 / (1 + exp(-seeds.zinf.linear))) * exp(seeds.seed.linear),
+    seeds.per.umbel = (1 / (1 + exp(seeds.zinf.linear))) * exp(seeds.seed.linear),
     # Total umbels per plant
     seeds.total = seeds.per.umbel * phen.umbels
   ) %>%
