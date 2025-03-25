@@ -15,7 +15,7 @@ all.data = merge(
   by.x = 'Plot', by.y = 'plot'
 )
 
-### --- Extract umbel phenology from phen data ---
+### --- Extract umbel phenology from phen data ----------------------
 
 phen.by.umbel = all.data %>% 
   filter(in.phen) %>%
@@ -30,7 +30,7 @@ phen.by.umbel = all.data %>%
   mutate(phen.julian = as.numeric(gsub('\\s', '', phen.julian))) %>%
   mutate(Year = factor(Year))
 
-# --- Means ---------------------------------------------------------
+### --- Means -------------------------------------------------------
 
 # Model mean (from umbel-level observations) bud dates by each treatment
 d_t = glmmTMB(
@@ -70,4 +70,29 @@ trt.mean.buddates = expand.grid(trt = c('control', 'drought', 'irrigated'), Year
 
 trt.mean.buddates
 
+# Export
 write.csv(trt.mean.buddates, row.names = FALSE, '03_construct_kernels/phen_treatment_means.csv')
+
+
+### Summary statistics
+
+# Confidence intervals on effect sizes
+summary(d_t)$coefficients$cond['trtdrought',1] + c(-1, 1) * 1.96 * summary(d_t)$coefficients$cond['trtdrought',2]
+summary(d_t)$coefficients$cond['trtirrigated',1] + c(-1, 1) * 1.96 * summary(d_t)$coefficients$cond['trtirrigated',2]
+
+# Variance explained by treatment (check indexing every time re-run!)
+vars_t = exp(c(1, 2, 2) * d_t$fit$par[7:9])
+vars_0 = exp(c(1, 2, 2) * d_0$fit$par[5:7])
+
+# Pseudo-R^2
+# (one source for this, https://web.pdx.edu/~newsomj/mlrclass/ho_r2.pdf)
+# (see: Snijders and Bosker 1998)
+1 - (sum(vars_t) / sum(vars_0))
+# (is very small)
+
+# As expected, minimal change to individual- and among-plant plots
+# Reduction in spatial (plot-level) variance:
+1 - (vars_t[3] / vars_0[3])
+
+# Looking at year effects
+as.Date(d_t$fit$par[1] + c(0, d_t$fit$par[4:6]))
