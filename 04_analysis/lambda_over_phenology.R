@@ -6,6 +6,7 @@
 
 # --- Setup ---------------------------------------------------
 library(ggplot2)
+library(ggh4x)
 library(tidyr)
 library(dplyr)
 library(glmmTMB)
@@ -16,7 +17,8 @@ rm(list = ls())
 # # Get point estimates for kernels estimated across a phenology range
 
 # Growth + survival kernel
-growsurv.all = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen.csv')
+growsurv.all = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen.csv') %>%
+  filter(phen.c %in% -21:21)
 # Reproductive kernel (all phenology)
 reprodct.all = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen.csv')
 
@@ -27,7 +29,8 @@ reprodct.ltre = read.csv('03_construct_kernels/out/determinstic_reprod_kernel_ph
 
 # # Get bootstrapped intervals
 # Growth + survival (all phenology)
-gs.boot.all = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_allphen.csv')
+gs.boot.all = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_allphen.csv') %>%
+  filter(phen.c %in% -21:21)
 # Growth + survival (for LTRE only)
 gs.boot.ltre = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_ltre.csv')
 # Reproductive (all phenology)
@@ -54,6 +57,7 @@ phen.ctrl.mean = read.csv('03_construct_kernels/phen_treatment_means.csv') %>%
 
 # Germination probability
 p.germ = .001
+# p.germ = 0.0058007812
 
 
 # --- All-phenology kernels
@@ -296,8 +300,8 @@ lambda.trt.pan = all.lambda %>%
     aes(y = lambda, colour = trt.rate), size = 4, shape = 19
   ) +
   # scale_shape_manual(values = c(NA, 19)) +
-  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), 'treatment') +
-  scale_fill_manual(values = c('black', 'goldenrod', 'dodgerblue'), 'treatment') +
+  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
+  scale_fill_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
   guides(shape = 'none') +
   labs(x = 'Mean bud date', y = expression(lambda)) +
   theme(
@@ -308,7 +312,6 @@ lambda.trt.pan = all.lambda %>%
   )
 
 lambda.trt.pan
-# MINOR ISSUE: segments in ltre.boot.intervals seems to not be working, not sure why...
 
 # But... plot bootstrapped treatment differences over time
 # (first need to assemble these)
@@ -354,7 +357,7 @@ lambda.contr.pan = boot.lambda.diff %>%
   ggplot(aes(x = phen.date, group = contrast)) +
   annotate(
     'segment',
-    x = as.Date('1970-04-08'), xend = as.Date('1970-06-03'),
+    x = as.Date('1970-04-15'), xend = as.Date('1970-05-27'),
     y = 0, yend = 0,
     linetype = 2, colour = 'gray'
   ) +
@@ -410,7 +413,10 @@ lambda.contr.pan = boot.lambda.diff %>%
   # scale_fill_manual(values = c('red', 'blue')) +
   scale_colour_manual(values = c('goldenrod', 'dodgerblue')) +
   facet_wrap(~ contrast, nrow = 2) +
-  theme(panel.background = element_blank())
+  theme(
+    panel.background = element_blank(),
+    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22')
+  )
 
 # lambda.legend = get_plot_component(
 #   lambda.trt.pan + theme(legend.position = 'top'),
