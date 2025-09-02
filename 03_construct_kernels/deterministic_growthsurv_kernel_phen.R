@@ -46,7 +46,7 @@ g_phen = glmmTMB(
 
 # Residual variance in growth models
 gv.sd = summary(g_st.ty)$sigma
-gf.sd = summary(g_phen)$sigma
+# gf.sd = summary(g_phen)$sigma
 
 # Phenology effect per day
 phen.effect = g_phen$fit$par[7]
@@ -89,7 +89,7 @@ grow.surv.kernel = grow.surv.kernel %>%
   # Predicted distribution of sizes in next time step
   mutate(
     pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
-    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gf.sd)
+    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gv.sd)
   )
 
 grow.surv.kernel %>%
@@ -173,7 +173,7 @@ ltre.kernel = ltre.backbone %>%
   # Predicted distribution of sizes in next time step
   mutate(
     pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
-    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gf.sd)
+    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gv.sd)
   )
 
 # Export
@@ -243,7 +243,7 @@ outputs[[1]] = ltre.backbone %>%
   # Predicted distribution of sizes in next time step
   mutate(
     pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
-    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gf.sd)
+    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gv.sd)
   ) %>%
   # Add in perturbation information
   mutate(
@@ -291,7 +291,7 @@ outputs[[2]] = ltre.backbone %>%
   # Predicted distribution of sizes in next time step
   mutate(
     pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
-    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gf.sd)
+    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gv.sd)
   ) %>%
   # Add in perturbation information
   mutate(
@@ -333,7 +333,7 @@ outputs[[3]] = ltre.backbone %>%
   # Predicted distribution of sizes in next time step
   mutate(
     pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = gv.sd),
-    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gf.sd)
+    pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = gv.sd)
   ) %>%
   # Add in perturbation information
   mutate(
