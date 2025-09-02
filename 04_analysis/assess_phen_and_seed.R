@@ -10,68 +10,72 @@ library(cowplot)
 
 rm(list = ls())
 
-# Read in data
-all.data = merge(
-  x = read.csv('01_data_cleaning/out/demo_phen_seed_2016-2024_final.csv'),
-  y = read.csv('00_raw_data/plot_treatments.csv'),
-  by.x = 'Plot', by.y = 'plot'
-) %>%
-  mutate(Year = factor(Year))
+source('03_construct_kernels/prepare_demo_data_repr.R')
 
-# Phen only
-phen.each.umbel = all.data %>% 
-  filter(in.phen) %>%
-  # Split out the bud dates for bud date models; the most umbels seen in a
-  # plant is 12, so use separate() to kick these out and then pivot_long to get
-  # one row per umbel
-  # (first - need to get one row per plant - do a distinct())
-  distinct(Year, plantid, .keep_all = TRUE) %>%
-  separate_wider_delim(phen.julis, names = paste0('uu', 1:12), delim = ';', too_few = 'align_start') %>%
-  pivot_longer(starts_with('uu'), names_to = 'umbel.number', values_to = 'phen.julian') %>%
-  filter(!is.na(phen.julian)) %>%
-  mutate(phen.julian = as.numeric(gsub('\\s', '', phen.julian)))
-
-head(phen.each.umbel)
-nrow(phen.each.umbel)
-sum(phen.each.umbel$phen.umbels)
-hist(phen.each.umbel$phen.julian)
-
-# All plants in phen, seed, and demo
-seed = all.data %>% 
-  filter(in.phen, in.seed, in.demo) %>%
-  # Need size data
-  filter(!is.na(No.leaves), !is.na(Leaf.length), No.leaves > 0, Leaf.length > 0) %>%
-  # Hmm... okay, separae() and across() doesn't work, so I guess I can merge
-  # this in with the data frame above, summarised by mean phen date per plant
-  merge(
-    y = phen.each.umbel %>% 
-      group_by(plantid, Year) %>% 
-      summarise(
-        mean.phen = mean(phen.julian, na.rm = TRUE), 
-        sept.phen = length(unique(phen.julian))
-      ) %>%
-      ungroup(),
-    all.x = TRUE, all.y = FALSE
-  )
-
-# Now, need to impute in zeros for failed umbels that did not make it to seed counting
-
-seed = rbind(
-  seed,
-  seed %>%
-    group_by(Year, plantid) %>%
-    mutate(miss.umbel = ifelse(phen.umbels < n(), 0, phen.umbels - n())) %>%
-    ungroup() %>%
-    distinct(Year, plantid, .keep_all = TRUE) %>%
-    uncount(miss.umbel) %>%
-    mutate(no.seeds = 0)
-) %>%
-  mutate(phen.c = mean.phen - round(mean(mean.phen))) %>%
-  mutate(size = log(No.leaves * Leaf.length))
-
-head(seed)
-nrow(seed)
-hist(seed$mean.phen)
+# # Read in data
+# all.data = merge(
+#   x = read.csv('01_data_cleaning/out/demo_phen_seed_2016-2024_final.csv'),
+#   y = read.csv('00_raw_data/plot_treatments.csv'),
+#   by.x = 'Plot', by.y = 'plot'
+# ) # %>%
+#   # mutate(Year = factor(Year))
+# 
+# # Phen only
+# phen.each.umbel = all.data %>% 
+#   filter(in.phen) %>%
+#   # Split out the bud dates for bud date models; the most umbels seen in a
+#   # plant is 12, so use separate() to kick these out and then pivot_long to get
+#   # one row per umbel
+#   # (first - need to get one row per plant - do a distinct())
+#   distinct(Year, plantid, .keep_all = TRUE) %>%
+#   separate_wider_delim(phen.julis, names = paste0('uu', 1:12), delim = ';', too_few = 'align_start') %>%
+#   pivot_longer(starts_with('uu'), names_to = 'umbel.number', values_to = 'phen.julian') %>%
+#   filter(!is.na(phen.julian)) %>%
+#   mutate(phen.julian = as.numeric(gsub('\\s', '', phen.julian))) %>%
+#   mutate(Year = factor(Year))
+# 
+# head(phen.each.umbel)
+# nrow(phen.each.umbel)
+# sum(phen.each.umbel$phen.umbels)
+# hist(phen.each.umbel$phen.julian)
+# 
+# # All plants in phen, seed, and demo
+# seed = all.data %>% 
+#   filter(in.phen, in.seed, in.demo) %>%
+#   # Need size data
+#   filter(!is.na(No.leaves), !is.na(Leaf.length), No.leaves > 0, Leaf.length > 0) %>%
+#   # Hmm... okay, separae() and across() doesn't work, so I guess I can merge
+#   # this in with the data frame above, summarised by mean phen date per plant
+#   merge(
+#     y = phen.each.umbel %>% 
+#       group_by(plantid, Year) %>% 
+#       summarise(
+#         mean.phen = mean(phen.julian, na.rm = TRUE), 
+#         sept.phen = length(unique(phen.julian))
+#       ) %>%
+#       ungroup(),
+#     all.x = TRUE, all.y = FALSE
+#   )
+# 
+# # Now, need to impute in zeros for failed umbels that did not make it to seed counting
+# 
+# seed = rbind(
+#   seed,
+#   seed %>%
+#     group_by(Year, plantid) %>%
+#     mutate(miss.umbel = ifelse(phen.umbels < n(), 0, phen.umbels - n())) %>%
+#     ungroup() %>%
+#     distinct(Year, plantid, .keep_all = TRUE) %>%
+#     uncount(miss.umbel) %>%
+#     mutate(no.seeds = 0)
+# ) %>%
+#   mutate(phen.c = mean.phen - round(mean(mean.phen))) %>%
+#   mutate(size = log(No.leaves * Leaf.length)) %>%
+#   mutate(Year = factor(Year))
+# 
+# head(seed)
+# nrow(seed)
+# hist(seed$mean.phen)
 
 
 # -----------------------------------------
@@ -84,33 +88,44 @@ hist(seed$mean.phen)
 # Gaussian probably works best
 
 d_0 = glmmTMB(
-  phen.julian ~ Year + (1 | Plot / plantid),
-  data = phen.each.umbel
+  phen.julian ~ (1 | Plot / plantid),
+  data = phen
 )
 
 summary(d_0)
 # Huge within-plant variation
 
+d_y = glmmTMB(
+  phen.julian ~ Year + (1 | Plot / plantid),
+  data = phen
+)
+
+AIC(d_y, d_0)
+# Year effect present
+
+# Test for treatment effect
+
 d_t = glmmTMB(
   phen.julian ~ trt + Year + (1 | Plot / plantid),
-  data = phen.each.umbel
+  data = phen
 )
 
 summary(d_t)
 
-AIC(d_t, d_0) # delta aic of 7
-anova(d_t, d_0)
+AIC(d_t, d_y) %>% mutate(daic = round(AIC - min(AIC), 2)) 
+# delta aic of ~8
+anova(d_t, d_y)
 
 # Test for year-varying treatment effects
 
-d_ty = d_0 = glmmTMB(
+d_ty = glmmTMB(
   phen.julian ~ Year * trt + (1 | Plot / plantid),
-  data = phen.each.umbel
+  data = phen
 )
 
 summary(d_ty)
 
-AIC(d_ty, d_t)
+AIC(d_ty, d_t) %>% mutate(daic = round(AIC - min(AIC), 2))
 anova(d_ty, d_t)
 # marginally significant ANOVA, higher AIC for interaction model
 
@@ -171,7 +186,7 @@ s_s_s = glmmTMB(
 
 AIC(s_0, s_s_0, s_0_s, s_s_s) %>% arrange(AIC) %>% mutate(daic = round(AIC - min(AIC), 2))
 
-# Size in all models
+# Size in both components (zero-inflation and seed count)
 
 s_s.t_s = glmmTMB(
   no.seeds ~ trt + size + Year + (1 | Plot / plantid),
@@ -284,6 +299,7 @@ AIC(s_st_s, s_st.u_s, s_st_s.u, s_st.u_s.u) %>%
 # Umbel count in zero inflation term (makes sense)
 
 # NOW, tests for effects of phenology
+# Start by looking at effects of phen on the count component (seed set)
 
 s_st.p_s.u = glmmTMB(
   no.seeds ~ trt * size + Year + phen.c + (1 | Plot / plantid),
@@ -328,9 +344,10 @@ s_st.p2y_s.u = glmmTMB(
 )
 
 AIC(s_st_s.u, s_st.p_s.u, s_st.p2_s.u, s_st.tp_s.u, s_st.py_s.u, s_st.tp2_s.u, s_st.p2y_s.u) %>%
-  mutate(daic = round(AIC - min(AIC), 2))
+  mutate(daic = round(AIC - min(AIC), 2)) %>%
+  arrange(daic)
 # Evidence of linear phenology effect on seed count, not failure
-# No evidence of interactions with treatment or year, or evidence of a quadratic relationship
+# No evidence of interactions with treatment or year, effect is linear
 
 # Look for phenology effects on the zero-inflation term
 
@@ -377,10 +394,47 @@ s_st.p_s.u.p2y = glmmTMB(
 )
 
 AIC(s_st.p_s.u, s_st.p_s.u.p, s_st.p_s.u.p2, s_st.p_s.u.tp, s_st.p_s.u.py, s_st.p_s.u.tp2, s_st.p_s.u.p2y) %>% 
-  mutate(daic = round(AIC - min(AIC), 2))
-# Huh... polynomial phenology effect on zero-inflation term?
+  mutate(daic = round(AIC - min(AIC), 2)) %>%
+  arrange(daic)
+# There is evidence of an effect...
+# Model with lowest AIC has polynomial term
+# But, delta AIC against more parsimonious model with linear term is 1.27
+# So, go with the linear model.
 
-summary(s_st.p_s.u.p2)
+summary(s_st.p_s.u.p)
+
+### Other AIC comparisons
+
+# Treatment-size interaction vs. treatment only vs no treatment
+AIC(
+  s_st.p_s.u.p,
+  glmmTMB(
+    no.seeds ~ trt + size + Year + phen.c + (1 | Plot / plantid),
+    family = 'nbinom2',
+    ziformula = ~ size + phen.umbels + Year + phen.c + (1 | Plot / plantid),
+    data = seed
+  ),
+  glmmTMB(
+    no.seeds ~ size + Year + phen.c + (1 | Plot / plantid),
+    family = 'nbinom2',
+    ziformula = ~ size + phen.umbels + Year + phen.c + (1 | Plot / plantid),
+    data = seed
+  )
+)
+# Delta AIC against treatment intercept only: 3.77
+# Delta AIC against no treatment: 5.07
+
+AIC(
+  s_st.p_s.u.p,
+  glmmTMB(
+    no.seeds ~ trt * size + Year + phen.c + (1 | Plot / plantid),
+    family = 'nbinom2',
+    ziformula = ~ trt + size + phen.umbels + Year + phen.c + (1 | Plot / plantid),
+    data = seed
+  )
+)
+
+# Delta AIC over model with treatment on zero-inflation term: 3.16
 
 # Examine model predictions
 
@@ -392,11 +446,11 @@ seed.all.preds = expand.grid(
   phen.c = (-4:4)*7
 ) %>%
   mutate(
-    zero = predict(s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'),
-    zlnk = predict(s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'zlink'),
-    cond = predict(s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'conditional'),
-    resp = predict(s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'response'),
-    link = predict(s_st.p_s.u.p2, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'link'),
+    zero = predict(s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'zprob'),
+    zlnk = predict(s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'zlink'),
+    cond = predict(s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'conditional'),
+    resp = predict(s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'response'),
+    link = predict(s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'link'),
   )
 
 # Okay... lots here... how to plot it all lmao
@@ -439,8 +493,8 @@ seed.all.preds %>%
 
 # Overall: Most seeds for plants that bud early
 # Fewest seeds for plants in drought 
-# Smaller-sized plants: irrigation has slight advantage over control, larger
-# plants: more seeds in controls
+# Smaller-sized plants: irrigation has slight advantage over control
+# larger plants: more seeds in controls
 
 seed.all.preds %>%
   # Evaluated for a plant with one umbel at the IQR
@@ -451,6 +505,8 @@ seed.all.preds %>%
   geom_line() +
   # scale_colour_manual(values = c('black', 'red', 'blue')) +
   facet_wrap(size ~ Year)
+# (no treatment effect on umbel failure)
+# IQR: increasing size from 25th pctile to 75th pctile decreases prob. failure by ~10%
 
 # Okay - let's try to get averages across years
 seed.linear.means = seed.all.preds %>%
@@ -466,6 +522,8 @@ seed.linear.means %>%
   geom_line() +
   scale_colour_manual(values = c('black', 'red', 'blue')) +
   facet_wrap(size ~ phen.umbels)  
+# ~25-30% change in probability of umbel success across the season
+# IQR size is 10-15%
 
 seed.linear.means %>%
   filter(size %in% c(3.5, 3.9, 4.3)) %>%
@@ -475,8 +533,9 @@ seed.linear.means %>%
   geom_line() +
   scale_colour_manual(values = c('black', 'red', 'blue')) +
   facet_wrap(~ size)  
+# hmm...
 
-summary(s_st.p_s.u.p2)
+summary(s_st.p_s.u.p)
 
 # okay - make a three-row plot (one per prediction type) to send to jenn
 
@@ -522,6 +581,47 @@ p.resp.plot = seed.resp.means %>%
 
 p.plot.lgnd = get_legend(p.succ.plot + theme(legend.position = 'top'))
 
-plot_grid(p.plot.lgnd, p.succ.plot, p.cond.plot, p.resp.plot, rel_heights = c(.1, 1, 1, 1), nrow = 4) %>%
-  save_plot(filename = '02_data_exploration/figs/phen_seed_2021-2024.png', base_height = 8, base_width = 8)
+plot_grid(p.plot.lgnd, p.succ.plot, p.cond.plot, p.resp.plot, rel_heights = c(.1, 1, 1, 1), nrow = 4) # %>%
+  # save_plot(filename = '02_data_exploration/figs/phen_seed_2021-2024.png', base_height = 8, base_width = 8)
 
+# -----------------------
+# Phenology plot
+
+phen %>%
+  mutate(phen.julian = as.Date(phen.julian, format = '%b-%d')) %>%
+  ggplot(aes(x = phen.julian, y = trt, colour = trt)) +
+  geom_point(position = position_jitter(height = 0.25, width = 2), alpha = 0.5) + 
+  scale_colour_manual(values = c('black' ,'red', 'blue')) +
+  facet_wrap(~ Year, nrow = 4) +
+  theme(
+    legend.position = 'top',
+    panel.background = element_blank()
+  )
+
+phen.predict = expand.grid(
+  trt = c('control', 'drought', 'irrigated'),
+  Year = factor(2021:2024)
+) %>%
+  cbind(
+    predict(d_t, newdata = ., re.form = ~ 0, allow.new.levels = TRUE, se.fit = TRUE) %>%
+      do.call(cbind, .)
+  )
+
+phen.for.plot = merge(phen, phen.predict) %>%
+  mutate(fitci.lo = fit - 2*se.fit, fitci.hi = fit + 2*se.fit) %>%
+  mutate(across(c(phen.julian, fit, fitci.lo, fitci.hi), ~ as.Date(.x, format = '%b-%d')))
+
+phen.for.plot %>%
+  ggplot(aes(x = phen.julian, y = trt, colour = trt)) +
+  geom_point(position = position_jitter(height = 0.125, width = 2), alpha = 0.25) + 
+  geom_segment(aes(x = fitci.lo, xend = fitci.hi), colour = 'black') +
+  geom_point(aes(x = fit, fill = trt), colour = 'black', size = 5, shape = 24) +
+  scale_colour_manual(values = c('black' ,'red', 'blue')) +
+  scale_fill_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(~ Year, nrow = 4) +
+  theme(
+    legend.position = 'top',
+    panel.background = element_blank()
+  )
+
+# don't really like this plot

@@ -20,12 +20,18 @@ all.data = read.csv('01_data_cleaning/out/demo_phen_seed_2016-2024_final.csv') %
   # We will only have records in 2021 or later
   filter(Year > 2020) %>%
   # Want only one record per plant
-  distinct(plantid, Year, .keep_all = TRUE)
+  distinct(plantid, Year, .keep_all = TRUE) %>%
 
 head(all.data)
 nrow(all.data)
 
-# Scrape out mean budding dates
+# Read in overall treatment mean bud dates
+# Will use control mean bud date to center variables
+phen.treatment.means = read.csv('03_construct_kernels/phen_treatment_means.csv')
+
+phen.ctrl.mean = phen.treatment.means$mean.phen[phen.treatment.means$trt %in% 'control']
+
+# Scrape out mean budding dates *for each plant*
 phen = all.data %>%
   filter(in.phen) %>%
   separate_wider_delim(phen.julis, names = paste0('uu', 1:12), delim = ';', too_few = 'align_start') %>%
@@ -58,37 +64,44 @@ phen.subsq.demo = merge(
     mutate(size = log(No.leaves * Leaf.length)) %>%
     select(-c(No.leaves, Leaf.length)),
   by.x = c('plantid', 'Year'), by.y = c('plantid', 'year.t'), suffixes = c('.t', '.tp1')
-)
+) %>%
+  # Change year to factor
+  mutate(Year = as.factor(Year))
 
 head(phen.subsq.demo)
 
 # Get a data frame with growths only (looking for growth trade-offs)
 phen.subsq.grow = phen.subsq.demo %>% 
   filter(surv, !is.na(size.t), !is.na(size.tp1)) %>%
-  mutate(
-    phen.mean.c = phen.mean - round(mean(phen.mean)),
-    phen.first.c = phen.first - round(mean(phen.first))
-  ) %>%
-  group_by(Year = factor(Year)) %>%
-  mutate(
-    phen.mean.yc = phen.mean - round(mean(phen.mean)),
-    phen.first.yc = phen.first - round(mean(phen.first))
-  ) %>%
-  ungroup()
+  mutate(phen.c = phen.mean - phen.ctrl.mean)
+  # mutate(
+  #   phen.mean.c = phen.mean - round(mean(phen.mean)),
+  #   phen.first.c = phen.first - round(mean(phen.first))
+  # ) %>%
+  # group_by(Year = factor(Year)) %>%
+  # mutate(
+  #   phen.mean.yc = phen.mean - round(mean(phen.mean)),
+  #   phen.first.yc = phen.first - round(mean(phen.first))
+  # ) %>%
+  # ungroup()
 
 # Getting rid of 2023-2024 (survival can't be safely estimated)
 phen.subsq.surv = phen.subsq.demo %>% 
-  filter(Year < 2023) %>%
-  mutate(
-    phen.mean.c = phen.mean - round(mean(phen.mean)),
-    phen.first.c = phen.first - round(mean(phen.first))
-  ) %>%
-  group_by(Year) %>%
-  mutate(
-    phen.mean.yc = phen.mean - round(mean(phen.mean)),
-    phen.first.yc = phen.first - round(mean(phen.first))
-  ) %>%
-  ungroup()
+  filter(!(Year %in% 2023)) %>%
+  mutate(phen.c = phen.mean - phen.ctrl.mean)
+  # mutate(
+  #   phen.mean.c = phen.mean - round(mean(phen.mean)),
+  #   phen.first.c = phen.first - round(mean(phen.first))
+  # ) %>%
+  # group_by(Year) %>%
+  # mutate(
+  #   phen.mean.yc = phen.mean - round(mean(phen.mean)),
+  #   phen.first.yc = phen.first - round(mean(phen.first))
+  # ) %>%
+  # ungroup()
+  ############
+  # Center using provided means above (also do same for surv dataset)
+
   
 # ---------------------------------------------
 # Do some visuals
@@ -181,58 +194,60 @@ s_0 = glmmTMB(
 )
 
 s_p = glmmTMB(
-  surv ~ phen.mean.c + (1 | Plot),
+  surv ~ phen.c + (1 | Plot),
   family = 'binomial',
   data = phen.subsq.surv
 )
 
 s_p2 = glmmTMB(
-  surv ~ poly(phen.mean.c, 2) + (1 | Plot),
+  surv ~ poly(phen.c, 2) + (1 | Plot),
   family = 'binomial',
   data = phen.subsq.surv
 )
 
-s_py = glmmTMB(
-  surv ~ phen.mean.yc + (1 | Plot),
-  family = 'binomial',
-  data = phen.subsq.surv
-)
+# s_py = glmmTMB(
+#   surv ~ phen.mean.yc + (1 | Plot),
+#   family = 'binomial',
+#   data = phen.subsq.surv
+# )
 
-s_py2 = glmmTMB(
-  surv ~ poly(phen.mean.yc, 2) + (1 | Plot),
-  family = 'binomial',
-  data = phen.subsq.surv
-)
+# s_py2 = glmmTMB(
+#   surv ~ poly(phen.mean.yc, 2) + (1 | Plot),
+#   family = 'binomial',
+#   data = phen.subsq.surv
+# )
 
-AIC(s_0, s_p, s_p2, s_py, s_py2) %>% mutate(daic = round(AIC - min(AIC), 2))
+# AIC(s_0, s_p, s_p2, s_py, s_py2) %>% mutate(daic = round(AIC - min(AIC), 2))
+AIC(s_0, s_p, s_p2) %>% mutate(daic = round(AIC - min(AIC), 2))
 # Yep - no phen effects of mean bud date on survival
 
-s_p = glmmTMB(
-  surv ~ phen.first.c + (1 | Plot),
-  family = 'binomial',
-  data = phen.subsq.surv
-)
+# s_p = glmmTMB(
+#   surv ~ phen.first.c + (1 | Plot),
+#   family = 'binomial',
+#   data = phen.subsq.surv
+# )
+# 
+# s_p2 = glmmTMB(
+#   surv ~ poly(phen.first.c, 2) + (1 | Plot),
+#   family = 'binomial',
+#   data = phen.subsq.surv
+# )
+# 
+# s_py = glmmTMB(
+#   surv ~ phen.first.yc + (1 | Plot),
+#   family = 'binomial',
+#   data = phen.subsq.surv
+# )
+# 
+# s_py2 = glmmTMB(
+#   surv ~ poly(phen.first.yc, 2) + (1 | Plot),
+#   family = 'binomial',
+#   data = phen.subsq.surv
+# )
 
-s_p2 = glmmTMB(
-  surv ~ poly(phen.first.c, 2) + (1 | Plot),
-  family = 'binomial',
-  data = phen.subsq.surv
-)
-
-s_py = glmmTMB(
-  surv ~ phen.first.yc + (1 | Plot),
-  family = 'binomial',
-  data = phen.subsq.surv
-)
-
-s_py2 = glmmTMB(
-  surv ~ poly(phen.first.yc, 2) + (1 | Plot),
-  family = 'binomial',
-  data = phen.subsq.surv
-)
-
-AIC(s_0, s_p, s_p2, s_py, s_py2) %>% mutate(daic = round(AIC - min(AIC), 2))
+# AIC(s_0, s_p, s_p2, s_py, s_py2) %>% mutate(daic = round(AIC - min(AIC), 2))
 # same result when considering first bud date
+# but very little AIC support...
 
 ### Growth
 
@@ -265,75 +280,68 @@ g_t.sy = glmmTMB(
   data = phen.subsq.grow
 )
 
-AIC(g_t, g_ty, g_t.sy)
-# Treatment-year effect pretty obvious
-# (that AIC on the last one - yikes!)
+AIC(g_0a, g_0b, g_t, g_ty, g_t.sy)
+# Year-treatment effect
 
 summary(g_ty)
 # Residual plot vs. phen
 phen.subsq.grow %>%
   mutate(r = residuals(g_ty)) %>%
-  pivot_longer(
-    c(phen.mean.c, phen.first.c, phen.mean.yc, phen.first.yc),
-    names_to = 'measure', values_to = 'date.c'
-  ) %>%
-  ggplot(aes(x = date.c, y = r, colour = trt)) +
+  # pivot_longer(
+  #   c(phen.mean.c, phen.first.c, phen.mean.yc, phen.first.yc),
+  #   names_to = 'measure', values_to = 'date.c'
+  # ) %>%
+  ggplot(aes(x = phen.c, y = r, colour = trt)) +
   geom_point(size = 3, alpha = 0.5) +
-  scale_colour_manual(values = c('black', 'red', 'blue')) +
-  facet_wrap(~ measure)
+  scale_colour_manual(values = c('black', 'red', 'blue')) #+
+  # facet_wrap(~ measure)
 # Seems unlikely... we'll see though
 # Definitely not seeing any treatment effects though.
+# Hmm... okay not seeing anything right now...
 
 # Okay. Now look at phenology
 
 g_m = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + phen.mean.c + (1 | Plot / plantid),
+  size.tp1 ~ size.t * Year + trt * Year + phen.c + (1 | Plot / plantid),
   data = phen.subsq.grow
 )
 
 g_m2 = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + poly(phen.mean.c, 2) + (1 | Plot / plantid),
+  size.tp1 ~ size.t * Year + trt * Year + poly(phen.c, 2) + (1 | Plot / plantid),
   data = phen.subsq.grow
 )
 
-g_my = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + phen.mean.yc + (1 | Plot / plantid),
-  data = phen.subsq.grow
-)
 
-g_my2 = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + poly(phen.mean.yc, 2) + (1 | Plot / plantid),
-  data = phen.subsq.grow
-)
-
-AIC(g_ty, g_m, g_m2, g_my, g_my2)
+# AIC(g_ty, g_m, g_m2, g_my, g_my2) %>%
+AIC(g_ty, g_m, g_m2) %>%
+  mutate(daic = round(AIC - min(AIC), 2)) %>%
+  arrange(daic)
 # hmm...
 # well at least there's no polynomial effect
-# the year-centered means and overall means have the same effect.
 
 # let's also try the first bud date just for comparison
 
-g_f = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + phen.first.c + (1 | Plot / plantid),
-  data = phen.subsq.grow
-)
+# g_f = glmmTMB(
+#   size.tp1 ~ size.t * Year + trt * Year + phen.first.c + (1 | Plot / plantid),
+#   data = phen.subsq.grow
+# )
+# 
+# g_f2 = glmmTMB(
+#   size.tp1 ~ size.t * Year + trt * Year + poly(phen.first.c, 2) + (1 | Plot / plantid),
+#   data = phen.subsq.grow
+# )
+# 
+# g_fy = glmmTMB(
+#   size.tp1 ~ size.t * Year + trt * Year + phen.first.yc + (1 | Plot / plantid),
+#   data = phen.subsq.grow
+# )
+# 
+# g_fy2 = glmmTMB(
+#   size.tp1 ~ size.t * Year + trt * Year + poly(phen.first.yc, 2) + (1 | Plot / plantid),
+#   data = phen.subsq.grow
+# )
 
-g_f2 = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + poly(phen.first.c, 2) + (1 | Plot / plantid),
-  data = phen.subsq.grow
-)
-
-g_fy = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + phen.first.yc + (1 | Plot / plantid),
-  data = phen.subsq.grow
-)
-
-g_fy2 = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + poly(phen.first.yc, 2) + (1 | Plot / plantid),
-  data = phen.subsq.grow
-)
-
-AIC(g_ty, g_f, g_f2, g_fy, g_fy2) %>% mutate(daic = round(AIC - min(AIC), 2))
+# AIC(g_ty, g_f, g_f2, g_fy, g_fy2) %>% mutate(daic = round(AIC - min(AIC), 2))
 # performs just slightly worse
 
 # Okay so there *is* a phen effect
@@ -349,18 +357,19 @@ phen.subsq.grow %>%
   geom_point(size = 3, position = position_jitter(width = 1/4))
 # seems unlikely
 
+# Does the phen effect vary by year?
 g_my = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + phen.mean.c * Year + (1 | Plot / plantid),
+  size.tp1 ~ size.t * Year + trt * Year + phen.c * Year + (1 | Plot / plantid),
   data = phen.subsq.grow
 )
 
 g_mt = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + phen.mean.c * trt + (1 | Plot / plantid),
+  size.tp1 ~ size.t * Year + trt * Year + phen.c * trt + (1 | Plot / plantid),
   data = phen.subsq.grow
 )
 
 g_ms = glmmTMB(
-  size.tp1 ~ size.t * Year + trt * Year + phen.mean.c * size.t + (1 | Plot / plantid),
+  size.tp1 ~ size.t * Year + trt * Year + phen.c * size.t + (1 | Plot / plantid),
   data = phen.subsq.grow
 )
 
@@ -368,6 +377,58 @@ AIC(g_my, g_mt, g_ms, g_m)
 # phew... these models suck
 
 # Okay so there is a very small growth trade-off to budding later
+
+# Some visuals here:
+
+phen.grow.backbone = expand.grid(
+  size.t = c(5:60)/10,
+  Year = 2021:2023,
+  trt = c('control', 'drought', 'irrigated'),
+  phen.c = c(-4:4) * 7
+) 
+
+phen.grow.backbone %>%
+  filter(phen.c %in% c(-28, 28)) %>%
+  mutate(
+    pg = predict(g_m, type = 'response', newdata = ., re.form = ~ 0, allow.new.levels = TRUE),
+    Year = factor(Year)
+  ) %>%
+  ggplot(aes(x = size.t, y = pg, colour = trt, linetype = Year)) +
+  annotate('segment', x = .5, xend = 6, y = .5, yend = 6, linetype = 5, colour = 'gray') +
+  geom_line() +
+  scale_colour_manual(values = c('black', 'red', 'blue')) +
+  facet_wrap(~ phen.c)
+# Hmm okay yeah that makes some sense
+
+phen.grow.backbone %>%
+  mutate(
+    pg = predict(g_m, type = 'response', newdata = ., re.form = ~ 0, allow.new.levels = TRUE),
+    Year = factor(Year)
+  ) %>%
+  ggplot(aes(x = size.t, y = pg, colour = phen.c, group = phen.c)) +
+  annotate('segment', x = .5, xend = 6, y = .5, yend = 6, linetype = 5, colour = 'gray') +
+  geom_point(
+    data = phen.subsq.grow,
+    aes(y = size.tp1, fill = phen.c), shape = 21, size = 2, colour = 'black'
+  ) +
+  geom_line(linewidth = 1.2) +
+  scale_colour_gradient2(
+    low = 'magenta', high = 'yellow', mid = 'black', midpoint = 0,
+    'mean bud date', breaks = (-2:2) * 14
+  ) +
+  scale_fill_gradient2(
+    low = 'magenta', high = 'yellow', mid = 'black', midpoint = 0,
+    'mean bud date', breaks = (-2:2) * 14
+  ) +
+  guides(fill = 'none') +
+  labs(x = 'Size in year t', y = 'Size in year t+1') +
+  facet_wrap(~ paste(trt, Year)) +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'top'
+  )
+# Good
+
 
 ### AOV-style partitioning of variance in bud date?
 # note - only four years... lots of uncertainty in that year-variance estimate...

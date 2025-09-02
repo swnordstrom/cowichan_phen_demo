@@ -1,0 +1,8 @@
+"trt.phen.idx","trt.phen","trt.rate"
+1,"drought","drought"
+2,"control","drought"
+3,"irrigated","irrigated"
+4,"control","irrigated"
+5,"drought","control"
+6,"irrigated","control"
+7,"control","control"

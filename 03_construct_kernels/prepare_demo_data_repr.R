@@ -1,6 +1,5 @@
 ##### Wrapper script to prepare demographic data for reproduction models
 
-
 # --- Read in and prepare data  -------------------------------------
 
 # All data (demo, phenology, seed set)
@@ -9,6 +8,12 @@ all.data = merge(
   y = read.csv('00_raw_data/plot_treatments.csv'),
   by.x = 'Plot', by.y = 'plot'
 )
+
+# Read in phenology means
+phen.treatment.means = read.csv('03_construct_kernels/phen_treatment_means.csv')
+# Mean that will be used for centering
+phen.ctrl.mean = phen.treatment.means$mean.phen[phen.treatment.means$trt %in% 'control']
+
 
 # Dataset for flowering (additional processing below)
 demo.flow = all.data %>%
@@ -32,7 +37,9 @@ table(demo.flow$Year)
 demo.seed = demo.flow %>%
   # Give only the records for which we have a record of seed set
   filter(Year > 2020, phen.umbels > 0) %>%
-  filter(in.seed)
+  filter(in.seed) %>%
+  # Change year to factor for model fitting
+  mutate(Year = factor(Year))
 
 # # Need to add in rows for umbels that died before the seed counting
 # # This is necessary for estimating the probability of an umbel producing zero seeds
@@ -116,5 +123,5 @@ seed = rbind(
     uncount(miss.umbel) %>%
     mutate(no.seeds = 0)
 ) %>%
-  mutate(phen.c = mean.phen - round(mean(mean.phen))) %>%
+  mutate(phen.c = mean.phen - phen.ctrl.mean) %>%
   mutate(size = log(No.leaves * Leaf.length))

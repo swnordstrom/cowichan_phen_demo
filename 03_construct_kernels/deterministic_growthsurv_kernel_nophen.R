@@ -1,9 +1,6 @@
 # Script for re-running reproductive vital rate models and performing model
 # selection and exporting a deterministic, survival e kernel for
 # IPM analysis.
-# Reads in processed demo/seed (including phenology) data, 2016-2024
-# (sn init july 2024)
-
 # --- Setup ---------------------------------------------------------
 
 library(ggplot2)
@@ -80,6 +77,10 @@ demo.grow = demo.surv.sizes %>%
 demo.surv.sizes = demo.surv.sizes %>% filter(surv.year < 2024)
 
 ### ----- MODEL SELECTION -----
+
+# NOTE:
+# this code is from the old script
+# look at `04_analysis/analyze_phen_tradeoffs.R` for model selection with phenology
 
 # # ------------------------------------------------
 # # Fit survival models

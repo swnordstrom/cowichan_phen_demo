@@ -5,7 +5,9 @@ library(tidyr)
 # Get rid of this super annoying feature
 options(dplyr.summarise.inform = FALSE)
 
-# # Data preparation 
+rm(list = ls())
+
+# Read in demo data and merge with treatment info
 all.data = merge(
   x = read.csv('01_data_cleaning/out/demo_phen_seed_2016-2024_final.csv'),
   y = read.csv('00_raw_data/plot_treatments.csv'),
@@ -15,6 +17,12 @@ all.data = merge(
 nrow(all.data)
 head(all.data)
 
+# Read in phenology means
+phen.treatment.means = read.csv('03_construct_kernels/phen_treatment_means.csv')
+# Mean that will be used for centering
+phen.ctrl.mean = phen.treatment.means$mean.phen[phen.treatment.means$trt %in% 'control']
+
+# We're interested only in plants that are in demo for this analysis
 all.demo = all.data %>% 
   filter(in.demo) %>%
   distinct(plantid, Year, .keep_all = TRUE)
@@ -43,7 +51,9 @@ demo.surv = merge(
   by.y = c('Plot', 'plantid', 'Year', 'trt'),
   suffixes = c('', '.pre'),
   all.x = FALSE, all.y = FALSE
-)
+) %>%
+  # Change years to factors
+  mutate(across(contains('year'), as.factor))
 
 head(demo.surv)
 # should be less than 1
@@ -57,7 +67,7 @@ demo.surv.sizes = demo.surv %>%
       Leaf.length.pre > 0 & No.leaves.pre > 0
   ) %>%
   # Get rid of 2016 records because the sizes are not reliable
-  filter(prev.year > 2016) %>%
+  filter(!(prev.year %in% 2016)) %>%
   # Add size columns
   mutate(size.prev = log(No.leaves.pre * Leaf.length.pre))
 
@@ -70,4 +80,30 @@ demo.grow = demo.surv.sizes %>%
   mutate(size.cur = log(Leaf.length * No.leaves))
 
 # Finally: subset surv dataset to not include 2023-2024 surv
-demo.surv.sizes = demo.surv.sizes %>% filter(surv.year < 2024)
+demo.surv.sizes = demo.surv.sizes %>% filter(!(surv.year %in% 2024))
+
+# Get phenology dataset
+# this is for merging in with growth dataset, so relevant measure is by plant (not by umbel)
+phen.by.plant.for.growth = all.data %>%
+  # Give me plants that are in phenology
+  filter(in.phen) %>%
+  # Extract the bud dates on file
+  separate_wider_delim(phen.julis, names = paste0('uu', 1:12), delim = ';', too_few = 'align_start') %>%
+  pivot_longer(starts_with('uu'), names_to = 'umbel.number', values_to = 'phen.julian') %>%
+  filter(!is.na(phen.julian)) %>%
+  # convert to julian date
+  mutate(phen.julian = as.numeric(gsub('\\s', '', phen.julian))) %>%
+  # give me the mean bud date for each plant
+  group_by(plantid, Year) %>%
+  summarise(phen.mean = mean(phen.julian)) %>%
+  ungroup() %>%
+  # Change year to factor
+  mutate(Year = as.factor(Year))
+
+demo.grow = merge(
+  demo.grow, phen.by.plant.for.growth, 
+  by.x = c('prev.year', 'plantid'), by.y = c('Year', 'plantid'),
+  all.x = TRUE, all.y = FALSE
+) %>%
+  # Center mean around control
+  mutate(phen.c = phen.mean - phen.ctrl.mean)
