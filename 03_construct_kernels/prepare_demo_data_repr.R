@@ -1,6 +1,5 @@
 ##### Wrapper script to prepare demographic data for reproduction models
 
-
 # --- Read in and prepare data  -------------------------------------
 
 # All data (demo, phenology, seed set)
@@ -38,7 +37,9 @@ table(demo.flow$Year)
 demo.seed = demo.flow %>%
   # Give only the records for which we have a record of seed set
   filter(Year > 2020, phen.umbels > 0) %>%
-  filter(in.seed)
+  filter(in.seed) %>%
+  # Change year to factor for model fitting
+  mutate(Year = factor(Year))
 
 # # Need to add in rows for umbels that died before the seed counting
 # # This is necessary for estimating the probability of an umbel producing zero seeds
