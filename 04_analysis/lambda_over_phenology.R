@@ -435,3 +435,92 @@ plot_grid(
 
 # legend needs to be smaller... now sure how to do this and keep size consistent...
 
+# Trying something...
+
+pp = all.lambda %>%
+  filter(phen.date %in% as.Date(121:129)) %>%
+  ggplot(aes(x = phen.date)) +
+  geom_line(aes(y = lambda, colour = trt, group = trt), linewidth = 1.2) +
+  geom_point(
+    data = ltre.lambda %>% filter(trt.rate == trt.phen),
+    aes(y = lambda, colour = trt.rate), size = 4, shape = 19
+  ) +
+  geom_point(
+    data = ltre.lambda %>% filter(trt.rate %in% 'control'),
+    aes(y = lambda, colour = trt.phen), size = 4, shape = 21
+  ) +
+  scale_shape_manual(values = c(NA, 19)) +
+  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
+  scale_fill_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
+  guides(shape = 'none') +
+  labs(x = 'Mean bud date', y = expression(lambda)) +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'none'
+    # legend.position = 'inside',
+    # legend.position.inside = c(0.8, 0.8)
+  )
+
+p2 = pp +
+  # Vertical lines for beta sums
+  geom_line(
+    data = ltre.lambda %>% filter(!trt.phen %in% 'control'),
+    aes(y = lambda, colour = trt.phen),
+    linetype = 2
+  ) +
+  # Vertical lines for alpha sums
+  geom_line(
+    data = ltre.lambda %>% filter(trt.rate %in% 'control'),
+    aes(x = as.Date(phen.ctrl.mean), y = lambda),
+    linetype = 2
+  ) +
+  # Horizontal lines for alpha (phen shift) - drought
+  geom_line(
+    data = ltre.lambda %>% filter(trt.rate %in% 'control', !trt.phen %in% 'irrigated'),
+    aes(
+      x = phen.date, 
+      y = ltre.lambda$lambda[ltre.lambda$trt.rate %in% 'control' & ltre.lambda$trt.phen %in% 'drought']
+    ),
+    linetype = 2
+  ) +
+  # Horizontal lines for alpha (phen shift) - irrigated
+  geom_line(
+    data = ltre.lambda %>% filter(trt.rate %in% 'control', !trt.phen %in% 'drought'),
+    aes(
+      x = phen.date, 
+      y = ltre.lambda$lambda[ltre.lambda$trt.rate %in% 'control' & ltre.lambda$trt.phen %in% 'irrigated']
+    ),
+    linetype = 2
+  ) +
+  annotate(
+    'text', x = as.Date(124.75), y = 0.9405,
+    label = expression(Sigma ~ alpha), colour = 'dodgerblue',
+    vjust = 'center', hjust = 'center'
+  ) +
+  annotate(
+    'text', x = as.Date(125.75), y = 0.942,
+    label = expression(Sigma ~ alpha), colour = 'goldenrod', 
+    vjust = 'center', hjust = 'center'
+  ) +
+  annotate(
+    'text', x = as.Date(121.5), y = 0.946, 
+    label = expression(Sigma ~ beta), colour = 'goldenrod',
+    vjust = 'center', hjust = 'center'
+  ) +
+  annotate(
+    'text', x = as.Date(127.5), y = 0.9425,
+    label = expression(Sigma ~ beta), colour = 'dodgerblue',
+    vjust = 'center', hjust = 'center'
+  )
+
+plot_grid(
+  get_plot_component(lambda.trt.pan, 'guide-box', return_all = TRUE)[[4]],
+  plot_grid(
+    lambda.trt.pan + labs(x = '') + theme(legend.position = 'none'), 
+    p2 + labs(x = '', y = ''), 
+    labels = c('a)', 'b)'),
+    align = 'v', nrow = 1
+  ),
+  rel_heights = c(0.1, 1), nrow = 2
+) %>%
+  save_plot(filename = '~/Desktop/eg_figfig.png', base_height = 5, base_width = 8)
