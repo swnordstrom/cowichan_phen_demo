@@ -18,9 +18,12 @@ rm(list = ls())
 
 # Growth + survival kernel
 growsurv.all = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen.csv') %>%
-  filter(phen.c %in% -21:21)
+  # filter to only two weeks before/after mean
+  filter(phen.c %in% -14:14)
 # Reproductive kernel (all phenology)
-reprodct.all = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen.csv')
+reprodct.all = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen.csv') %>%
+  # filter to only two weeks before/after mean
+  filter(phen.c %in% -14:14)
 
 # Growth/survival kernel for LTRE only
 growsurv.ltre = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen_ltre.csv')
@@ -30,11 +33,13 @@ reprodct.ltre = read.csv('03_construct_kernels/out/determinstic_reprod_kernel_ph
 # # Get bootstrapped intervals
 # Growth + survival (all phenology)
 gs.boot.all = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_allphen.csv') %>%
-  filter(phen.c %in% -21:21)
+  filter(phen.c %in% -14:14)
 # Growth + survival (for LTRE only)
 gs.boot.ltre = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_ltre.csv')
 # Reproductive (all phenology)
-fr.boot.all = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_allphen.csv')
+fr.boot.all = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_allphen.csv') %>%
+  # filter to only two weeks before/after mean
+  filter(phen.c %in% -14:14)
 # Reproductive (for LTRE only)
 fr.boot.ltre = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_ltre.csv')
 
@@ -303,7 +308,7 @@ lambda.trt.pan = all.lambda %>%
   scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
   scale_fill_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
   guides(shape = 'none') +
-  labs(x = 'Mean bud date', y = expression(lambda)) +
+  labs(x = 'Mean emergence date', y = expression(lambda)) +
   theme(
     panel.background = element_blank(),
     legend.position = 'top'
@@ -357,7 +362,7 @@ lambda.contr.pan = boot.lambda.diff %>%
   ggplot(aes(x = phen.date, group = contrast)) +
   annotate(
     'segment',
-    x = as.Date('1970-04-15'), xend = as.Date('1970-05-27'),
+    x = as.Date('1970-04-22'), xend = as.Date('1970-05-20'),
     y = 0, yend = 0,
     linetype = 2, colour = 'gray'
   ) +
@@ -407,11 +412,15 @@ lambda.contr.pan = boot.lambda.diff %>%
     aes(xend = phen.date, y = lo, yend = hi)
   ) +
   # scale_shape_manual(values = c(1, 19)) +
-  labs(x = 'Mean bud date', y = expression(Delta~lambda)) +
+  labs(x = 'Mean emergence date', y = expression(Delta~lambda)) +
   guides(colour = 'none', fill = 'none') +
   # scale_colour_manual(values = c('red', 'blue')) +
   # scale_fill_manual(values = c('red', 'blue')) +
   scale_colour_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_x_continuous(
+    breaks = as.Date(c('1970-04-27', '1970-05-04', '1970-05-11', '1970-05-18')),
+    labels = format(as.Date(c('1970-04-27', '1970-05-04', '1970-05-11', '1970-05-18')), '%b %d')
+  ) +
   facet_wrap(~ contrast, nrow = 2) +
   theme(
     panel.background = element_blank(),
@@ -425,7 +434,7 @@ lambda.contr.pan = boot.lambda.diff %>%
 
 plot_grid(
   lambda.trt.pan, lambda.contr.pan, 
-  labels = c('a)', 'b)'),
+  labels = c('a)', 'b)'), rel_widths = c(1, 0.5),
   nrow = 1
 ) %>%
   save_plot(
