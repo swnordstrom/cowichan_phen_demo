@@ -4,6 +4,10 @@
 # projections (esp. considering they are for only one year) but they will be
 # useful for justifying whatever value we may choose
 # ---
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(lme4)
 
 # Clear namespace
 rm(list = ls())

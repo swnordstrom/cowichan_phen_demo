@@ -190,6 +190,25 @@ expand.grid(size = (5:60)/10, trt = c('control', 'drought', 'irrigated')) %>%
   labs(x = 'Size', y = 'Number of umbels') +
   scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'))
 
+# Looking at just the zero-inflation model (probability of flowering) - what
+# does the zero-inflation model look like?
+
+expand.grid(
+  size = (5:60)/10, 
+  trt = c('control', 'drought', 'irrigated'),
+  Year = 2017:2024,
+  Plot = 0, plantid = 0
+) %>%
+  mutate(
+    p.zero.year = predict(u_s_s.ty, newdata = ., allow.new.levels = TRUE, re.form = NA, type = 'zprob')# ,
+    # p.zero.mean = predict(u_s_s.ty, newdata = ., allow.new.levels = TRUE, re.form = NULL, type = 'zprob')
+  ) %>%
+  ggplot(aes(x = size, colour = trt)) +
+  geom_line(aes(y = 1 - p.zero.year), linetype = 3) +
+  # geom_line(aes(y = 1 - p.zero.mean), linewidth = 1.2) +
+  labs(x = 'Size', y = 'Number of umbels') +
+  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue')) +
+  facet_wrap(~ Year)
 
 #-------------------------------------------------------------------
 # # Here, we'll also use a zero-inflated model
@@ -467,5 +486,23 @@ AIC(
   mutate(
     daic = round(AIC - min(AIC), 2),
     AIC = round(AIC, 2)
+  )
+
+
+#-------------------------------------------------------------------
+# Getting some quantities reported in the manuscript.
+
+### Estimate of phenology effects (one week acceleration of flowering)
+expand.grid(phen.c = 0:-7, Year = 2021:2024) %>%
+  mutate(size = 3.9, phen.umbels = 1, trt = 'control') %>%
+  mutate(
+    lin.zinf = predict(s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'zlink'),
+    lin.cond = predict(s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0, type = 'link')
+  ) %>%
+  group_by(phen.c, trt) %>%
+  summarise(across(c(lin.zinf, lin.cond), mean)) %>%
+  mutate(
+    # Transform from linear scale to response scale
+    seeds.per.umbel = (1 / (1 + exp(lin.zinf))) * exp(lin.cond),
   )
 

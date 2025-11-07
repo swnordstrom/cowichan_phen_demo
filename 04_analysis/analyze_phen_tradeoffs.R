@@ -20,7 +20,7 @@ all.data = read.csv('01_data_cleaning/out/demo_phen_seed_2016-2024_final.csv') %
   # We will only have records in 2021 or later
   filter(Year > 2020) %>%
   # Want only one record per plant
-  distinct(plantid, Year, .keep_all = TRUE) %>%
+  distinct(plantid, Year, .keep_all = TRUE)
 
 head(all.data)
 nrow(all.data)
