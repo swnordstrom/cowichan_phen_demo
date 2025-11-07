@@ -14,13 +14,18 @@ library(cowplot)
 
 rm(list = ls())
 
+cat('Building kernels for Figure 2... ')
+
 # # Get point estimates for kernels estimated across a phenology range
 
 # Growth + survival kernel
 growsurv.all = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen.csv') %>%
-  filter(phen.c %in% -21:21)
+  # filter to only two weeks before/after mean
+  filter(phen.c %in% -14:14)
 # Reproductive kernel (all phenology)
-reprodct.all = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen.csv')
+reprodct.all = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen.csv') %>%
+  # filter to only two weeks before/after mean
+  filter(phen.c %in% -14:14)
 
 # Growth/survival kernel for LTRE only
 growsurv.ltre = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen_ltre.csv')
@@ -30,11 +35,13 @@ reprodct.ltre = read.csv('03_construct_kernels/out/determinstic_reprod_kernel_ph
 # # Get bootstrapped intervals
 # Growth + survival (all phenology)
 gs.boot.all = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_allphen.csv') %>%
-  filter(phen.c %in% -21:21)
+  filter(phen.c %in% -14:14)
 # Growth + survival (for LTRE only)
 gs.boot.ltre = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_ltre.csv')
 # Reproductive (all phenology)
-fr.boot.all = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_allphen.csv')
+fr.boot.all = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_allphen.csv') %>%
+  # filter to only two weeks before/after mean
+  filter(phen.c %in% -14:14)
 # Reproductive (for LTRE only)
 fr.boot.ltre = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_ltre.csv')
 
@@ -44,16 +51,19 @@ head(reprodct.all)
 # Read in LTRE treatment-phenology info
 trt.phen.ltre.key = merge(
   x = read.csv('03_construct_kernels/ltre_treatment_key.csv'),
-  y = read.csv('03_construct_kernels/phen_treatment_means.csv'),
+  y = read.csv('03_construct_kernels/out/phen_treatment_means.csv'),
   by.x = 'trt.phen', by.y = 'trt'
 ) %>%
   arrange(trt.phen.idx) %>%
   select(trt.phen.idx, everything())
 
 # Control mean for re-centering phenology
-phen.ctrl.mean = read.csv('03_construct_kernels/phen_treatment_means.csv') %>%
+phen.ctrl.mean = read.csv('03_construct_kernels/out/phen_treatment_means.csv') %>%
   filter(trt %in% 'control') %>%
   pull(mean.phen)
+
+# Annual mean flowering dates for Figure
+phen.annual.mean = read.csv('03_construct_kernels/out/phen_annual_treatment_means.csv')
 
 # Germination probability
 p.germ = .001
@@ -245,29 +255,15 @@ ltre.boot.intervals = ltre.boot.lambda %>%
   mutate(phen.date = as.Date(as.numeric(mean.phen), format = '%b-%d')) %>%
   pivot_wider(names_from = lohi, values_from = cibound)
 
-# Read in phen dates for mean phen among treatments:
-source('03_construct_kernels/prepare_demo_data_repr.R')
-
-# Fit phen model
-d_t = glmmTMB(
-  phen.julian ~ trt + Year + (1 | Plot / plantid),
-  data = phen
-)
-
-annual.phen.dates = expand.grid(
-  trt = c('control', 'drought', 'irrigated'),
-  Year = factor(2021:2024)
-) %>%
-  mutate(
-    mean.phen = predict(d_t, newdata = ., allow.new.levels = TRUE, re.form = ~ 0)
-  ) %>%
+# Format annual phenology estimates for figure
+annual.phen.dates = phen.annual.mean %>%
   # Convert to date format (for plotting)
-  mutate(phen.date = as.Date(mean.phen, format = '%b-%d')) %>%
+  mutate(phen.date = as.Date(mean.bud, format = '%b-%d')) %>%
   mutate(
     ydodge = case_when(
-      trt %in% 'control' ~ 0.915,
-      trt %in% 'drought' ~ 0.9175,
-      trt %in% 'irrigated' ~ 0.9125
+      trt %in% 'control' ~ 0.9225,
+      trt %in% 'drought' ~ 0.925,
+      trt %in% 'irrigated' ~ 0.92
     )
   )
 
@@ -303,7 +299,7 @@ lambda.trt.pan = all.lambda %>%
   scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
   scale_fill_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
   guides(shape = 'none') +
-  labs(x = 'Mean bud date', y = expression(lambda)) +
+  labs(x = '', y = expression(lambda)) +
   theme(
     panel.background = element_blank(),
     legend.position = 'top'
@@ -357,7 +353,7 @@ lambda.contr.pan = boot.lambda.diff %>%
   ggplot(aes(x = phen.date, group = contrast)) +
   annotate(
     'segment',
-    x = as.Date('1970-04-15'), xend = as.Date('1970-05-27'),
+    x = as.Date('1970-04-22'), xend = as.Date('1970-05-20'),
     y = 0, yend = 0,
     linetype = 2, colour = 'gray'
   ) +
@@ -407,11 +403,15 @@ lambda.contr.pan = boot.lambda.diff %>%
     aes(xend = phen.date, y = lo, yend = hi)
   ) +
   # scale_shape_manual(values = c(1, 19)) +
-  labs(x = 'Mean bud date', y = expression(Delta~lambda)) +
+  labs(x = '', y = expression(Delta~lambda)) +
   guides(colour = 'none', fill = 'none') +
   # scale_colour_manual(values = c('red', 'blue')) +
   # scale_fill_manual(values = c('red', 'blue')) +
   scale_colour_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_x_continuous(
+    breaks = as.Date(c('1970-04-27', '1970-05-04', '1970-05-11', '1970-05-18')),
+    labels = format(as.Date(c('1970-04-27', '1970-05-04', '1970-05-11', '1970-05-18')), '%b %d')
+  ) +
   facet_wrap(~ contrast, nrow = 2) +
   theme(
     panel.background = element_blank(),
@@ -423,104 +423,133 @@ lambda.contr.pan = boot.lambda.diff %>%
 #   pattern = 'guide-box', return_all = TRUE
 # )[[4]]
 
+x.ax.lab = ggdraw() + 
+  draw_label('Mean flowering date', vjust = 0) +
+  theme(plot.margin = margin(0, 0, 10, 0))
+
 plot_grid(
-  lambda.trt.pan, lambda.contr.pan, 
-  labels = c('a)', 'b)'),
-  nrow = 1
+  plot_grid(
+    lambda.trt.pan, lambda.contr.pan, 
+    labels = c('a)', 'b)'), rel_widths = c(1, 0.5),
+    nrow = 1
+  ),
+  x.ax.lab,
+  ncol = 1, rel_heights = c(1, 0.01)
 ) %>%
   save_plot(
     filename = '04_analysis/figures/draft_figures/lambdas_phen.png',
     base_height = 5, base_width = 8
   )
 
-# legend needs to be smaller... now sure how to do this and keep size consistent...
+### Export files
 
-# Trying something...
+# LTRE design kernel
+write.csv(
+  kernel.ltre.df,
+  '04_analysis/out/ltre_design_kernels.csv',
+  row.names = FALSE
+)
 
-pp = all.lambda %>%
-  filter(phen.date %in% as.Date(121:129)) %>%
-  ggplot(aes(x = phen.date)) +
-  geom_line(aes(y = lambda, colour = trt, group = trt), linewidth = 1.2) +
-  geom_point(
-    data = ltre.lambda %>% filter(trt.rate == trt.phen),
-    aes(y = lambda, colour = trt.rate), size = 4, shape = 19
-  ) +
-  geom_point(
-    data = ltre.lambda %>% filter(trt.rate %in% 'control'),
-    aes(y = lambda, colour = trt.phen), size = 4, shape = 21
-  ) +
-  scale_shape_manual(values = c(NA, 19)) +
-  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
-  scale_fill_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
-  guides(shape = 'none') +
-  labs(x = 'Mean bud date', y = expression(lambda)) +
-  theme(
-    panel.background = element_blank(),
-    legend.position = 'none'
-    # legend.position = 'inside',
-    # legend.position.inside = c(0.8, 0.8)
-  )
+# Lambda estimates over all dates
+write.csv(
+  all.lambda %>% select(-phen),
+  '04_analysis/out/all_dates_lambda.csv',
+  row.names = FALSE 
+)
 
-p2 = pp +
-  # Vertical lines for beta sums
-  geom_line(
-    data = ltre.lambda %>% filter(!trt.phen %in% 'control'),
-    aes(y = lambda, colour = trt.phen),
-    linetype = 2
-  ) +
-  # Vertical lines for alpha sums
-  geom_line(
-    data = ltre.lambda %>% filter(trt.rate %in% 'control'),
-    aes(x = as.Date(phen.ctrl.mean), y = lambda),
-    linetype = 2
-  ) +
-  # Horizontal lines for alpha (phen shift) - drought
-  geom_line(
-    data = ltre.lambda %>% filter(trt.rate %in% 'control', !trt.phen %in% 'irrigated'),
-    aes(
-      x = phen.date, 
-      y = ltre.lambda$lambda[ltre.lambda$trt.rate %in% 'control' & ltre.lambda$trt.phen %in% 'drought']
-    ),
-    linetype = 2
-  ) +
-  # Horizontal lines for alpha (phen shift) - irrigated
-  geom_line(
-    data = ltre.lambda %>% filter(trt.rate %in% 'control', !trt.phen %in% 'drought'),
-    aes(
-      x = phen.date, 
-      y = ltre.lambda$lambda[ltre.lambda$trt.rate %in% 'control' & ltre.lambda$trt.phen %in% 'irrigated']
-    ),
-    linetype = 2
-  ) +
-  annotate(
-    'text', x = as.Date(124.75), y = 0.9405,
-    label = expression(Sigma ~ alpha), colour = 'dodgerblue',
-    vjust = 'center', hjust = 'center'
-  ) +
-  annotate(
-    'text', x = as.Date(125.75), y = 0.942,
-    label = expression(Sigma ~ alpha), colour = 'goldenrod', 
-    vjust = 'center', hjust = 'center'
-  ) +
-  annotate(
-    'text', x = as.Date(121.5), y = 0.946, 
-    label = expression(Sigma ~ beta), colour = 'goldenrod',
-    vjust = 'center', hjust = 'center'
-  ) +
-  annotate(
-    'text', x = as.Date(127.5), y = 0.9425,
-    label = expression(Sigma ~ beta), colour = 'dodgerblue',
-    vjust = 'center', hjust = 'center'
-  )
+# Bootstrapped lambda estimates over all dates
+write.csv(
+  all.boot.lambda %>% select(-phen),
+  '04_analysis/out/all_dates_bootstrapped_lambda.csv',
+  row.names = FALSE
+)
 
-plot_grid(
-  get_plot_component(lambda.trt.pan, 'guide-box', return_all = TRUE)[[4]],
-  plot_grid(
-    lambda.trt.pan + labs(x = '') + theme(legend.position = 'none'), 
-    p2 + labs(x = '', y = ''), 
-    labels = c('a)', 'b)'),
-    align = 'v', nrow = 1
-  ),
-  rel_heights = c(0.1, 1), nrow = 2
-) %>%
-  save_plot(filename = '~/Desktop/eg_figfig.png', base_height = 5, base_width = 8)
+cat('Done.\n')
+
+# pp = all.lambda %>%
+#   filter(phen.date %in% as.Date(121:129)) %>%
+#   ggplot(aes(x = phen.date)) +
+#   geom_line(aes(y = lambda, colour = trt, group = trt), linewidth = 1.2) +
+#   geom_point(
+#     data = ltre.lambda %>% filter(trt.rate == trt.phen),
+#     aes(y = lambda, colour = trt.rate), size = 4, shape = 19
+#   ) +
+#   geom_point(
+#     data = ltre.lambda %>% filter(trt.rate %in% 'control'),
+#     aes(y = lambda, colour = trt.phen), size = 4, shape = 21
+#   ) +
+#   scale_shape_manual(values = c(NA, 19)) +
+#   scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
+#   scale_fill_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
+#   guides(shape = 'none') +
+#   labs(x = 'Mean bud date', y = expression(lambda)) +
+#   theme(
+#     panel.background = element_blank(),
+#     legend.position = 'none'
+#     # legend.position = 'inside',
+#     # legend.position.inside = c(0.8, 0.8)
+#   )
+# 
+# p2 = pp +
+#   # Vertical lines for beta sums
+#   geom_line(
+#     data = ltre.lambda %>% filter(!trt.phen %in% 'control'),
+#     aes(y = lambda, colour = trt.phen),
+#     linetype = 2
+#   ) +
+#   # Vertical lines for alpha sums
+#   geom_line(
+#     data = ltre.lambda %>% filter(trt.rate %in% 'control'),
+#     aes(x = as.Date(phen.ctrl.mean), y = lambda),
+#     linetype = 2
+#   ) +
+#   # Horizontal lines for alpha (phen shift) - drought
+#   geom_line(
+#     data = ltre.lambda %>% filter(trt.rate %in% 'control', !trt.phen %in% 'irrigated'),
+#     aes(
+#       x = phen.date, 
+#       y = ltre.lambda$lambda[ltre.lambda$trt.rate %in% 'control' & ltre.lambda$trt.phen %in% 'drought']
+#     ),
+#     linetype = 2
+#   ) +
+#   # Horizontal lines for alpha (phen shift) - irrigated
+#   geom_line(
+#     data = ltre.lambda %>% filter(trt.rate %in% 'control', !trt.phen %in% 'drought'),
+#     aes(
+#       x = phen.date, 
+#       y = ltre.lambda$lambda[ltre.lambda$trt.rate %in% 'control' & ltre.lambda$trt.phen %in% 'irrigated']
+#     ),
+#     linetype = 2
+#   ) +
+#   annotate(
+#     'text', x = as.Date(124.75), y = 0.9405,
+#     label = expression(Sigma ~ alpha), colour = 'dodgerblue',
+#     vjust = 'center', hjust = 'center'
+#   ) +
+#   annotate(
+#     'text', x = as.Date(125.75), y = 0.942,
+#     label = expression(Sigma ~ alpha), colour = 'goldenrod', 
+#     vjust = 'center', hjust = 'center'
+#   ) +
+#   annotate(
+#     'text', x = as.Date(121.5), y = 0.946, 
+#     label = expression(Sigma ~ beta), colour = 'goldenrod',
+#     vjust = 'center', hjust = 'center'
+#   ) +
+#   annotate(
+#     'text', x = as.Date(127.5), y = 0.9425,
+#     label = expression(Sigma ~ beta), colour = 'dodgerblue',
+#     vjust = 'center', hjust = 'center'
+#   )
+# 
+# plot_grid(
+#   get_plot_component(lambda.trt.pan, 'guide-box', return_all = TRUE)[[4]],
+#   plot_grid(
+#     lambda.trt.pan + labs(x = '') + theme(legend.position = 'none'), 
+#     p2 + labs(x = '', y = ''), 
+#     labels = c('a)', 'b)'),
+#     align = 'v', nrow = 1
+#   ),
+#   rel_heights = c(0.1, 1), nrow = 2
+# ) %>%
+#   save_plot(filename = '~/Desktop/eg_figfig.png', base_height = 5, base_width = 8)

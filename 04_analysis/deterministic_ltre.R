@@ -10,7 +10,6 @@ library(ggh4x)
 library(dplyr)
 library(tidyr)
 library(cowplot)
-library(ggpattern)
 
 rm(list = ls())
 
@@ -86,7 +85,7 @@ phen.boots = read.csv('03_construct_kernels/out/phenology_bootstrapped_means.csv
 # (e.g. when using bootstrapped means)
 trt.phen.ltre.key = merge(
   x = read.csv('03_construct_kernels/ltre_treatment_key.csv'),
-  y = read.csv('03_construct_kernels/phen_treatment_means.csv'),
+  y = read.csv('03_construct_kernels/out/phen_treatment_means.csv'),
   by.x = 'trt.phen', by.y = 'trt'
 ) %>%
   arrange(trt.phen.idx) %>%
@@ -277,6 +276,8 @@ midp.boot.kernel.df = boot.kernel.df %>%
 
 # Bootstrapped midpoints (perturbed)
 midp.boot.pert.kernel.df = boot.pert.kernel.df %>%
+  # remove phen perturbations
+  filter(!grepl('phen', param)) %>%
   pivot_wider(names_from = trt, values_from = p.size.cur) %>%
   mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
   select(-c(drought, control, irrigated)) %>%
@@ -573,13 +574,11 @@ midp.boot.sens = merge(
   # NOTE the delta value is hard-coded here too
   mutate(sv = (lambda.pert - lambda.orig) / .0001)
 
-# Initution check: sensitivites to an increase in phenology should all be negative
-# (because lambda is always declining with bud date, in our models)
-
 midp.phen.sens = merge(
    midp.phen.lambda, midp.phen.pert.lambda,
    by = c('trt', 'contrast.phen'), suffixes = c('.orig', '.pert')
 ) %>%
+  rename(trt.rate = trt) %>%
   mutate(sv = ((lambda.pert - lambda.orig) / 0.0001))
 
   # # Need a -1 in here for when the contrast in phenology is positive or negative
@@ -591,6 +590,7 @@ midp.phen.boot.sens = merge(
   midp.phen.boot.lambda, midp.phen.boot.pert.lambda,
   by = c('trt', 'contrast.phen', 'samp'), suffixes = c('.orig', '.pert')
 ) %>%
+  rename(trt.rate = trt) %>%
   mutate(sv = ((lambda.pert - lambda.orig) / 0.0001))
   # Do NOT need a -1 in here because 
   # mutate(
@@ -634,39 +634,42 @@ boot.param.diffs = merge(gs.pert.pars, fr.pert.pars, by = 'boot') %>%
     param = rate
   )
 
-# Okay... here we will need to introduce some negative ones
+# Phenology parameter differences
 
-obsv.phen.diffs = obsv.kernel.df %>% 
-  distinct(trt, trt.phen, mean.phen) %>%
-  pivot_wider(names_from = trt.phen, values_from = mean.phen) %>%
-  mutate(
-    # Need sign corrections here:
-    # (d/i - control) gives the difference *from the perspective of the control*
-    # but in the drought/irrig treatments, it should be control - d/i
-    d.c = (drought - control) * ifelse(trt %in% 'control', 1, -1), 
-    i.c = (irrigated - control) * ifelse(trt %in% 'control', 1, -1)
-  ) %>%
-  select(-c(control, drought, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'phen.diff', values_drop_na = TRUE)
-
-boot.phen.diffs = phen.boots %>%
-  rename(samp = boot) %>%
-  # looks like I already exported this as wide-format
-  # mutate(phen = as.numeric(phen)) %>%
-  # pivot_wider(names_from = trt.phen, values_from = phen) %>%
+obsv.phen.diffs = rbind(
+  gs.obsv.pert %>% distinct(trt.phen.idx, param, orig.parval), 
+  fr.obsv.pert %>% distinct(trt.phen.idx, param, orig.parval)
+) %>%
+  merge(trt.phen.ltre.key %>% select(-mean.phen)) %>%
+  select(-c(trt.phen.idx)) %>%
+  rename(trt = trt.phen) %>%
+  # Now, select only the phen
+  filter(grepl('phen', param)) %>%
+  rename(rate = param) %>%
+  # Get differences between treatments
+  pivot_wider(names_from = trt, values_from = orig.parval) %>%
   mutate(d.c = drought - control, i.c = irrigated - control) %>%
-  select(-c(control, drought, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'phen.diff')
+  select(-c(drought, irrigated, control)) %>%
+  pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'pardiff')
 
-# The code above gives only the differences *from the control perspective*
-# But we will also want to get differences from the drought/irrigated perspective
-# which will require negating the phen diff
-boot.phen.diffs = rbind(
-    boot.phen.diffs %>% mutate(trt = 'control'),
-    boot.phen.diffs %>% 
-      mutate(trt = ifelse(contrast.phen %in% 'd.c', 'drought', 'irrigated')) %>% 
-      mutate(phen.diff = -1 * phen.diff)
-  )
+# boot.phen.diffs = phen.boots %>%
+#   rename(samp = boot) %>%
+#   # looks like I already exported this as wide-format
+#   # mutate(phen = as.numeric(phen)) %>%
+#   # pivot_wider(names_from = trt.phen, values_from = phen) %>%
+#   mutate(d.c = drought - control, i.c = irrigated - control) %>%
+#   select(-c(control, drought, irrigated)) %>%
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'phen.diff')
+# 
+# # The code above gives only the differences *from the control perspective*
+# # But we will also want to get differences from the drought/irrigated perspective
+# # which will require negating the phen diff
+# boot.phen.diffs = rbind(
+#     boot.phen.diffs %>% mutate(trt = 'control'),
+#     boot.phen.diffs %>% 
+#       mutate(trt = ifelse(contrast.phen %in% 'd.c', 'drought', 'irrigated')) %>% 
+#       mutate(phen.diff = -1 * phen.diff)
+#   )
 
 # Checks:
 # head(boot.phen.diffs)
@@ -708,21 +711,21 @@ obsv.ltre = merge(midp.obsv.sens, obsv.param.diffs) %>%
   mutate(contrib = pardiff * sv)
 
 # From bootstraps
-boot.ltre = merge(midp.boot.sens, boot.param.diffs) %>%
+boot.ltre = merge(midp.boot.sens, boot.param.diffs %>% filter(!grepl('phen', param))) %>%
   mutate(contrib = pardiff * sv)
 
 # Phenology effects
 phen.ltre = merge(midp.phen.sens, obsv.phen.diffs) %>%
-  mutate(contrib = phen.diff * sv)
+  mutate(contrib = pardiff * sv)
 
-phen.boot.ltre = merge(midp.phen.boot.sens, boot.phen.diffs) %>%
-  mutate(contrib = phen.diff * sv)
+phen.boot.ltre = merge(midp.phen.boot.sens, boot.param.diffs %>% filter(grepl('phen', param)) %>% rename(contrast.phen = contrast, rate = param)) %>%
+  mutate(contrib = pardiff * sv)
 
 # ------------------------------------------------------                  
 # ------ Check that lambda differences match LTRE sums -
 # ------------------------------------------------------
 
-ltre.dlambda.compare = merge(
+obsv.dlambda.compare = merge(
     obsv.ltre %>% 
       group_by(contrast, trt.phen) %>% 
       summarise(csum = sum(contrib)),
@@ -734,9 +737,48 @@ ltre.dlambda.compare = merge(
       select(-c(phen.date, mean.phen))
 )
 
-ltre.dlambda.compare %>%
+obsv.dlambda.compare %>% mutate(relerr = (csum - d.lambda) / d.lambda)
+# Okay better than before! 3/4 are <1% and the final one is at 2.2%...
+
+
+phen.dlambda.compare = merge(
+  phen.ltre %>% 
+    group_by(contrast.phen, trt.rate) %>% 
+    summarise(csum = sum(contrib)),
+  obsv.lambda %>% 
+    select(-c(phen, mean.phen, phen.date)) %>%
+    rename(trt.rate = trt) %>%
+    pivot_wider(names_from = trt.phen, values_from = lambda) %>% 
+    mutate(d.c = drought - control, i.c = irrigated - control) %>% 
+    select(-c(control, drought, irrigated)) %>% 
+    pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'd.lambda', values_drop_na = TRUE)
+)
+
+phen.dlambda.compare %>% mutate(relerr = (csum - d.lambda) / d.lambda)
+# even more accurate!
+
+merge(
+  obsv.ltre %>% 
+    group_by(contrast, trt.phen) %>% 
+    summarise(csum = sum(contrib)),
+  phen.ltre %>% 
+    group_by(contrast = contrast.phen, trt.rate) %>% 
+    summarise(csum = sum(contrib)),
+  by = 'contrast'
+) %>%
+  # (want to have estimates that don't have the same treatment for phen and rate)
+  filter(trt.phen != trt.rate) %>%
+  mutate(csum = csum.x + csum.y) %>%
+  merge(
+    obsv.lambda %>% filter(trt == trt.phen) %>% select(-contains('phen')) %>%
+      pivot_wider(names_from = trt, values_from = lambda) %>% 
+      mutate(d.c = drought - control, i.c = irrigated - control) %>% 
+      select(-c(control, drought, irrigated)) %>% 
+      pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda', values_drop_na = TRUE)
+  ) %>%
   mutate(relerr = (csum - d.lambda) / d.lambda)
-# Okay better than before! 3/4 are <1% and the final one is at 2.5%...
+
+# Also has max error of 2.5%, everything else <1%
 
 # ------------------------------------------------------                  
 # ------ Combine contributions by rate (not param) -----
@@ -758,13 +800,13 @@ boot.trt.ltre = boot.ltre %>%
 
 obsv.phen.ltre = phen.ltre %>%
   mutate(rate = gsub('phen\\.', '', rate)) %>%
-  group_by(trt, contrast.phen, rate) %>%
+  group_by(trt.rate, contrast.phen, rate) %>%
   summarise(contrib = sum(contrib)) %>%
   ungroup()
 
 boot.phen.ltre = phen.boot.ltre %>%
   mutate(rate = gsub('phen\\.', '', rate)) %>%
-  group_by(trt, contrast.phen, samp, rate) %>%
+  group_by(trt.rate, contrast.phen, samp, rate) %>%
   summarise(contrib = sum(contrib)) %>%
   ungroup()
 
@@ -772,34 +814,33 @@ boot.phen.ltre = phen.boot.ltre %>%
 # ------ Crude plots -----------------------------------
 # ------------------------------------------------------
 
-obsv.trt.ltre %>%
-  # I want to do this on the control buddate
-  filter(trt.phen %in% 'control') %>%
-  ggplot(aes(x = rate, y = contrib, fill = contrast)) +
-  geom_col(position = 'dodge')
-
-# Picture here: more growth in treatments, less flowering
-# differing treatment effects on seed production's influence
-# differing treatment effects on recruit size (other dir.)
-
-boot.trt.ltre %>%
-  # I want to do this on the control buddate
-  filter(trt.phen %in% 'control') %>%
-  ggplot(aes(x = rate, y = contrib, colour = contrast)) +
-  geom_point(position = position_dodge(width = 0.25), alpha = 0.5)
-
-
-obsv.phen.ltre %>%
-  # think about which trt we want...
-  filter(trt %in% 'control') %>%
-  ggplot(aes(x = rate, y = contrib, fill = contrast.phen)) +
-  geom_col(position = 'dodge')
-
-boot.phen.ltre %>%
-  # We'll do the drought/irrigated differences for these
-  filter(trt %in% 'control') %>%
-  ggplot(aes(x = rate, y = contrib, colour = contrast.phen)) +
-  geom_point(position = position_dodge(width = 0.25), alpha = 0.5)
+# obsv.trt.ltre %>%
+#   # I want to do this on the control buddate
+#   filter(trt.phen %in% 'control') %>%
+#   ggplot(aes(x = rate, y = contrib, fill = contrast)) +
+#   geom_col(position = 'dodge')
+# 
+# # Picture here: more growth in treatments, less flowering
+# # differing treatment effects on seed production's influence
+# # differing treatment effects on recruit size (other dir.)
+# 
+# boot.trt.ltre %>%
+#   # I want to do this on the control buddate
+#   filter(trt.phen %in% 'control') %>%
+#   ggplot(aes(x = rate, y = contrib, colour = contrast)) +
+#   geom_point(position = position_dodge(width = 0.25), alpha = 0.5)
+# 
+# obsv.phen.ltre %>%
+#   # think about which trt we want...
+#   filter(trt.rate %in% 'control') %>%
+#   ggplot(aes(x = rate, y = contrib, fill = contrast.phen)) +
+#   geom_col(position = 'dodge')
+# 
+# boot.phen.ltre %>%
+#   # We'll do the drought/irrigated differences for these
+#   filter(trt.rate %in% 'control') %>%
+#   ggplot(aes(x = rate, y = contrib, colour = contrast.phen)) +
+#   geom_point(position = position_dodge(width = 0.25), alpha = 0.5)
 
 # Combining...
 
@@ -822,8 +863,8 @@ control.ltre.all = rbind(
   obsv.phen.ltre %>%
     # give me LTRE values where the reference date is the control
     # and remove unnecessary column
-    filter(trt %in% 'control') %>%
-    select(-trt) %>%
+    filter(trt.rate %in% 'control') %>%
+    select(-trt.rate) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
     mutate(varb = 'alpha', samp = 'obsv', type = 'phen'),
@@ -831,24 +872,24 @@ control.ltre.all = rbind(
   boot.phen.ltre %>%
     # give me LTRE values where the reference date is the control
     # and remove unnecessary columns
-    filter(trt %in% 'control') %>%
-    select(-c(trt, samp)) %>%
+    filter(trt.rate %in% 'control') %>%
+    select(-c(trt.rate, samp)) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
     mutate(varb = 'alpha', samp = 'boot', type = 'phen')
 ) %>%
   mutate(ltre.varb = paste0(varb, '[', rate, ']'))
 
-control.ltre.all %>%
-  mutate(ltre.varb = paste0(varb, '[', rate, ']')) %>%
-  ggplot(aes(x = ltre.varb, y = contrib)) +
-  geom_point(aes(shape = samp, alpha = samp, size = samp, colour = type)) +
-  scale_alpha_manual(values = c(0.5, 1)) +
-  scale_shape_manual(values = c(1, 19)) +
-  scale_size_manual(values = c(1, 4)) +
-  scale_colour_manual(values = c('gray11', 'gray66')) +
-  scale_x_discrete(labels = scales::label_parse()) +
-  facet_wrap(~ contrast, nrow = 2)
+# control.ltre.all %>%
+#   mutate(ltre.varb = paste0(varb, '[', rate, ']')) %>%
+#   ggplot(aes(x = ltre.varb, y = contrib)) +
+#   geom_point(aes(shape = samp, alpha = samp, size = samp, colour = type)) +
+#   scale_alpha_manual(values = c(0.5, 1)) +
+#   scale_shape_manual(values = c(1, 19)) +
+#   scale_size_manual(values = c(1, 4)) +
+#   scale_colour_manual(values = c('gray11', 'gray66')) +
+#   scale_x_discrete(labels = scales::label_parse()) +
+#   facet_wrap(~ contrast, nrow = 2)
 
 # ugly.
 
@@ -910,8 +951,7 @@ control.ltre.all %>%
   mutate(std.contrib = (contrib - mean(contrib)) / sd(contrib)) %>%
   ggplot(aes(x = std.contrib, group = interaction(contrast, ltre.varb), colour = contrast)) + 
   geom_density(aes(colour = contrast))
-# ah... lack of normality looks to be common
-# may be a result of small sample size
+# looks normal to me
 
 # Combinations across treatments
 
@@ -927,8 +967,8 @@ obsv.contribs = rbind(
   obsv.phen.ltre %>%
     # give me LTRE values where the reference date is the control
     # and remove unnecessary column
-    filter(trt %in% 'control') %>%
-    select(-trt) %>%
+    filter(trt.rate %in% 'control') %>%
+    select(-trt.rate) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
     mutate(varb = 'alpha', type = 'phen')
@@ -946,8 +986,8 @@ boot.contribs = rbind(
   boot.phen.ltre %>%
     # give me LTRE values where the reference date is the control
     # and remove unnecessary columns
-    filter(trt %in% 'control') %>%
-    select(-trt) %>%
+    filter(trt.rate %in% 'control') %>%
+    select(-trt.rate) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
     mutate(varb = 'alpha', type = 'phen')
@@ -1138,13 +1178,13 @@ plot_grid(pa, left.panel, ncol = 2, labels = c('a', '')) %>%
 # Export observed ltre contributions
 write.csv(
   obsv.contribs, row.names = FALSE,
-  file = '04_analysis/out/all_ltre_observed_contribs.csv'
+  file = '04_analysis/out/all_ltre_observed_contributions.csv'
 )
 
 # Export all bootstrapped contributions
 write.csv(
   boot.contribs, row.names = FALSE,
-  file = '04_analysis/out/all_ltre_bootstrapped_contribs.csv'
+  file = '04_analysis/out/all_ltre_bootstrapped_contributions.csv'
 )
 
 # LTRE summary with finest terms (individual alpha-beta terms)
@@ -1169,6 +1209,13 @@ write.csv(
   file = '04_analysis/out/rate_combo_alone_ltre_summary.csv'
 )
 
+# Bootstrapped lambda values for LTRE design
+write.csv(
+  boot.lambda, row.names = FALSE,
+  file = '04_analysis/out/ltre_design_bootstrapped_lambdas.csv'
+)
+
+cat('Done.\n')
 
 # ------------------------------------------------------                  
 # ------ Summary statistics for MS ---------------------

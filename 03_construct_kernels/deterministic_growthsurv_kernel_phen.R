@@ -58,7 +58,7 @@ grow.surv.kernel = expand.grid(
   size.prev = (5:60)/10,
   size.cur = (5:60)/10,
   trt = c('control', 'drought', 'irrigated'),
-  phen.c = -28:28
+  phen.c = -14:14
 )
 
 grow.surv.kernel = grow.surv.kernel %>%
@@ -93,7 +93,7 @@ grow.surv.kernel = grow.surv.kernel %>%
   )
 
 grow.surv.kernel %>%
-  filter(phen.c %in% c(-28, 28)) %>%
+  filter(phen.c %in% c(-14, 14)) %>%
   mutate(p.size.cur = pred.surv * pf.grow.size) %>%
   ggplot(aes(x = size.prev, y = size.cur)) +
   geom_tile(aes(fill = p.size.cur)) +
@@ -185,6 +185,8 @@ write.csv(
   file = '03_construct_kernels/out/deterministic_growsurv_kernel_phen_ltre.csv',
   row.names = FALSE
 )
+
+cat('Exported growth+survival subkernel\n')
 
 
 # --- Sensitivities
@@ -325,7 +327,7 @@ outputs[[3]] = ltre.backbone %>%
     )
   ) %>%
   # Model with phenology
-  mutate(phen.grow.mean = pred.grow.mean + (phen.c + delta) * phen.effect) %>%
+  mutate(phen.grow.mean = pred.grow.mean + delta + (phen.c * phen.effect)) %>%
   # # Take the average of the growth kernel across years
   # group_by(size.prev, size.cur, trt, trt.phen, phen.c, pred.surv, pred.grow.mean) %>%
   # summarise(phen.grow.mean = mean(phen.grow.mean)) %>%
@@ -338,7 +340,7 @@ outputs[[3]] = ltre.backbone %>%
   # Add in perturbation information
   mutate(
     perturb.param = 'phen.grow',
-    orig.par.val = phen.c
+    orig.par.val = (phen.c) * phen.effect
   )
 
 
@@ -356,3 +358,5 @@ write.csv(
   file = '03_construct_kernels/out/deterministic_grow_coef_perturbation_phen.csv',
   row.names = FALSE
 )
+
+cat('Exported growth+survival perturbed subkernels\n')

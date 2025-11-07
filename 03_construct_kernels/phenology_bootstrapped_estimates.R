@@ -18,6 +18,9 @@ library(ggplot2) # used for aux plot but not necessary
 library(glmmTMB)
 library(dplyr)
 library(tidyr)
+library(purrr)
+
+cat('Bootstrapping phenology means... ')
 
 # Get rid of this super annoying feature
 options(dplyr.summarise.inform = FALSE)
@@ -32,9 +35,8 @@ all.data = merge(
   by.x = 'Plot', by.y = 'plot'
 )
 
-# Umbel-level budding phenology data
-# (used only in bootstrapping)
-phen = all.data %>% 
+# Get phenology at umbel level
+phen.by.umbel = all.data %>% 
   filter(in.phen) %>%
   # Split out the bud dates for bud date models; the most umbels seen in a
   # plant is 12, so use separate() to kick these out and then pivot_long to get
@@ -47,27 +49,35 @@ phen = all.data %>%
   mutate(phen.julian = as.numeric(gsub('\\s', '', phen.julian))) %>%
   mutate(Year = factor(Year))
 
+# However, for our purposes we want to get the mean umbel emergence date by plant
+
+phen.by.plant = phen.by.umbel %>%
+  group_by(Plot, plantid, trt, Year, phen.julian) %>%
+  summarise(phen.julian = mean(phen.julian), n.umbel = n()) %>%
+  mutate(Year = factor(Year)) %>%
+  ungroup()
+
 # ====== Bootstrap models ====================================================
 # Here: resampling the observed dataset, fitting models, storing *model
 # coefficients*
-
-# Set seed for reproducibility
-set.seed(9908847)
 
 # Fit original model
 # This is needed for centering the bootstrapped coefficients
 d_t = glmmTMB(
   phen.julian ~ trt + Year + (1 | Plot / plantid),
-  data = phen
+  data = phen.by.plant
 )
 
 # Define number of bootstraps
 n.straps = 100
 
+# Set seed for reproducibility
+set.seed(9908847)
+
 # Data resampling and model fitting
 # phen.boot output df has one row per bootstrap, column for each model
 # coefficient
-phen.boot = phen %>%
+phen.boot = phen.by.plant %>%
   # Add an 'obs.no' for distinguishing umbels
   group_by(plantid, Year) %>%
   mutate(obs.no = 1:n()) %>%
@@ -83,17 +93,27 @@ phen.boot = phen %>%
   ungroup() %>%  
   # Split the dataset by each sample and re-fit the umbel success/seed model
   split(.$samp) %>%
-  mclapply(
-    function(df) {
-      glmmTMB(
-        phen.julian ~ trt + Year + (1 | Plot / plantid),
-        data = df
-      ) %>%
-        # extract model parameters
-        (function(mod) mod$fit$par)
-    },
-    mc.cores = 6
+  lapply(
+      function(df) {
+        glmmTMB(
+          phen.julian ~ trt + Year + (1 | Plot / plantid),
+          data = df
+        ) %>%
+          # extract model parameters
+          (function(mod) mod$fit$par)
+      }
   ) %>%
+  # mclapply(
+  #   function(df) {
+  #     glmmTMB(
+  #       phen.julian ~ trt + Year + (1 | Plot / plantid),
+  #       data = df
+  #     ) %>%
+  #       # extract model parameters
+  #       (function(mod) mod$fit$par)
+  #   },
+  #   mc.cores = 6
+  # ) %>%
   # Combine into single data frame
   do.call(rbind, .) %>%
   data.frame() %>%
@@ -121,20 +141,35 @@ phen.backbone = expand.grid(
 )
 
 # Do the predictions
-for (i in 1:n.straps) {
-  phen.list.out[[i]] = phen.backbone %>%
-    mutate(
-      pred.phen = predict(
-        d_t, newdata = phen.backbone, allow.new.levels = TRUE, re.form = ~ 0,
-        newparams = phen.boot[i, -(1:2)]
-      ) 
-    ) %>%
-    group_by(trt) %>%
-    summarise(mean.phen = mean(pred.phen)) %>%
-    mutate(boot = i)
-  
-  print(i)
-}
+# for (i in 1:n.straps) {
+#   phen.list.out[[i]] = phen.backbone %>%
+#     mutate(
+#       pred.phen = predict(
+#         d_t, newdata = phen.backbone, allow.new.levels = TRUE, re.form = ~ 0,
+#         newparams = phen.boot[i, -(1:2)]
+#       ) 
+#     ) %>%
+#     group_by(trt) %>%
+#     summarise(mean.phen = mean(pred.phen)) %>%
+#     mutate(boot = i)
+#   
+#   print(i)
+# }
+phen.list.out = map(
+  1:n.straps,
+  \(i) phen.backbone %>%
+      mutate(
+        pred.phen = predict(
+          d_t, newdata = phen.backbone, allow.new.levels = TRUE, re.form = ~ 0,
+          newparams = phen.boot[i, -(1:2)]
+        )
+      ) %>%
+      group_by(trt) %>%
+      summarise(mean.phen = mean(pred.phen)) %>%
+      mutate(boot = i),
+  .progress = TRUE
+)
+
 
 # Combine list into data frame
 phen.boot.trt = do.call(rbind, phen.list.out) %>% mutate(boot = as.numeric(boot))
@@ -154,3 +189,4 @@ phen.boot.trt %>%
     file = '03_construct_kernels/out/phenology_bootstrapped_means.csv'
   )
 
+cat('Done.\n')

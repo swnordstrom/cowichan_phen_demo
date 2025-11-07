@@ -18,7 +18,7 @@ nrow(all.data)
 head(all.data)
 
 # Read in phenology means
-phen.treatment.means = read.csv('03_construct_kernels/phen_treatment_means.csv')
+phen.treatment.means = read.csv('03_construct_kernels/out/phen_treatment_means.csv')
 # Mean that will be used for centering
 phen.ctrl.mean = phen.treatment.means$mean.phen[phen.treatment.means$trt %in% 'control']
 
@@ -29,6 +29,32 @@ all.demo = all.data %>%
 
 nrow(all.demo)
 
+# Get phenology dataset (for testing for growth or survival trade-offs with prior year's phen)
+# this is for merging in with plant-level demo datasets, so relevant measure is by plant (not by umbel)
+# i.e., need to get an aggregated mean floral emergence date per plant-year
+phen.by.plant.for.demo = all.data %>%
+  # Give me plants that are in phenology
+  filter(in.phen) %>%
+  # Extract the bud dates on file
+  separate_wider_delim(phen.julis, names = paste0('uu', 1:12), delim = ';', too_few = 'align_start') %>%
+  pivot_longer(starts_with('uu'), names_to = 'umbel.number', values_to = 'phen.julian') %>%
+  filter(!is.na(phen.julian)) %>%
+  # convert to julian date
+  mutate(phen.julian = as.numeric(gsub('\\s', '', phen.julian))) %>%
+  # give me the mean bud date for each plant
+  group_by(plantid, Year) %>%
+  summarise(phen.mean = mean(phen.julian)) %>%
+  ungroup() %>%
+  # Change year to factor
+  mutate(Year = as.factor(Year))
+
+# Merge the datasets together:
+all.demo = merge(
+  all.demo, phen.by.plant.for.demo,
+  all.x = TRUE, all.y = FALSE
+) %>%
+  mutate(phen.c = phen.mean - phen.ctrl.mean)
+
 # Get survival dataset
 
 # Survival dataset:
@@ -36,17 +62,17 @@ nrow(all.demo)
 # almost surely we will use the size-dependent one for analysis)
 
 demo.surv = merge(
-  # Demo in time step t+1
+  # Demo in time step t+1 (THIS IS THE CENSUS YEAR DATASET)
   x = all.demo %>% 
     mutate(prev.year = Year - 1) %>%
     rename(surv.year = Year) %>%
     select(Plot, plantid, surv.year, prev.year, No.leaves, Leaf.length, surv, trt),
-  # Demo in time step t
+  # Demo in time step t (THIS CONTAINS THE PRIOR YEAR'S DEMO INFO)
   y = all.demo %>%
     # we are *only* interested in plants alive in time step t
     filter(surv) %>%
     # Select relevant columns
-    select(Plot, plantid, Year, No.leaves, Leaf.length, trt),
+    select(Plot, plantid, Year, No.leaves, Leaf.length, phen.c, trt),
   by.x = c('Plot', 'plantid', 'prev.year', 'trt'),
   by.y = c('Plot', 'plantid', 'Year', 'trt'),
   suffixes = c('', '.pre'),
@@ -82,28 +108,10 @@ demo.grow = demo.surv.sizes %>%
 # Finally: subset surv dataset to not include 2023-2024 surv
 demo.surv.sizes = demo.surv.sizes %>% filter(!(surv.year %in% 2024))
 
-# Get phenology dataset
-# this is for merging in with growth dataset, so relevant measure is by plant (not by umbel)
-phen.by.plant.for.growth = all.data %>%
-  # Give me plants that are in phenology
-  filter(in.phen) %>%
-  # Extract the bud dates on file
-  separate_wider_delim(phen.julis, names = paste0('uu', 1:12), delim = ';', too_few = 'align_start') %>%
-  pivot_longer(starts_with('uu'), names_to = 'umbel.number', values_to = 'phen.julian') %>%
-  filter(!is.na(phen.julian)) %>%
-  # convert to julian date
-  mutate(phen.julian = as.numeric(gsub('\\s', '', phen.julian))) %>%
-  # give me the mean bud date for each plant
-  group_by(plantid, Year) %>%
-  summarise(phen.mean = mean(phen.julian)) %>%
-  ungroup() %>%
-  # Change year to factor
-  mutate(Year = as.factor(Year))
-
-demo.grow = merge(
-  demo.grow, phen.by.plant.for.growth, 
-  by.x = c('prev.year', 'plantid'), by.y = c('Year', 'plantid'),
-  all.x = TRUE, all.y = FALSE
-) %>%
-  # Center mean around control
-  mutate(phen.c = phen.mean - phen.ctrl.mean)
+# demo.grow = merge(
+#   demo.grow, phen.by.plant.for.growth, 
+#   by.x = c('prev.year', 'plantid'), by.y = c('Year', 'plantid'),
+#   all.x = TRUE, all.y = FALSE
+# ) %>%
+#   # Center mean around control
+#   mutate(phen.c = phen.mean - phen.ctrl.mean)
