@@ -18,7 +18,7 @@ nrow(all.data)
 head(all.data)
 
 # Read in phenology means
-phen.treatment.means = read.csv('03_construct_kernels/phen_treatment_means.csv')
+phen.treatment.means = read.csv('03_construct_kernels/out/phen_treatment_means.csv')
 # Mean that will be used for centering
 phen.ctrl.mean = phen.treatment.means$mean.phen[phen.treatment.means$trt %in% 'control']
 
