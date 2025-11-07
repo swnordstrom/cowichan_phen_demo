@@ -76,7 +76,7 @@ backbone = expand.grid(
   size = (5:60)/10,
   size.nex = (5:60)/10,
   trt = c('control', 'drought', 'irrigated'),
-  phen.c = -21:21,
+  phen.c = -14:14,
   year = 2021:2024
 )
 
@@ -144,7 +144,7 @@ write.csv(
 )
 
 
-# === Kernel at observed phenolgoy dates (for LTRE) ===
+# === Kernel at observed phenology dates (for LTRE) ===
 
 ltre.backbone = expand.grid(
   size = (5:60)/10,
@@ -227,6 +227,8 @@ ltre.kernel %>%
     row.names = FALSE, na = ''
   )
 
+cat('Exported reproductive subkernel\n')
+
 
 # ==========================================
 # ------------------------------------------
@@ -251,9 +253,8 @@ ltre.kernel %>%
 #   - phen effect on umbel success
 #   - phen effect on seed set
 #     - linear term
-#     - quadratic term
 
-# Overall number of effects: seven to test here
+# Overall number of effects: six to test here
 
 perturb.list = vector(length = 6, mode = 'list')
 
@@ -557,22 +558,21 @@ perturb.list[[5]] = ltre.backbone %>%
     )
   ) %>%
   rename(Year = year) %>%
-  # Perturb phen variable (for only the zinf term)
-  mutate(phen.c = phen.c + delta) %>%
   mutate(
-      # Model predictions for seed set on linear (link) scale for averaging
+    # Model predictions for seed set on linear (link) scale for averaging
     seeds.zinf.linear =  predict(
       s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      newparams = s_st.p_s.u.p$fit$par %>%
+        (function(x) {
+          x[11] <- x[11] + delta
+          return(x)
+        }),
       type = 'zlink'
-    )
-  ) %>%
-  # Reset the phen variable (so conditional is unaffected)
-  mutate(phen.c = phen.c - delta) %>%
-  mutate(
+    ),
     seeds.seed.linear =  predict(
       s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'link'
-    ),
+    )
   ) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
   mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
@@ -598,7 +598,8 @@ perturb.list[[5]] = ltre.backbone %>%
   rename(size.prev = size) %>%
   mutate(
     param = 'phen.succ',
-    orig.parval = phen.c
+    # here: the *phenology slope* for the zero inflation model * phen
+    orig.parval = s_st.p_s.u.p$fit$par[17] * phen.c
   )
 
 
@@ -622,21 +623,21 @@ perturb.list[[6]] = ltre.backbone %>%
   rename(Year = year) %>%
   mutate(
     # Model predictions for seed set on linear (link) scale for averaging
+    # Model predictions for seed set on linear (link) scale for averaging
     seeds.zinf.linear =  predict(
       s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
       type = 'zlink'
-    )
-  ) %>%
-  # Perturb phen variable (for only the cond term)
-  mutate(phen.c = phen.c + delta) %>%
-  mutate(
+    ),
     seeds.seed.linear =  predict(
       s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
+      newparams = s_st.p_s.u.p$fit$par %>%
+        (function(x) {
+          x[1] <- x[1] + delta
+          return(x)
+        }),
       type = 'link'
     )
   ) %>%
-  # Reset the phen variable
-  mutate(phen.c = phen.c - delta) %>%
   # Taking out the size-zinf terms for 2021 - very extrapolatory, affects averages too much
   mutate(seeds.zinf.linear = ifelse(Year %in% 2021, NA, seeds.zinf.linear)) %>%
   group_by(size, size.nex, trt, trt.phen, trt.phen.idx, phen.c, phen.umbels, prob.flower) %>%
@@ -661,7 +662,7 @@ perturb.list[[6]] = ltre.backbone %>%
   rename(size.prev = size) %>%
   mutate(
     param = 'phen.seed',
-    orig.parval = phen.c
+    orig.parval = s_st.p_s.u.p$fit$par[8] * phen.c
   )
 
 perturb.df = do.call(rbind, perturb.list) %>%
@@ -672,3 +673,6 @@ write.csv(
   file = '03_construct_kernels/out/deterministic_repr_coef_perturbation_phen.csv',
   row.names = FALSE, na = ''
 )
+
+cat('Exported reproductive perturbed subkernels\n')
+

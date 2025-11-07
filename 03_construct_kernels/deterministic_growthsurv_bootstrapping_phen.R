@@ -12,6 +12,9 @@ library(dplyr)
 library(tidyr)
 library(parallel)
 library(glmmTMB)
+library(purrr)
+
+cat('Bootstrapping growth+survival subkernels... ')
 
 rm(list = ls())
 
@@ -70,7 +73,7 @@ surv.boots = demo.surv.sizes %>%
   ungroup() %>%
   # Split the dataset by each sample and re-fit the survival model
   split(.$samp) %>%
-  mclapply(
+  map(
     function(df) {
       glmmTMB(
         formula = surv ~ size.prev + (1 | Plot),
@@ -80,8 +83,20 @@ surv.boots = demo.surv.sizes %>%
         # Collect model parameters (for making predictions)
         (function(mod) mod$fit$par)
     },
-    mc.cores = 6
+    .progress = TRUE
   ) %>%
+  # mclapply(
+  #   function(df) {
+  #     glmmTMB(
+  #       formula = surv ~ size.prev + (1 | Plot),
+  #       family = 'binomial',
+  #       data = df
+  #     ) %>%
+  #       # Collect model parameters (for making predictions)
+  #       (function(mod) mod$fit$par)
+  #   },
+  #   mc.cores = 6
+  # ) %>%
   # Combine these together into a single data frame
   do.call(rbind, .) %>%
   data.frame() %>%
@@ -102,7 +117,7 @@ grow.boots = demo.grow %>%
   ungroup() %>%
   # Split the dataset by each sample and re-fit the growth model
   split(.$samp) %>%
-  mclapply(
+  map(
     function(df) {
       glmmTMB(
         size.cur ~ size.prev + size.prev * trt + (1 | prev.year) + (1 | prev.year:trt) + (1 | Plot / plantid),
@@ -111,8 +126,19 @@ grow.boots = demo.grow %>%
         # Collect model parameters (for making predictions)
         (function(mod) mod$fit$par)
     },
-    mc.cores = 6
+    .progress = TRUE
   ) %>%
+  # mclapply(
+  #   function(df) {
+  #     glmmTMB(
+  #       size.cur ~ size.prev + size.prev * trt + (1 | prev.year) + (1 | prev.year:trt) + (1 | Plot / plantid),
+  #       data = df
+  #     ) %>%
+  #       # Collect model parameters (for making predictions)
+  #       (function(mod) mod$fit$par)
+  #   },
+  #   mc.cores = 6
+  # ) %>%
   # Combine these together into a single data frame
   do.call(rbind, .) %>%
   data.frame() %>%
@@ -135,9 +161,8 @@ phen.effect.boots = demo.grow %>%
   sample_n(size = n(), replace = TRUE) %>%
   ungroup() %>%
   # Split the dataset by each sample and re-fit the growth model
-  # Split the dataset by each sample and re-fit the growth model
   split(.$samp) %>%
-  mclapply(
+  map(
     function(df) {
       glmmTMB(
         size.cur ~ size.prev * prev.year + trt * prev.year + phen.c + (1 | Plot / plantid),
@@ -148,8 +173,21 @@ phen.effect.boots = demo.grow %>%
         # 14 is the log of the sqrt of the residual variance
         (function(mod) mod$fit$par[c(7, 14)])
     },
-    mc.cores = 6
+    .progress = TRUE
   ) %>%
+  # mclapply(
+  #   function(df) {
+  #     glmmTMB(
+  #       size.cur ~ size.prev * prev.year + trt * prev.year + phen.c + (1 | Plot / plantid),
+  #       data = df
+  #     ) %>%
+  #       # Collect *only model parameters 7 and 14* 
+  #       # 7 is the phen effect (phen intercept)
+  #       # 14 is the log of the sqrt of the residual variance
+  #       (function(mod) mod$fit$par[c(7, 14)])
+  #   },
+  #   mc.cores = 6
+  # ) %>%
   # Combine these together into a single data frame
   do.call(rbind, .) %>%
   data.frame() %>%
@@ -210,7 +248,7 @@ phen.effect.boots = read.csv('03_construct_kernels/bootstrapped_model_coefs/grow
 bootstrap.full.backbone = expand.grid(
   size.prev = (5:60)/10,
   size.cur = (5:60)/10,
-  phen.c = (-4:4) * 7,
+  phen.c = (-2:2) * 7,
   trt = c('control', 'drought', 'irrigated')
 )
 
@@ -219,9 +257,57 @@ boots.full.list = vector('list', length = n.straps)
 
 # Do kernel estimation on each bootstrapped set of parameters
 
-for (i in 1:n.straps) {
-  
-  boots.full.list[[i]] = bootstrap.full.backbone %>%
+# for (i in 1:n.straps) {
+#   
+#   boots.full.list[[i]] = bootstrap.full.backbone %>%
+#     # Predicted survival
+#     mutate(
+#       pred.surv = predict(
+#         newdata = .,
+#         object = s_s, type = 'response',
+#         # survival prediction made with ith bootstrap parameter set
+#         newparams = surv.boots[i, -(1:2)],
+#         re.form = ~ 0, allow.new.levels = TRUE
+#       )
+#     ) %>%
+#     # Predicted growth
+#     mutate(
+#       # Growth without phenoloyg (applied to non-flowering plants)
+#       pred.grow.mean = predict(
+#         newdata = .,
+#         object = g_st.ty, type = 'response',
+#         # growth prediction made with ith bootstrap parameter set
+#         newparams = grow.boots[i, -(1:2)],
+#         re.form = ~ 0, allow.new.levels = TRUE
+#       )
+#     ) %>%
+#     # Model with phenology
+#     # Need to change name of year column to get annual predictions
+#     mutate(phen.grow.mean = pred.grow.mean + phen.effect.boots$beta[i] * phen.c) %>%
+#     # Predicted distribution of sizes in next time step
+#     # OLD # note: 'betad' parameter is the log of the model's estimated residual variance term
+#     # OLD mutate(p.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))) %>%
+#     # OLD # Combine all together to get overall size distribution in next time step
+#     # OLD # mutate(p.size.cur = pred.surv * p.grow.size) %>%
+#     # Predicted distribution of sizes in next time step
+#     mutate(
+#       pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
+#       pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
+#     ) %>%
+#     # Re-center phenology
+#     # mutate(phen = phen.c + phen.ctrl.mean) %>%
+#     # Remove unnecessary columns
+#     select(-c(phen.grow.mean, pred.grow.mean)) %>%
+#     # Label bootstrap number
+#     mutate(boot = paste0('b', i))
+#   
+#   print(i)
+#   
+# }
+
+boots.full.list = map(
+  1:n.straps,
+  \(i) bootstrap.full.backbone %>%
     # Predicted survival
     mutate(
       pred.surv = predict(
@@ -247,25 +333,18 @@ for (i in 1:n.straps) {
     # Need to change name of year column to get annual predictions
     mutate(phen.grow.mean = pred.grow.mean + phen.effect.boots$beta[i] * phen.c) %>%
     # Predicted distribution of sizes in next time step
-    # OLD # note: 'betad' parameter is the log of the model's estimated residual variance term
-    # OLD mutate(p.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))) %>%
-    # OLD # Combine all together to get overall size distribution in next time step
-    # OLD # mutate(p.size.cur = pred.surv * p.grow.size) %>%
-    # Predicted distribution of sizes in next time step
     mutate(
       pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(phen.effect.boots$betad[i])))
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
     ) %>%
     # Re-center phenology
     # mutate(phen = phen.c + phen.ctrl.mean) %>%
     # Remove unnecessary columns
     select(-c(phen.grow.mean, pred.grow.mean)) %>%
     # Label bootstrap number
-    mutate(boot = paste0('b', i))
-  
-  print(i)
-  
-}
+    mutate(boot = paste0('b', i)),
+  .progress = TRUE
+)
 
 # Combine kernels, convert to wide form, and export
 
@@ -301,9 +380,57 @@ boots.ltre.list = vector('list', length = n.straps)
 
 # Do kernel estimation on each bootstrapped set of parameters
 
-for (i in 1:n.straps) {
-  
-  boots.ltre.list[[i]] = boot.ltre.backbone %>%
+# for (i in 1:n.straps) {
+#   
+#   boots.ltre.list[[i]] = boot.ltre.backbone %>%
+#     # Give us only bootstrap rep (including boot phenology) i
+#     filter(boot %in% i) %>%
+#     # Predicted survival
+#     mutate(
+#       pred.surv = predict(
+#         newdata = .,
+#         object = s_s, type = 'response',
+#         # survival prediction made with ith bootstrap parameter set
+#         newparams = surv.boots[i, -(1:2)],
+#         re.form = ~ 0, allow.new.levels = TRUE
+#       )
+#     ) %>%
+#     # Predicted growth
+#     mutate(
+#       # Growth without phenoloyg (applied to non-flowering plants)
+#       pred.grow.mean = predict(
+#         newdata = .,
+#         object = g_st.ty, type = 'response',
+#         # growth prediction made with ith bootstrap parameter set
+#         newparams = grow.boots[i, -(1:2)],
+#         re.form = ~ 0, allow.new.levels = TRUE
+#       )
+#     ) %>%
+#     # Model with phenology
+#     # Need to change name of year column to get annual predictions
+#     mutate(phen.grow.mean = pred.grow.mean + phen.effect.boots$beta[i] * phen.c) %>%
+#     # Predicted distribution of sizes in next time step
+#     # OLD # note: 'betad' parameter is the log of the model's estimated residual variance term
+#     # OLD mutate(p.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))) %>%
+#     # OLD # Combine all together to get overall size distribution in next time step
+#     # OLD # mutate(p.size.cur = pred.surv * p.grow.size) %>%
+#     # Predicted distribution of sizes in next time step
+#     mutate(
+#       pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
+#       pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
+#     ) %>%
+#     # Re-center phenology
+#     mutate(phen = phen.c + phen.ctrl.mean) %>%
+#     # Remove unnecessary columns
+#     select(-c(phen.c, phen.grow.mean, pred.grow.mean, trt, phen))
+#   
+#   print(i)
+#   
+# }
+
+boots.ltre.list = map(
+  1:n.straps,
+  \(i) boot.ltre.backbone %>%
     # Give us only bootstrap rep (including boot phenology) i
     filter(boot %in% i) %>%
     # Predicted survival
@@ -338,16 +465,14 @@ for (i in 1:n.straps) {
     # Predicted distribution of sizes in next time step
     mutate(
       pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(phen.effect.boots$betad[i])))
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
     ) %>%
     # Re-center phenology
     mutate(phen = phen.c + phen.ctrl.mean) %>%
     # Remove unnecessary columns
-    select(-c(phen.c, phen.grow.mean, pred.grow.mean, trt, phen))
-  
-  print(i)
-  
-}
+    select(-c(phen.c, phen.grow.mean, pred.grow.mean, trt, phen)),
+  .progress = TRUE
+)
 
 # Export
 do.call(rbind, boots.ltre.list) %>%
@@ -357,6 +482,8 @@ do.call(rbind, boots.ltre.list) %>%
     file = '03_construct_kernels/out/deterministic_growsurv_bootstrap_ltre.csv',
     na = '', row.names = FALSE
   )
+
+cat('Done.\n')
 
 
 # ------
@@ -371,6 +498,8 @@ do.call(rbind, boots.ltre.list) %>%
 #   - Slope
 # - Growth-phenology:
 #   - Intercept
+
+cat('Perturbing bootstrapped growth+survival subkernels... ')
 
 # Perturbation amount
 delta = 0.0001
@@ -421,7 +550,7 @@ for (i in 1:n.straps) {
     # Predicted distribution of sizes in next time step
     mutate(
       pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(phen.effect.boots$betad[i])))
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
     ) %>%
     # Add in perturbation information
     mutate(perturb.param = 'grow.int') %>%
@@ -465,7 +594,7 @@ for (i in 1:n.straps) {
     # Predicted distribution of sizes in next time step
     mutate(
       pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(phen.effect.boots$betad[i])))
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
     ) %>%
     # Add in perturbation information
     mutate(perturb.param = 'grow.slope') %>%
@@ -497,7 +626,7 @@ for (i in 1:n.straps) {
       )
     ) %>%
     # Model with phenology
-    mutate(phen.grow.mean = pred.grow.mean + phen.effect.boots$beta[i] * (phen.c + delta)) %>%
+    mutate(phen.grow.mean = pred.grow.mean + delta + (phen.effect.boots$beta[i] * phen.c)) %>%
     # Take the average of the growth kernel across years
     # group_by(size.prev, size.cur, trt, trt.phen, phen.c, pred.surv, pred.grow.mean) %>%
     # summarise(phen.grow.mean = mean(phen.grow.mean)) %>%
@@ -505,7 +634,7 @@ for (i in 1:n.straps) {
     # Predicted distribution of sizes in next time step
     mutate(
       pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(phen.effect.boots$betad[i])))
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
     ) %>%
     # Add in perturbation information
     mutate(perturb.param = 'phen.grow') %>%
@@ -515,12 +644,11 @@ for (i in 1:n.straps) {
   
   gs.pert.boot[[i]] = do.call(rbind, this.boot) %>% mutate(boot = i)
   
-  print(i)
+  # print(i)
   
 }
 
-# Export perturbed boostrap (first converting to wide format to make the file
-# smaller)
+# Export perturbed boostrapped kernels
 
 do.call(rbind, gs.pert.boot) %>%
   # pivot_wider(names_from = boot, values_from = p.size.cur) %>%
@@ -532,6 +660,11 @@ do.call(rbind, gs.pert.boot) %>%
 
 # Export perturbed parameters (for vital rate differences in LTRE)
 
+# Create a wide and centered version of the phenology bootstraps for indexing
+phen.boot.trt.export = phen.boot.trt %>%
+  mutate(mean.phen = mean.phen - phen.ctrl.mean) %>%
+  pivot_wider(names_from = trt, values_from = mean.phen)
+
 cbind(
   boot = 1:n.straps,
   grow.int_control = unlist(grow.boots[,-(1:2)][1]),
@@ -539,9 +672,14 @@ cbind(
   grow.int_irrigated = unlist(grow.boots[,-(1:2)][1] + grow.boots[,-(1:2)][4]),
   grow.slope_control = unlist(grow.boots[,-(1:2)][2]),
   grow.slope_drought = unlist(grow.boots[,-(1:2)][2] + grow.boots[,-(1:2)][5]),
-  grow.slope_irrigated = unlist(grow.boots[,-(1:2)][2] + grow.boots[,-(1:2)][6])
+  grow.slope_irrigated = unlist(grow.boots[,-(1:2)][2] + grow.boots[,-(1:2)][6]),
+  phen.grow_control = unlist(grow.boots[,-(1:2)][1] + phen.effect.boots$beta * phen.boot.trt.export$control),
+  phen.grow_drought = unlist(grow.boots[,-(1:2)][1] + phen.effect.boots$beta * phen.boot.trt.export$drought),
+  phen.grow_irrigated = unlist(grow.boots[,-(1:2)][1] + phen.effect.boots$beta * phen.boot.trt.export$irrigated)
 ) %>%
   write.csv(
     file = '03_construct_kernels/out/growsurv_bootstrapped_perturbed_params.csv',
     row.names = FALSE, na = ''
   )
+
+cat('Done.\n')
