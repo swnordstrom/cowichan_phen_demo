@@ -1,0 +1,6 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+03_construct_kernels/out/old/*
+03_construct_kernels/bootstrapped_model_coefs/*
