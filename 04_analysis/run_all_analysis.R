@@ -19,7 +19,7 @@ options(
 
 ### Scripts to get subkernels and related values
 
-# Run + export phenology treatment estimates
+# Run + export phenology treatment estimates 
 source('03_construct_kernels/phenology_mean_estimates.R')
 rm(list = ls())
 
@@ -40,7 +40,7 @@ source('03_construct_kernels/deterministic_growthsurv_bootstrapping_phen.R')
 rm(list = ls())
 
 # Run reproduction bootstrapping (including perturbations)
-source('03_construct_kernels/deterministic_reproductive_kernel_phen.R')
+source('03_construct_kernels/deterministic_reproductive_boostrap_phen.R')
 rm(list = ls())
 
 ### Scripts to construct kernels and run analysis
