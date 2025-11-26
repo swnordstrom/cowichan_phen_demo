@@ -30,7 +30,7 @@ reprodct.all = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_ph
 # Growth/survival kernel for LTRE only
 growsurv.ltre = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen_ltre.csv')
 # Reproductive kernel for LTRE only
-reprodct.ltre = read.csv('03_construct_kernels/out/determinstic_reprod_kernel_phen_ltre.csv')
+reprodct.ltre = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen_ltre.csv')
 
 # # Get bootstrapped intervals
 # Growth + survival (all phenology)
@@ -296,15 +296,16 @@ lambda.trt.pan = all.lambda %>%
     aes(y = lambda, colour = trt.rate), size = 4, shape = 19
   ) +
   # scale_shape_manual(values = c(NA, 19)) +
-  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
-  scale_fill_manual(values = c('black', 'goldenrod', 'dodgerblue'), '') +
+  scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue'), '') +
+  scale_fill_manual(values = c('black', 'goldenrod1', 'dodgerblue'), '') +
   guides(shape = 'none') +
   labs(x = '', y = expression(lambda)) +
   theme(
     panel.background = element_blank(),
-    legend.position = 'top'
-    # legend.position = 'inside',
-    # legend.position.inside = c(0.8, 0.8)
+    # legend.position = 'top'
+    legend.position = 'inside',
+    legend.position.inside = c(0.5, 0.85),
+    legend.direction = 'horizontal'
   )
 
 lambda.trt.pan
@@ -334,14 +335,17 @@ boot.lambda.diff.interval = boot.lambda.diff %>%
       pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'mean.d.lambda')
   )
 
-ltre.lambda.diff = all.boot.lambda %>%
-  pivot_wider(names_from = trt, values_from = lambda) %>%
-  mutate(d.c = drought - control, i.c = irrigated - control) %>%
-  select(-c(drought, control, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda') %>%
-  filter(!is.na(d.lambda))
+# # (was: all.boot.lambda... but I think that's wrong - should be LTRE?)
+# (also... this doesn't actually get called anywhere in this script)
+# ltre.lambda.diff = all.boot.lambda %>%
+#   pivot_wider(names_from = trt, values_from = lambda) %>%
+#   mutate(d.c = drought - control, i.c = irrigated - control) %>%
+#   select(-c(drought, control, irrigated)) %>%
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda') %>%
+#   filter(!is.na(d.lambda))
 
 lambda.contr.pan = boot.lambda.diff %>%
+  filter(as.numeric(gsub('b', '', boot)) < 101) %>%
   mutate(
     # contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
     contrast = ifelse(
@@ -358,7 +362,7 @@ lambda.contr.pan = boot.lambda.diff %>%
     linetype = 2, colour = 'gray'
   ) +
   geom_point(
-    aes(y = d.lambda),
+    aes(y = d.lambda), 
     position = position_jitter(width = 1), alpha = 0.125
   ) +
   geom_point(
@@ -407,7 +411,7 @@ lambda.contr.pan = boot.lambda.diff %>%
   guides(colour = 'none', fill = 'none') +
   # scale_colour_manual(values = c('red', 'blue')) +
   # scale_fill_manual(values = c('red', 'blue')) +
-  scale_colour_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_continuous(
     breaks = as.Date(c('1970-04-27', '1970-05-04', '1970-05-11', '1970-05-18')),
     labels = format(as.Date(c('1970-04-27', '1970-05-04', '1970-05-11', '1970-05-18')), '%b %d')
@@ -415,7 +419,8 @@ lambda.contr.pan = boot.lambda.diff %>%
   facet_wrap(~ contrast, nrow = 2) +
   theme(
     panel.background = element_blank(),
-    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22')
+    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
+    legend.position = 'none'
   )
 
 # lambda.legend = get_plot_component(
@@ -424,13 +429,13 @@ lambda.contr.pan = boot.lambda.diff %>%
 # )[[4]]
 
 x.ax.lab = ggdraw() + 
-  draw_label('Mean flowering date', vjust = 0) +
+  draw_label('Flowering date', vjust = 0) +
   theme(plot.margin = margin(0, 0, 10, 0))
 
 plot_grid(
   plot_grid(
     lambda.trt.pan, lambda.contr.pan, 
-    labels = c('a)', 'b)'), rel_widths = c(1, 0.5),
+    labels = c('a', 'b'), rel_widths = c(1, 0.5),
     nrow = 1
   ),
   x.ax.lab,

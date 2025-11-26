@@ -13,6 +13,8 @@ library(cowplot)
 
 rm(list = ls())
 
+cat('Building kernels for LTRE and Figure 3... ')
+
 # ------------------------------------------------------                  
 # ------ Read in all data ------------------------------
 # ------------------------------------------------------                  
@@ -26,7 +28,7 @@ rm(list = ls())
 # Growth + survival subkernel
 gs.obsv = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen_ltre.csv')
 # Flowering + reproduction subkernel
-fr.obsv = read.csv('03_construct_kernels/out/determinstic_reprod_kernel_phen_ltre.csv')
+fr.obsv = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen_ltre.csv')
 
 
 # --- Read in perturbed subkernels (on observed data)
@@ -58,11 +60,11 @@ fr.boot.pert = read.csv('03_construct_kernels/out/deterministic_reprod_perturb_b
 # --- Read in parameters used in bootstrapping
 # (these give the differences in beta in the LTRE)
 
-gs.pert.pars = read.csv('03_construct_kernels/out/growsurv_bootstrapped_perturbed_params.csv') # %>%
+gs.pert.pars = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrapped_perturbed_params.csv') # %>%
   # pivot_longer(-boot, names_to = 'rate_trt', values_to = 'parval') %>%
   # separate(rate_trt, into = c('rate', 'trt'), sep = '_')
 
-fr.pert.pars = read.csv('03_construct_kernels/out/reprod_bootstrapped_perturbed_params.csv') 
+fr.pert.pars = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrapped_perturbed_params.csv') 
 # Do this in two steps because this file also contains the phen dates used in the bootstarp
 
 # Dates used in phen bootstrapping
@@ -718,7 +720,10 @@ boot.ltre = merge(midp.boot.sens, boot.param.diffs %>% filter(!grepl('phen', par
 phen.ltre = merge(midp.phen.sens, obsv.phen.diffs) %>%
   mutate(contrib = pardiff * sv)
 
-phen.boot.ltre = merge(midp.phen.boot.sens, boot.param.diffs %>% filter(grepl('phen', param)) %>% rename(contrast.phen = contrast, rate = param)) %>%
+phen.boot.ltre = merge(
+  midp.phen.boot.sens, 
+  boot.param.diffs %>% filter(grepl('phen', param)) %>% rename(contrast.phen = contrast, rate = param)
+) %>%
   mutate(contrib = pardiff * sv)
 
 # ------------------------------------------------------                  
@@ -851,14 +856,14 @@ control.ltre.all = rbind(
     filter(trt.phen %in% 'control') %>%
     select(-trt.phen) %>%
     # marker for type of observation
-    mutate(varb = 'beta', samp = 'obsv', type = 'trt'),
+    mutate(varb = 'psi', samp = 'obsv', type = 'trt'),
   # --- Bootstrapped treatment effects
   boot.trt.ltre %>%
     # give me LTRE values for the control dates and remove unneeded columns
     filter(trt.phen %in% 'control') %>%
     select(-c(trt.phen, samp)) %>%
     # marker for type of observation
-    mutate(varb = 'beta', samp = 'boot', type = 'trt'),
+    mutate(varb = 'psi', samp = 'boot', type = 'trt'),
   # --- Observed phenology effects (within treatment)
   obsv.phen.ltre %>%
     # give me LTRE values where the reference date is the control
@@ -867,7 +872,7 @@ control.ltre.all = rbind(
     select(-trt.rate) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
-    mutate(varb = 'alpha', samp = 'obsv', type = 'phen'),
+    mutate(varb = 'phi', samp = 'obsv', type = 'phen'),
   # --- Bootstrapped phenology effects
   boot.phen.ltre %>%
     # give me LTRE values where the reference date is the control
@@ -876,7 +881,7 @@ control.ltre.all = rbind(
     select(-c(trt.rate, samp)) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
-    mutate(varb = 'alpha', samp = 'boot', type = 'phen')
+    mutate(varb = 'phi', samp = 'boot', type = 'phen')
 ) %>%
   mutate(ltre.varb = paste0(varb, '[', rate, ']'))
 
@@ -924,13 +929,13 @@ pa = control.ltre.summ %>%
   scale_x_discrete(
     labels = scales::label_parse(),
     limits = c(
-      'alpha[grow]', 'alpha[succ]', 'alpha[seed]',
-      'beta[grow]', 'beta[flow]', 'beta[seed]', 'beta[recr]'
+      'phi[grow]', 'phi[succ]', 'phi[seed]',
+      'psi[grow]', 'psi[flow]', 'psi[seed]', 'psi[recr]'
     ),
     guide = guide_axis(n.dodge = 2)
   ) +
   # scale_pattern_manual(values = c('stripe', 'crosshatch')) +
-  scale_fill_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
   facet_wrap(~ contr.pretty) +
   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
   guides(fill = 'none', pattern = 'none') +
@@ -942,7 +947,8 @@ pa = control.ltre.summ %>%
     strip.text = element_text(size = 7)
   )
 
-ggsave('04_analysis/figures/ltre_fig.png', width = 8, height = 5)
+pa
+ggsave('04_analysis/figures/ltre_panel_a.png', width = 8, height = 5)
 
 # distribution of bootstrap estimates - normal?
 control.ltre.all %>% 
@@ -962,7 +968,7 @@ obsv.contribs = rbind(
     filter(trt.phen %in% 'control') %>%
     select(-trt.phen) %>%
     # marker for type of observation
-    mutate(varb = 'beta', type = 'trt'),
+    mutate(varb = 'psi', type = 'trt'),
   # --- Observed phenology effects (within treatment)
   obsv.phen.ltre %>%
     # give me LTRE values where the reference date is the control
@@ -971,7 +977,7 @@ obsv.contribs = rbind(
     select(-trt.rate) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
-    mutate(varb = 'alpha', type = 'phen')
+    mutate(varb = 'phi', type = 'phen')
 )
 
 boot.contribs = rbind(
@@ -981,7 +987,7 @@ boot.contribs = rbind(
     filter(trt.phen %in% 'control') %>%
     select(-trt.phen) %>%
     # marker for type of observation
-    mutate(varb = 'beta', type = 'trt'),
+    mutate(varb = 'psi', type = 'trt'),
   # --- Bootstrapped phenology effects
   boot.phen.ltre %>%
     # give me LTRE values where the reference date is the control
@@ -990,7 +996,7 @@ boot.contribs = rbind(
     select(-trt.rate) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
-    mutate(varb = 'alpha', type = 'phen')
+    mutate(varb = 'phi', type = 'phen')
 ) 
 
 head(boot.contribs)
@@ -1031,7 +1037,7 @@ pb = obsv.by.demo.type %>%
     aes(xend = type, y = lo, yend = hi),
     linewidth = 1.2
   ) +
-  scale_fill_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_discrete(
     limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
     guide = guide_axis(n.dodge = 2)
@@ -1045,6 +1051,10 @@ pb = obsv.by.demo.type %>%
     axis.text = element_text(size = 7),
     strip.text = element_text(size = 7)
   )
+
+
+pb
+ggsave('04_analysis/figures/ltre_panel_b.png', width = 5, height = 3)
 
 obsv.by.demo = obsv.by.demo.type %>%
   group_by(demo, contrast) %>%
@@ -1099,8 +1109,8 @@ pc = obsv.by.type %>%
     aes(xend = type, y = lo, yend = hi),
     linewidth = 1.2
   ) +
-  scale_fill_manual(values = c('goldenrod', 'dodgerblue')) +
-  scale_colour_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
+  scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_discrete(
     limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
     guide = guide_axis(n.dodge = 2)
@@ -1118,8 +1128,8 @@ pc = obsv.by.type %>%
     # axis.text.y = element_blank(),
     # axis.ticks.y = element_blank(),
     axis.text = element_text(size = 7),
-    strip.text = element_text(size = 7),
-    plot.margin = margin(l = 5, r = 0)
+    strip.text = element_text(size = 7)# ,
+    # plot.margin = margin(l = 5, r = 0)
   )
 
 pd = obsv.by.demo %>%
@@ -1133,8 +1143,8 @@ pd = obsv.by.demo %>%
     aes(xend = demo, y = lo, yend = hi),
     linewidth = 1.2
   ) +
-  scale_fill_manual(values = c('goldenrod', 'dodgerblue')) +
-  scale_colour_manual(values = c('goldenrod', 'dodgerblue')) +
+  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
+  scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_discrete(labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)) +
   scale_y_continuous(limits = c(-0.008, 0.0215)) +
   # scale_y_continuous(limits = c(-0.025, 0.0375)) +
@@ -1148,9 +1158,15 @@ pd = obsv.by.demo %>%
     axis.text = element_text(size = 7),
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
-    strip.text = element_text(size = 7),
-    plot.margin = margin(l = 0, r = 5)
+    strip.text = element_text(size = 7)# ,
+    # plot.margin = margin(l = 0, r = 5)
   )
+
+plot_grid(pc, pd, labels = c('i', 'ii'), rel_widths = c(1, 1), align = 'vh')
+
+ggsave('04_analysis/figures/ltre_panel_c.png', width = 5, height = 3)
+
+
 
 # plot limits
 # ggplot_build(pa)$layout$panel_scales_y[[1]]$range$range
@@ -1161,17 +1177,17 @@ pd = obsv.by.demo %>%
 
 ### Plot
 
-# L panel of plot (panel a will be right panel)
-left.panel = plot_grid(
-  pb, plot_grid(pc, pd, labels = c('ci', 'cii'), rel_widths = c(1, 1)), 
+# R panel of plot (panel a will be left panel)
+right.panel = plot_grid(
+  pb, plot_grid(pc, pd, labels = c('ci', 'cii'), rel_widths = c(1, 1), align = 'vh'), 
   nrow = 2, labels = c('b', '')
 )
 
 # left.panel
 
 # Export
-plot_grid(pa, left.panel, ncol = 2, labels = c('a', '')) %>%
-  save_plot(filename = '04_analysis/figures/ltre_fig_fourpanel.png', base_width = 8, base_height = 5)
+plot_grid(pa, right.panel, ncol = 2, labels = c('a', '')) # %>%
+  save_plot(filename = '04_analysis/figures/ltre_fig_allpanels.png', base_width = 8, base_height = 5)
           
 ### Export CSVs
 
