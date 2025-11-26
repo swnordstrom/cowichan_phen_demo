@@ -55,7 +55,7 @@ g_phen = glmmTMB(
 set.seed(11225)
 
 # Number of bootstraps
-n.straps = 100
+n.straps = 1000
 
 # Generate bootstrapped estimates
 
@@ -83,7 +83,7 @@ surv.boots = demo.surv.sizes %>%
         # Collect model parameters (for making predictions)
         (function(mod) mod$fit$par)
     },
-    .progress = TRUE
+    .progress = FALSE
   ) %>%
   # mclapply(
   #   function(df) {
@@ -126,7 +126,7 @@ grow.boots = demo.grow %>%
         # Collect model parameters (for making predictions)
         (function(mod) mod$fit$par)
     },
-    .progress = TRUE
+    .progress = FALSE
   ) %>%
   # mclapply(
   #   function(df) {
@@ -173,7 +173,7 @@ phen.effect.boots = demo.grow %>%
         # 14 is the log of the sqrt of the residual variance
         (function(mod) mod$fit$par[c(7, 14)])
     },
-    .progress = TRUE
+    .progress = FALSE
   ) %>%
   # mclapply(
   #   function(df) {
@@ -223,24 +223,24 @@ mean((colMeans(phen.effect.boots[,-(1:2)]) - g_phen$fit$par[c(7, 14)])^2)
 
 ### Writing to csvs
 
-# write.csv(
-#   surv.boots, na = '', row.names = FALSE,
-#   '03_construct_kernels/bootstrapped_model_coefs/surv_boot_coefs.csv'
-# )
-# 
-# write.csv(
-#   grow.boots, na = '', row.names = FALSE,
-#   '03_construct_kernels/bootstrapped_model_coefs/grow_vegt_boot_coefs.csv'
-# )
-# 
-# write.csv(
-#   phen.effect.boots, na = '', row.names = FALSE,
-#   '03_construct_kernels/bootstrapped_model_coefs/grow_phen_boot_coefs.csv'
-# )
+write.csv(
+  surv.boots, na = '', row.names = FALSE,
+  '03_construct_kernels/bootstrapped_model_coefs/surv_boot_coefs.csv'
+)
 
-surv.boots = read.csv('03_construct_kernels/bootstrapped_model_coefs/surv_boot_coefs.csv')
-grow.boots = read.csv('03_construct_kernels/bootstrapped_model_coefs/grow_vegt_boot_coefs.csv')
-phen.effect.boots = read.csv('03_construct_kernels/bootstrapped_model_coefs/grow_phen_boot_coefs.csv')
+write.csv(
+  grow.boots, na = '', row.names = FALSE,
+  '03_construct_kernels/bootstrapped_model_coefs/grow_vegt_boot_coefs.csv'
+)
+
+write.csv(
+  phen.effect.boots, na = '', row.names = FALSE,
+  '03_construct_kernels/bootstrapped_model_coefs/grow_phen_boot_coefs.csv'
+)
+
+# surv.boots = read.csv('03_construct_kernels/bootstrapped_model_coefs/surv_boot_coefs.csv')
+# grow.boots = read.csv('03_construct_kernels/bootstrapped_model_coefs/grow_vegt_boot_coefs.csv')
+# phen.effect.boots = read.csv('03_construct_kernels/bootstrapped_model_coefs/grow_phen_boot_coefs.csv')
 
 # --- Get bootstrapped kernels *for all phenology* -----------------------------
 
@@ -334,8 +334,8 @@ boots.full.list = map(
     mutate(phen.grow.mean = pred.grow.mean + phen.effect.boots$beta[i] * phen.c) %>%
     # Predicted distribution of sizes in next time step
     mutate(
-      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
+      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = exp(grow.boots$betadisp[i])),
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = exp(grow.boots$betadisp[i]))
     ) %>%
     # Re-center phenology
     # mutate(phen = phen.c + phen.ctrl.mean) %>%
@@ -343,7 +343,7 @@ boots.full.list = map(
     select(-c(phen.grow.mean, pred.grow.mean)) %>%
     # Label bootstrap number
     mutate(boot = paste0('b', i)),
-  .progress = TRUE
+  .progress = FALSE
 )
 
 # Combine kernels, convert to wide form, and export
@@ -464,14 +464,14 @@ boots.ltre.list = map(
     # OLD # mutate(p.size.cur = pred.surv * p.grow.size) %>%
     # Predicted distribution of sizes in next time step
     mutate(
-      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
+      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = exp(grow.boots$betadisp[i])),
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = exp(grow.boots$betadisp[i]))
     ) %>%
     # Re-center phenology
     mutate(phen = phen.c + phen.ctrl.mean) %>%
     # Remove unnecessary columns
     select(-c(phen.c, phen.grow.mean, pred.grow.mean, trt, phen)),
-  .progress = TRUE
+  .progress = FALSE
 )
 
 # Export
@@ -549,8 +549,8 @@ for (i in 1:n.straps) {
     # ungroup() %>%
     # Predicted distribution of sizes in next time step
     mutate(
-      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
+      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = exp(grow.boots$betadisp[i])),
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = exp(grow.boots$betadisp[i]))
     ) %>%
     # Add in perturbation information
     mutate(perturb.param = 'grow.int') %>%
@@ -593,8 +593,8 @@ for (i in 1:n.straps) {
     # ungroup() %>%
     # Predicted distribution of sizes in next time step
     mutate(
-      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
+      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = exp(grow.boots$betadisp[i])),
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = exp(grow.boots$betadisp[i]))
     ) %>%
     # Add in perturbation information
     mutate(perturb.param = 'grow.slope') %>%
@@ -633,8 +633,8 @@ for (i in 1:n.straps) {
     # ungroup() %>%
     # Predicted distribution of sizes in next time step
     mutate(
-      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = sqrt(exp(grow.boots$betad[i]))),
-      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = sqrt(exp(grow.boots$betad[i])))
+      pv.grow.size = 0.1 * dnorm(size.cur, mean = pred.grow.mean, sd = exp(grow.boots$betadisp[i])),
+      pf.grow.size = 0.1 * dnorm(size.cur, mean = phen.grow.mean, sd = exp(grow.boots$betadisp[i]))
     ) %>%
     # Add in perturbation information
     mutate(perturb.param = 'phen.grow') %>%
@@ -678,7 +678,7 @@ cbind(
   phen.grow_irrigated = unlist(grow.boots[,-(1:2)][1] + phen.effect.boots$beta * phen.boot.trt.export$irrigated)
 ) %>%
   write.csv(
-    file = '03_construct_kernels/out/growsurv_bootstrapped_perturbed_params.csv',
+    file = '03_construct_kernels/out/deterministic_growsurv_bootstrapped_perturbed_params.csv',
     row.names = FALSE, na = ''
   )
 

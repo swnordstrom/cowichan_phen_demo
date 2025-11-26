@@ -69,7 +69,7 @@ d_t = glmmTMB(
 )
 
 # Define number of bootstraps
-n.straps = 100
+n.straps = 1000
 
 # Set seed for reproducibility
 set.seed(9908847)

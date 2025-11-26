@@ -74,7 +74,7 @@ r_t.y = glmmTMB(size ~ trt + (1 | Year) + (1 | Plot), data = demo.recr)
 # conditional model terms estimated in on the *same* bootstrapped sample)
 
 # Number of bootstraps
-n.straps = 100
+n.straps = 1000
 
 set.seed(340820)
 
@@ -105,7 +105,7 @@ flow.numb.boot = demo.flow %>%
           # extract model parameters
         (function(mod) mod$fit$par)
       },
-      .progress = TRUE
+      .progress = FALSE
   ) %>%
   # mclapply(
   #   function(df) {
@@ -159,8 +159,8 @@ succ.seed.boot = seed %>%
           # extract model parameters
           (function(mod) mod$fit$par)
       },
-      .progress = TRUE
-  )
+      .progress = FALSE
+  ) %>%
   # mclapply(
   #   function(df) {
   #     glmmTMB(
@@ -202,7 +202,7 @@ recr.boot = demo.recr %>%
         # extract model parameters
         (function(mod) mod$fit$par)
     },
-    .progress = TRUE
+    .progress = FALSE
   ) %>%
   # mclapply(
   #   function(df) {
@@ -249,24 +249,24 @@ recr.boot[,-(1:2)] = recr.boot[-(1:2)] + matrix(
 
 ### Write these to a CSV because they take forever to run
 
-# write.csv(
-#   flow.numb.boot, na = '', row.names = FALSE,
-#   '03_construct_kernels/bootstrapped_model_coefs/flow_numb_boot_coef.csv'
-# )
-# 
-# write.csv(
-#   succ.seed.boot, na = '', row.names = FALSE,
-#   '03_construct_kernels/bootstrapped_model_coefs/seed_succ_boot_coef.csv'
-# )
-# 
-# write.csv(
-#   recr.boot, na = '', row.names = FALSE,
-#   '03_construct_kernels/bootstrapped_model_coefs/recr_boot_coefs.csv'
-# )
+write.csv(
+  flow.numb.boot, na = '', row.names = FALSE,
+  '03_construct_kernels/bootstrapped_model_coefs/flow_numb_boot_coef.csv'
+)
 
-flow.numb.boot = read.csv('03_construct_kernels/bootstrapped_model_coefs/flow_numb_boot_coef.csv')
-succ.seed.boot = read.csv('03_construct_kernels/bootstrapped_model_coefs/seed_succ_boot_coef.csv')
-recr.boot = read.csv('03_construct_kernels/bootstrapped_model_coefs/recr_boot_coefs.csv')
+write.csv(
+  succ.seed.boot, na = '', row.names = FALSE,
+  '03_construct_kernels/bootstrapped_model_coefs/seed_succ_boot_coef.csv'
+)
+
+write.csv(
+  recr.boot, na = '', row.names = FALSE,
+  '03_construct_kernels/bootstrapped_model_coefs/recr_boot_coefs.csv'
+)
+
+# flow.numb.boot = read.csv('03_construct_kernels/bootstrapped_model_coefs/flow_numb_boot_coef.csv')
+# succ.seed.boot = read.csv('03_construct_kernels/bootstrapped_model_coefs/seed_succ_boot_coef.csv')
+# recr.boot = read.csv('03_construct_kernels/bootstrapped_model_coefs/recr_boot_coefs.csv')
 
 
 # --- Full-phenology kernel --------------------------------------------------
@@ -280,7 +280,7 @@ bootstrap.full.backbone = expand.grid(
   size.nex = (5:60)/10,
   trt = c('control', 'drought', 'irrigated'),
   phen.c = (-2:2) * 7,
-  Year = 2021:2024
+  year = 2021:2024
 )
 
 # Designate an output list 
@@ -365,7 +365,7 @@ boots.full.list = map(
   1:n.straps,
   \(i) bootstrap.full.backbone %>%
     # Rename to not put the year random effect in these predictions
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       # Probability of flowering
       # (not used in this script, but used for phen-growth trade-off)
@@ -421,7 +421,7 @@ boots.full.list = map(
       ),
       # Get the number of seeds produced for each size grouping
       # (note: 'betad' parameter here is the log of the residual variance from the model fit)
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -431,7 +431,7 @@ boots.full.list = map(
     mutate(boot = paste0('b', i)) %>%
     # Remove unnecessary columns (save space)
     select(-c(phen.umbels, recr.mean, seeds.per.umbel, seeds.total)),
-  .progress = TRUE
+  .progress = FALSE
 )
 
 # Combine into one data frame and export (pivot to wider so the file takes up
@@ -452,7 +452,7 @@ do.call(rbind, boots.full.list) %>%
 boot.ltre.backbone = expand.grid(
   size = (5:60)/10,
   size.nex = (5:60)/10,
-  Year = 2021:2024,
+  year = 2021:2024,
   boot = 1:n.straps,
   # This column will be used for manipulating the phenology date and the vital
   # rate estimation
@@ -549,7 +549,7 @@ boots.ltre.list = map(
   \(i) boot.ltre.backbone %>%
     filter(boot %in% i) %>%
     # Rename to not put the year random effect in these predictions
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       # Probability of flowering
       # (not used in this script, but used for phen-growth trade-off)
@@ -605,7 +605,7 @@ boots.ltre.list = map(
       ),
       # Get the number of seeds produced for each size grouping
       # (note: 'betad' parameter here is the log of the residual variance from the model fit)
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -615,7 +615,7 @@ boots.ltre.list = map(
     mutate(boot = paste0('b', i)) %>%
     # Remove unnecessary columns (save space)
     select(-c(phen.umbels, recr.mean, seeds.per.umbel, seeds.total, phen.c, trt, trt.phen)),
-  .progress = TRUE
+  .progress = FALSE
 )
 
 # Combine into one data frame and export (pivot wider to save space)
@@ -651,7 +651,7 @@ for (i in 1:n.straps) {
 
   this.boot[[1]] = boot.ltre.backbone %>%
     filter(boot %in% i) %>%
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       prob.flower = 1 - predict(
         u_s_s.ty, newdata = .,
@@ -704,7 +704,7 @@ for (i in 1:n.straps) {
         newparams = recr.boot[i,-(1:2)]
       ),
       # Get the number of seeds produced for each size grouping
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -715,7 +715,7 @@ for (i in 1:n.straps) {
   
   this.boot[[2]] = boot.ltre.backbone %>%
     filter(boot %in% i) %>%
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       prob.flower = 1 - predict(
         u_s_s.ty, newdata = .,
@@ -768,7 +768,7 @@ for (i in 1:n.straps) {
         newparams = recr.boot[i,-(1:2)]
       ),
       # Get the number of seeds produced for each size grouping
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -779,7 +779,7 @@ for (i in 1:n.straps) {
   
   this.boot[[3]] = boot.ltre.backbone %>%
     filter(boot %in% i) %>%
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       prob.flower = 1 - predict(
         u_s_s.ty, newdata = .,
@@ -832,7 +832,7 @@ for (i in 1:n.straps) {
         newparams = recr.boot[i,-(1:2)]
       ),
       # Get the number of seeds produced for each size grouping
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -844,7 +844,7 @@ for (i in 1:n.straps) {
   
   this.boot[[4]] = boot.ltre.backbone %>%
     filter(boot %in% i) %>%
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       prob.flower = 1 - predict(
         u_s_s.ty, newdata = .,
@@ -897,7 +897,7 @@ for (i in 1:n.straps) {
           })
       ),
       # Get the number of seeds produced for each size grouping
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -908,7 +908,7 @@ for (i in 1:n.straps) {
   
   this.boot[[5]] = boot.ltre.backbone %>%
     filter(boot %in% i) %>%
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       prob.flower = 1 - predict(
         u_s_s.ty, newdata = .,
@@ -960,7 +960,7 @@ for (i in 1:n.straps) {
         newparams = recr.boot[i,-(1:2)]
       ),
       # Get the number of seeds produced for each size grouping
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -971,7 +971,7 @@ for (i in 1:n.straps) {
   
   this.boot[[6]] = boot.ltre.backbone %>%
     filter(boot %in% i) %>%
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       prob.flower = 1 - predict(
         u_s_s.ty, newdata = .,
@@ -1023,7 +1023,7 @@ for (i in 1:n.straps) {
         newparams = recr.boot[i,-(1:2)]
       ),
       # Get the number of seeds produced for each size grouping
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -1110,7 +1110,7 @@ for (i in 1:n.straps) {
   phen.boot.list[[i]] = boot.ltre.backbone %>%
     filter(boot %in% i) %>%
     # Rename to not put the year random effect in these predictions
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       # Umbel count
       phen.umbels = predict(
@@ -1158,7 +1158,7 @@ for (i in 1:n.straps) {
       ),
       # Get the number of seeds produced for each size grouping
       # (note: 'betad' parameter here is the log of the residual variance from the model fit)
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -1197,7 +1197,7 @@ for (i in 1:n.straps) {
   
   this.boot[[1]] = boot.ltre.backbone %>%
     filter(boot %in% i) %>%
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       # Umbel count
       phen.umbels = predict(
@@ -1243,7 +1243,7 @@ for (i in 1:n.straps) {
         newparams = recr.boot[i,-(1:2)]
       ),
       # Get the number of seeds produced for each size grouping
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -1254,7 +1254,7 @@ for (i in 1:n.straps) {
   
   this.boot[[2]] = boot.ltre.backbone %>%
     filter(boot %in% i) %>%
-    rename(year = Year) %>%
+    # rename(year = Year) %>%
     mutate(
       # Umbel count
       phen.umbels = predict(
@@ -1300,7 +1300,7 @@ for (i in 1:n.straps) {
         newparams = recr.boot[i,-(1:2)]
       ),
       # Get the number of seeds produced for each size grouping
-      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = sqrt(exp(recr.boot$betad[i])))
+      p.size.cur = 0.1 * seeds.total * dnorm(x = size.nex, mean = recr.mean, sd = exp(recr.boot$betadisp[i]))
     ) %>%
     # Rename column
     rename(size.prev = size) %>%
@@ -1353,7 +1353,7 @@ cbind(
   # (not including the treatment intercept shift in the phen.seed terms... I believe this is right)
 ) %>%
   write.csv(
-    file = '03_construct_kernels/out/reprod_bootstrapped_perturbed_params.csv',
+    file = '03_construct_kernels/out/deterministic_reprod_bootstrapped_perturbed_params.csv',
     row.names = FALSE, na = ''
   )
 

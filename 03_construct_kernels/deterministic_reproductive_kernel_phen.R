@@ -28,10 +28,6 @@ u_s_s.ty = glmmTMB(
   data = demo.flow
 )
 
-# Mean effect of irrigation on flowering:
-# coefficient 0.55808, irrigation reduces odds of flowering by 1 - exp(-.55808) = ~ 43%
-# drought effect on flowering is quite small
-
 # === Seed model ===
 # Response: number of seeds (negative binomial distribution) of an umbel
 # Predictors: treatment (categorical), year (factor) , mean budding date of
@@ -68,7 +64,7 @@ r_t.y = glmmTMB(size ~ trt + (1 | Year) + (1 | Plot), data = demo.recr)
 # yearly estimates (which will then be averaged together)
 
 # Get SD for the new recruit size
-sigma.recr = sigma.recr = summary(r_t.y)$sigma
+sigma.recr = summary(r_t.y)$sigma
 
 # === A kernel for all bud dates === 
 
@@ -99,7 +95,7 @@ all.phen.kernel = backbone %>%
       allow.new.levels = TRUE, re.form = ~ 0, type = 'response'
     )
   ) %>%
-  mutate(Year = year) %>%
+  rename(Year = year) %>%
   mutate(
    seeds.zinf.linear =  predict(
       s_st.p_s.u.p, newdata = ., allow.new.levels = TRUE, re.form = ~ 0,
@@ -223,7 +219,7 @@ head(ltre.kernel)
 ltre.kernel %>%
   select(-c(phen.umbels, recr.mean, seeds.per.umbel, seeds.total, phen.c, trt, trt.phen)) %>%
   write.csv(
-    file = '03_construct_kernels/out/determinstic_reprod_kernel_phen_ltre.csv',
+    file = '03_construct_kernels/out/deterministic_reprod_kernel_phen_ltre.csv',
     row.names = FALSE, na = ''
   )
 
