@@ -506,3 +506,7 @@ expand.grid(phen.c = 0:-7, Year = 2021:2024) %>%
     seeds.per.umbel = (1 / (1 + exp(lin.zinf))) * exp(lin.cond),
   )
 
+
+# Model comparisons: treatment-phenology effects on reproduction
+anova(s_st.p_s.u.p, s_st.tp_s.u.p)
+anova(s_st.p_s.u.p, s_st.p_s.u.tp)
