@@ -1186,7 +1186,7 @@ right.panel = plot_grid(
 # left.panel
 
 # Export
-plot_grid(pa, right.panel, ncol = 2, labels = c('a', '')) # %>%
+plot_grid(pa, right.panel, ncol = 2, labels = c('a', '')) %>%
   save_plot(filename = '04_analysis/figures/ltre_fig_allpanels.png', base_width = 8, base_height = 5)
           
 ### Export CSVs
