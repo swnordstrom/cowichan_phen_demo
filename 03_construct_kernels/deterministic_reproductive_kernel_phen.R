@@ -254,7 +254,7 @@ cat('Exported reproductive subkernel\n')
 
 perturb.list = vector(length = 6, mode = 'list')
 
-delta = 0.0001
+delta = 0.001
 
 sigma.recr = summary(r_t.y)$sigma
 

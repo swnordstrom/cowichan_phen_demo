@@ -20,7 +20,7 @@ library(dplyr)
 library(tidyr)
 library(purrr)
 
-cat('Bootstrapping phenology means... ')
+cat('Bootstrapping phenology means...\n')
 
 # Get rid of this super annoying feature
 options(dplyr.summarise.inform = FALSE)
@@ -69,7 +69,7 @@ d_t = glmmTMB(
 )
 
 # Define number of bootstraps
-n.straps = 1000
+n.straps = 500
 
 # Set seed for reproducibility
 set.seed(9908847)
@@ -167,7 +167,7 @@ phen.list.out = map(
       group_by(trt) %>%
       summarise(mean.phen = mean(pred.phen)) %>%
       mutate(boot = i),
-  .progress = TRUE
+  .progress = FALSE
 )
 
 

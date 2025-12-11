@@ -14,8 +14,6 @@ library(parallel)
 library(glmmTMB)
 library(purrr)
 
-cat('Bootstrapping growth+survival subkernels... ')
-
 rm(list = ls())
 
 source('03_construct_kernels/prepare_demo_data_growsurv.R')
@@ -52,10 +50,12 @@ g_phen = glmmTMB(
 
 # --- Boots ---------------------------------------------------------
 
+cat('Bootstrapping parameters for growth+survival subkernels...\n')
+
 set.seed(11225)
 
 # Number of bootstraps
-n.straps = 1000
+n.straps = 500
 
 # Generate bootstrapped estimates
 
@@ -216,10 +216,10 @@ phen.effect.boots[,-(1:2)] = phen.effect.boots[,-(1:2)] + matrix(
   nrow = n.straps, ncol = length(g_phen$fit$par[c(7, 14)]), byrow = TRUE,
 )
 
-# very small differences, all numerical rounding
-mean((colMeans(surv.boots[,-(1:2)]) - s_s$fit$par)^2)
-mean((colMeans(grow.boots[,-(1:2)]) - g_st.ty$fit$par)^2)
-mean((colMeans(phen.effect.boots[,-(1:2)]) - g_phen$fit$par[c(7, 14)])^2)
+# # very small differences, all numerical rounding
+# mean((colMeans(surv.boots[,-(1:2)]) - s_s$fit$par)^2)
+# mean((colMeans(grow.boots[,-(1:2)]) - g_st.ty$fit$par)^2)
+# mean((colMeans(phen.effect.boots[,-(1:2)]) - g_phen$fit$par[c(7, 14)])^2)
 
 ### Writing to csvs
 
@@ -242,6 +242,8 @@ write.csv(
 # grow.boots = read.csv('03_construct_kernels/bootstrapped_model_coefs/grow_vegt_boot_coefs.csv')
 # phen.effect.boots = read.csv('03_construct_kernels/bootstrapped_model_coefs/grow_phen_boot_coefs.csv')
 
+cat('Done.\n')
+
 # --- Get bootstrapped kernels *for all phenology* -----------------------------
 
 # Data frame for making predictions once every week over growing season
@@ -254,6 +256,8 @@ bootstrap.full.backbone = expand.grid(
 
 # List for storing each bootstrapped sample in
 boots.full.list = vector('list', length = n.straps)
+
+cat('Fitting bootstrapped growth+survival subkernels...\n')
 
 # Do kernel estimation on each bootstrapped set of parameters
 
@@ -485,7 +489,6 @@ do.call(rbind, boots.ltre.list) %>%
 
 cat('Done.\n')
 
-
 # ------
 # ------ Perturbation bootstrapping
 # ------ (repeat above procedure but with perturbations at each vital rate)
@@ -499,10 +502,10 @@ cat('Done.\n')
 # - Growth-phenology:
 #   - Intercept
 
-cat('Perturbing bootstrapped growth+survival subkernels... ')
+cat('Perturbing bootstrapped growth+survival subkernels...\n')
 
 # Perturbation amount
-delta = 0.0001
+delta = 0.001
 
 # Get a list for outputs
 gs.pert.boot = vector('list', n.straps)

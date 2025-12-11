@@ -20,8 +20,6 @@ library(purrr)
 # Get rid of this super annoying feature
 options(dplyr.summarise.inform = FALSE)
 
-cat('Bootstrapping reproductive subkernels... ')
-
 rm(list = ls())
 
 # Run wrapper script to prepare demo data
@@ -73,15 +71,17 @@ r_t.y = glmmTMB(size ~ trt + (1 | Year) + (1 | Plot), data = demo.recr)
 # joint bootstrapped parameter estimates with both the zero-inflation terms and
 # conditional model terms estimated in on the *same* bootstrapped sample)
 
+cat('Bootstrapping parameters for reproductive subkernels...\n')
+
 # Number of bootstraps
-n.straps = 1000
+n.straps = 500
 
 set.seed(340820)
 
 # --- Flowering and umbel production model bootstrap
 
 flow.numb.boot = demo.flow %>%
-  # Do bootstrapped resampling
+  # Do bootstrapped resampling.pr
   # copy the data frame (each row duplicated)
   uncount(weights = n.straps) %>%
   # label these entries with a `samp` (sample) column to delineate different
@@ -242,10 +242,10 @@ recr.boot[,-(1:2)] = recr.boot[-(1:2)] + matrix(
   nrow = n.straps, ncol = length(r_t.y$fit$par), byrow = TRUE
 )
 
-# very small differences, all numerical rounding
-(colMeans(flow.numb.boot[,-(1:2)]) - u_s_s.ty$fit$par)
-(colMeans(succ.seed.boot[,-(1:2)]) - s_st.p_s.u.p$fit$par)
-(colMeans(recr.boot[,-(1:2)]) - r_t.y$fit$par)
+# # very small differences, all numerical rounding
+# (colMeans(flow.numb.boot[,-(1:2)]) - u_s_s.ty$fit$par)
+# (colMeans(succ.seed.boot[,-(1:2)]) - s_st.p_s.u.p$fit$par)
+# (colMeans(recr.boot[,-(1:2)]) - r_t.y$fit$par)
 
 ### Write these to a CSV because they take forever to run
 
@@ -268,6 +268,7 @@ write.csv(
 # succ.seed.boot = read.csv('03_construct_kernels/bootstrapped_model_coefs/seed_succ_boot_coef.csv')
 # recr.boot = read.csv('03_construct_kernels/bootstrapped_model_coefs/recr_boot_coefs.csv')
 
+cat('Done.\n')
 
 # --- Full-phenology kernel --------------------------------------------------
 
@@ -360,6 +361,8 @@ boots.full.list = vector('list', length = n.straps)
 #     print(i)
 #   
 # }
+
+cat('Fitting bootstrapped reproductive subkernels...\n')
 
 boots.full.list = map(
   1:n.straps,
@@ -632,10 +635,10 @@ cat('Done.\n')
 
 # We can use the same kernel backbone for generating these estimates
 
-cat('Perturbing bootstrapped reproductive subkernels... ')
+cat('Perturbing bootstrapped reproductive subkernels...\n')
 
 # Perturbation size
-delta = 0.0001
+delta = 0.001
 
 # Make an output list (list of lists, will rbind after loop)
 fr.pert.boot = vector('list', n.straps)

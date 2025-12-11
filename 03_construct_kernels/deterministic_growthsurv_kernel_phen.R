@@ -202,7 +202,7 @@ cat('Exported growth+survival subkernel\n')
 # growth of a vegetative plant...)
 
 # Perturbation amount
-delta = 0.0001
+delta = 0.001
 
 # Get a list for outputs
 outputs = vector('list', 3)
