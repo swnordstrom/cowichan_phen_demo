@@ -13,7 +13,7 @@ library(cowplot)
 
 rm(list = ls())
 
-cat('Building kernels for LTRE and Figure 3... ')
+cat('Building kernels for LTRE and Figure 3...\n')
 
 # ------------------------------------------------------                  
 # ------ Read in all data ------------------------------
@@ -566,7 +566,7 @@ midp.obsv.sens = merge(
   by = c('contrast', 'trt.phen', 'phen'), suffixes = c('.orig', '.pert')
 ) %>%
   # NOTE the delta value is hard-coded in here
-  mutate(sv = (lambda.pert - lambda.orig) / .0001) %>%
+  mutate(sv = (lambda.pert - lambda.orig) / .001) %>%
   mutate(phen = as.numeric(phen))
 
 midp.boot.sens = merge(
@@ -574,14 +574,14 @@ midp.boot.sens = merge(
   by = c('contrast', 'trt.phen', 'samp'), suffixes = c('.orig', '.pert')
 ) %>%
   # NOTE the delta value is hard-coded here too
-  mutate(sv = (lambda.pert - lambda.orig) / .0001)
+  mutate(sv = (lambda.pert - lambda.orig) / 0.001)
 
 midp.phen.sens = merge(
    midp.phen.lambda, midp.phen.pert.lambda,
    by = c('trt', 'contrast.phen'), suffixes = c('.orig', '.pert')
 ) %>%
   rename(trt.rate = trt) %>%
-  mutate(sv = ((lambda.pert - lambda.orig) / 0.0001))
+  mutate(sv = ((lambda.pert - lambda.orig) / 0.001))
 
   # # Need a -1 in here for when the contrast in phenology is positive or negative
   # mutate(
@@ -593,7 +593,7 @@ midp.phen.boot.sens = merge(
   by = c('trt', 'contrast.phen', 'samp'), suffixes = c('.orig', '.pert')
 ) %>%
   rename(trt.rate = trt) %>%
-  mutate(sv = ((lambda.pert - lambda.orig) / 0.0001))
+  mutate(sv = ((lambda.pert - lambda.orig) / 0.001))
   # Do NOT need a -1 in here because 
   # mutate(
   #   sv = ((lambda.pert - lambda.orig) / 0.0001) * ifelse(grepl('^d', trt) | grepl('^d', contrast.phen), -1, 1)
@@ -744,7 +744,6 @@ obsv.dlambda.compare = merge(
 
 obsv.dlambda.compare %>% mutate(relerr = (csum - d.lambda) / d.lambda)
 # Okay better than before! 3/4 are <1% and the final one is at 2.2%...
-
 
 phen.dlambda.compare = merge(
   phen.ltre %>% 
@@ -947,8 +946,8 @@ pa = control.ltre.summ %>%
     strip.text = element_text(size = 7)
   )
 
-pa
-ggsave('04_analysis/figures/ltre_panel_a.png', width = 8, height = 5)
+# pa
+# ggsave('04_analysis/figures/ltre_panel_a.png', width = 8, height = 5)
 
 # distribution of bootstrap estimates - normal?
 control.ltre.all %>% 
@@ -1053,8 +1052,8 @@ pb = obsv.by.demo.type %>%
   )
 
 
-pb
-ggsave('04_analysis/figures/ltre_panel_b.png', width = 5, height = 3)
+# pb
+# ggsave('04_analysis/figures/ltre_panel_b.png', width = 5, height = 3)
 
 obsv.by.demo = obsv.by.demo.type %>%
   group_by(demo, contrast) %>%
@@ -1162,9 +1161,9 @@ pd = obsv.by.demo %>%
     # plot.margin = margin(l = 0, r = 5)
   )
 
-plot_grid(pc, pd, labels = c('i', 'ii'), rel_widths = c(1, 1), align = 'vh')
+# plot_grid(pc, pd, labels = c('i', 'ii'), rel_widths = c(1, 1), align = 'vh')
 
-ggsave('04_analysis/figures/ltre_panel_c.png', width = 5, height = 3)
+# ggsave('04_analysis/figures/ltre_panel_c.png', width = 5, height = 3)
 
 
 
@@ -1186,8 +1185,8 @@ right.panel = plot_grid(
 # left.panel
 
 # Export
-plot_grid(pa, right.panel, ncol = 2, labels = c('a', '')) %>%
-  save_plot(filename = '04_analysis/figures/ltre_fig_allpanels.png', base_width = 8, base_height = 5)
+plot_grid(pa, right.panel, ncol = 2, labels = c('a', '')) # %>%
+  # save_plot(filename = '04_analysis/figures/ltre_fig_allpanels.png', base_width = 8, base_height = 5)
           
 ### Export CSVs
 
@@ -1230,6 +1229,7 @@ write.csv(
   boot.lambda, row.names = FALSE,
   file = '04_analysis/out/ltre_design_bootstrapped_lambdas.csv'
 )
+
 
 cat('Done.\n')
 

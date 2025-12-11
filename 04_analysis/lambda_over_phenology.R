@@ -14,7 +14,7 @@ library(cowplot)
 
 rm(list = ls())
 
-cat('Building kernels for Figure 2... ')
+cat('Building kernels for Figure 2...\n')
 
 # # Get point estimates for kernels estimated across a phenology range
 
@@ -45,8 +45,8 @@ fr.boot.all = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_
 # Reproductive (for LTRE only)
 fr.boot.ltre = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_ltre.csv')
 
-head(growsurv.all)
-head(reprodct.all)
+# head(growsurv.all)
+# head(reprodct.all)
 
 # Read in LTRE treatment-phenology info
 trt.phen.ltre.key = merge(
@@ -90,7 +90,7 @@ kernel.all.df = merge(
   mutate(phen = phen.c + phen.ctrl.mean) %>%
   select(-c(pred.surv, pv.grow.size, pf.grow.size, prob.flower, phen.c))
 
-head(kernel.all.df)
+# head(kernel.all.df)
 
 # Get lambda estimates for each treatment on each mean buddate
 # note: these will be only point estimates of lambda; uncertainty will come from
@@ -115,7 +115,7 @@ all.lambda = split(kernel.all.df, kernel.all.df[,c("trt", "phen")], sep = '_', d
   # Convert phen column into a date type
   mutate(phen.date = as.Date(as.numeric(phen), format = '%b-%d'))
 
-head(all.lambda)
+# head(all.lambda)
 # good
 
 # Merge together bootstrapped subkernels
@@ -308,7 +308,7 @@ lambda.trt.pan = all.lambda %>%
     legend.direction = 'horizontal'
   )
 
-lambda.trt.pan
+# lambda.trt.pan
 
 # But... plot bootstrapped treatment differences over time
 # (first need to assemble these)
@@ -428,46 +428,54 @@ lambda.contr.pan = boot.lambda.diff %>%
 #   pattern = 'guide-box', return_all = TRUE
 # )[[4]]
 
-x.ax.lab = ggdraw() + 
-  draw_label('Flowering date', vjust = 0) +
-  theme(plot.margin = margin(0, 0, 10, 0))
+# x.ax.lab = ggdraw() + 
+#   draw_label('Flowering date', vjust = 0) +
+#   theme(plot.margin = margin(0, 0, 10, 0))
+# 
+# plot_grid(
+#   plot_grid(
+#     lambda.trt.pan, lambda.contr.pan, 
+#     labels = c('a', 'b'), rel_widths = c(1, 0.5),
+#     nrow = 1
+#   ),
+#   x.ax.lab,
+#   ncol = 1, rel_heights = c(1, 0.01)
+# ) %>%
+#   save_plot(
+#     filename = '04_analysis/figures/draft_figures/lambdas_phen.png',
+#     base_height = 5, base_width = 8
+#   )
 
-plot_grid(
-  plot_grid(
-    lambda.trt.pan, lambda.contr.pan, 
-    labels = c('a', 'b'), rel_widths = c(1, 0.5),
-    nrow = 1
-  ),
-  x.ax.lab,
-  ncol = 1, rel_heights = c(1, 0.01)
-) %>%
-  save_plot(
-    filename = '04_analysis/figures/draft_figures/lambdas_phen.png',
-    base_height = 5, base_width = 8
-  )
+### Export files for re-making the figure locally
 
-### Export files
-
-# LTRE design kernel
+# LTRE design lambdas
 write.csv(
-  kernel.ltre.df,
-  '04_analysis/out/ltre_design_kernels.csv',
+  ltre.lambda,
+  '04_analysis/out/ltre_design_lambda.csv',
   row.names = FALSE
 )
 
 # Lambda estimates over all dates
 write.csv(
-  all.lambda %>% select(-phen),
+  all.lambda,
   '04_analysis/out/all_dates_lambda.csv',
   row.names = FALSE 
 )
 
 # Bootstrapped lambda estimates over all dates
 write.csv(
-  all.boot.lambda %>% select(-phen),
+  all.boot.lambda,
   '04_analysis/out/all_dates_bootstrapped_lambda.csv',
   row.names = FALSE
 )
+
+# Bootstrapped delta lambda values
+write.csv(
+  boot.lambda.diff,
+  '04_analysis/out/bootstrapped_delta_lambda.csv',
+  row.names = FALSE
+)
+
 
 cat('Done.\n')
 
