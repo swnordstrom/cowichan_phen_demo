@@ -867,7 +867,7 @@ control.ltre.all = rbind(
   obsv.phen.ltre %>%
     # give me LTRE values where the reference date is the control
     # and remove unnecessary column
-    filter(trt.rate %in% 'control') %>%
+    filter(!trt.rate %in% 'control') %>%
     select(-trt.rate) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
@@ -876,7 +876,7 @@ control.ltre.all = rbind(
   boot.phen.ltre %>%
     # give me LTRE values where the reference date is the control
     # and remove unnecessary columns
-    filter(trt.rate %in% 'control') %>%
+    filter(!trt.rate %in% 'control') %>%
     select(-c(trt.rate, samp)) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
@@ -1230,6 +1230,47 @@ write.csv(
   file = '04_analysis/out/ltre_design_bootstrapped_lambdas.csv'
 )
 
+# Export the mirrored results
+mirror.ltre.all = rbind(
+  # --- Observed treatment effects
+  obsv.trt.ltre %>%
+    # give me LTRE values for the control dates and remove column
+    filter(!trt.phen %in% 'control') %>%
+    select(-trt.phen) %>%
+    # marker for type of observation
+    mutate(varb = 'psi', samp = 'obsv', type = 'trt'),
+  # --- Bootstrapped treatment effects
+  boot.trt.ltre %>%
+    # give me LTRE values for the control dates and remove unneeded columns
+    filter(!trt.phen %in% 'control') %>%
+    select(-c(trt.phen, samp)) %>%
+    # marker for type of observation
+    mutate(varb = 'psi', samp = 'boot', type = 'trt'),
+  # --- Observed phenology effects (within treatment)
+  obsv.phen.ltre %>%
+    # give me LTRE values where the reference date is the control
+    # and remove unnecessary column
+    filter(trt.rate %in% 'control') %>%
+    select(-trt.rate) %>%
+    # Rename column for column agreement
+    rename(contrast = contrast.phen) %>%
+    mutate(varb = 'phi', samp = 'obsv', type = 'phen'),
+  # --- Bootstrapped phenology effects
+  boot.phen.ltre %>%
+    # give me LTRE values where the reference date is the control
+    # and remove unnecessary columns
+    filter(trt.rate %in% 'control') %>%
+    select(-c(trt.rate, samp)) %>%
+    # Rename column for column agreement
+    rename(contrast = contrast.phen) %>%
+    mutate(varb = 'phi', samp = 'boot', type = 'phen')
+) %>%
+  mutate(ltre.varb = paste0(varb, '[', rate, ']'))
+
+write.csv(
+  mirror.ltre.all, row.names = FALSE,
+  file = '04_analysis/out/mirror_ltre_results.csv'
+)
 
 cat('Done.\n')
 
