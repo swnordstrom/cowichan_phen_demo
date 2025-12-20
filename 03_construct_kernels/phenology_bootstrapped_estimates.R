@@ -52,7 +52,7 @@ phen.by.umbel = all.data %>%
 # However, for our purposes we want to get the mean umbel emergence date by plant
 
 phen.by.plant = phen.by.umbel %>%
-  group_by(Plot, plantid, trt, Year, phen.julian) %>%
+  group_by(Plot, plantid, trt, Year) %>%
   summarise(phen.julian = mean(phen.julian), n.umbel = n()) %>%
   mutate(Year = factor(Year)) %>%
   ungroup()
