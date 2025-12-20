@@ -648,6 +648,7 @@ for (i in 1:n.straps) {
   gs.pert.boot[[i]] = do.call(rbind, this.boot) %>% mutate(boot = i)
   
   # print(i)
+  if (!(i %% (n.straps/10))) cat('x')
   
 }
 

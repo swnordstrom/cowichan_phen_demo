@@ -1038,6 +1038,8 @@ for (i in 1:n.straps) {
   # combine into data frame and add a labeling column
   fr.pert.boot[[i]] = do.call(rbind, this.boot) %>% mutate(boot = i)
   
+  if (!(i %% (n.straps/10))) cat('x')
+  
 }
 
 # Export data frame (wide-pivoted)
@@ -1314,6 +1316,8 @@ for (i in 1:n.straps) {
   
   # combine into data frame and add a labeling column
   phen.boot.pert.list[[i]] = do.call(rbind, this.boot) %>% mutate(boot = paste0('b', i))
+  
+  if (!(i %% (n.straps/10))) cat('x')
   
 }
 
