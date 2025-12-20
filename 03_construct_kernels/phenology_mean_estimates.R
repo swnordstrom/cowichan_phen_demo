@@ -33,7 +33,7 @@ phen.by.umbel = all.data %>%
 # However, for our purposes we want to get the mean umbel emergence date by plant
 
 phen.by.plant = phen.by.umbel %>%
-  group_by(Plot, plantid, trt, Year, phen.julian) %>%
+  group_by(Plot, plantid, trt, Year) %>%
   summarise(phen.julian = mean(phen.julian), n.umbel = n()) %>%
   mutate(Year = factor(Year)) %>%
   ungroup()
@@ -44,51 +44,51 @@ head(phen.by.plant)
 
 ### --- Model selection ---------------------------------------------
 
-# # Model mean (from umbel-level observations) bud dates by each treatment
-# d_t = glmmTMB(
-#   phen.julian ~ trt + Year + (1 | Plot / plantid),
-#   data = phen.by.plant
-# )
-# 
-# # Compare with null model (hypothesis test)
-# d_0 = glmmTMB(
-#   phen.julian ~ Year + (1 | Plot / plantid),
-#   data = phen.by.plant
-# )
-# 
-# # Compare with treatment-year effect
-# d_ty = glmmTMB(
-#   phen.julian ~ trt * Year + (1 | Plot / plantid),
-#   data = phen.by.plant
-# )
-# 
-# AIC(d_0, d_t, d_ty) %>% mutate(daic = round(AIC - min(AIC), 2))
-# 
-# # Excellent - evidence of treatment effect, interaction not supported
-# 
-# # Compare with a random-effects model 
-# d_t_r = glmmTMB(
-#   phen.julian ~ trt + (1 | Year) + (1 | Plot / plantid),
-#   data = phen.by.plant
-# )
-# 
-# AIC(d_t_r, d_t)
-# # Interestingly, random effects model does very poorly.
-# 
-# summary(d_t)
-# # Drought effect: 3.29 day advance
-# # Irrigation effect: 1.31 day delay
-# 
-# phen.by.plant %>%
-#   mutate(dt_resid = residuals(d_t)) %>%
-#   ggplot(aes(x = dt_resid)) +
-#   geom_histogram(aes(group = trt), alpha = 0.25, position = 'identity')
-# # Residuals look fine to me
-# 
-# # And the random effects
-# hist(ranef(d_t)$cond$`plantid:Plot`[,1])
-# # Maybe slightly skewed but otherwise fine.
-# hist(ranef(d_t)$cond$Plot[,1])
+# Model mean (from umbel-level observations) bud dates by each treatment
+d_t = glmmTMB(
+  phen.julian ~ trt + Year + (1 | Plot / plantid),
+  data = phen.by.plant
+)
+
+# Compare with null model (hypothesis test)
+d_0 = glmmTMB(
+  phen.julian ~ Year + (1 | Plot / plantid),
+  data = phen.by.plant
+)
+
+# Compare with treatment-year effect
+d_ty = glmmTMB(
+  phen.julian ~ trt * Year + (1 | Plot / plantid),
+  data = phen.by.plant
+)
+
+AIC(d_0, d_t, d_ty) %>% mutate(daic = round(AIC - min(AIC), 2))
+
+# Excellent - evidence of treatment effect, interaction not supported
+
+# Compare with a random-effects model
+d_t_r = glmmTMB(
+  phen.julian ~ trt + (1 | Year) + (1 | Plot / plantid),
+  data = phen.by.plant
+)
+
+AIC(d_t_r, d_t)
+# Interestingly, random effects model does very poorly.
+
+summary(d_t)
+# Drought effect: 3.29 day advance
+# Irrigation effect: 1.31 day delay
+
+phen.by.plant %>%
+  mutate(dt_resid = residuals(d_t)) %>%
+  ggplot(aes(x = dt_resid)) +
+  geom_histogram(aes(group = trt), alpha = 0.25, position = 'identity')
+# Residuals look fine to me
+
+# And the random effects
+hist(ranef(d_t)$cond$`plantid:Plot`[,1])
+# Maybe slightly skewed but otherwise fine.
+hist(ranef(d_t)$cond$Plot[,1])
 
 ### Run model (selection code above)
 # Full model:
