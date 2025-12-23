@@ -583,22 +583,13 @@ midp.phen.sens = merge(
   rename(trt.rate = trt) %>%
   mutate(sv = ((lambda.pert - lambda.orig) / 0.001))
 
-  # # Need a -1 in here for when the contrast in phenology is positive or negative
-  # mutate(
-  #   sv = ((lambda.pert - lambda.orig) / 0.0001) * ifelse(grepl('^d', trt) | grepl('^d', contrast.phen), -1, 1)
-  # )
-
 midp.phen.boot.sens = merge(
   midp.phen.boot.lambda, midp.phen.boot.pert.lambda,
   by = c('trt', 'contrast.phen', 'samp'), suffixes = c('.orig', '.pert')
 ) %>%
   rename(trt.rate = trt) %>%
   mutate(sv = ((lambda.pert - lambda.orig) / 0.001))
-  # Do NOT need a -1 in here because 
-  # mutate(
-  #   sv = ((lambda.pert - lambda.orig) / 0.0001) * ifelse(grepl('^d', trt) | grepl('^d', contrast.phen), -1, 1)
-  # )
-
+  
 
 # ------------------------------------------------------                  
 # ------ Get parameter differences ---------------------
@@ -731,24 +722,28 @@ phen.boot.ltre = merge(
 # ------------------------------------------------------
 
 obsv.dlambda.compare = merge(
-    obsv.ltre %>% 
-      group_by(contrast, trt.phen) %>% 
-      summarise(csum = sum(contrib)),
-    obsv.lambda %>% 
-      pivot_wider(names_from = trt, values_from = lambda) %>% 
-      mutate(d.c = drought - control, i.c = irrigated - control) %>% 
-      select(-c(control, drought, irrigated)) %>% 
-      pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda', values_drop_na = TRUE) %>%
-      select(-c(phen.date, mean.phen))
+  # Sum of LTRE contributions (treatment effects only)
+  obsv.ltre %>% 
+    group_by(contrast, trt.phen) %>% 
+    summarise(csum = sum(contrib)),
+  # Observed differences in lambda (treatment effects only)
+  obsv.lambda %>% 
+    pivot_wider(names_from = trt, values_from = lambda) %>% 
+    mutate(d.c = drought - control, i.c = irrigated - control) %>% 
+    select(-c(control, drought, irrigated)) %>% 
+    pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda', values_drop_na = TRUE) %>%
+    select(-c(phen.date, mean.phen))
 )
 
 obsv.dlambda.compare %>% mutate(relerr = (csum - d.lambda) / d.lambda)
 # Okay better than before! 3/4 are <1% and the final one is at 2.2%...
 
 phen.dlambda.compare = merge(
+  # Sum of LTRE contributions (phenology effects only)
   phen.ltre %>% 
     group_by(contrast.phen, trt.rate) %>% 
     summarise(csum = sum(contrib)),
+  # Observed differences in lambda (phenology effects only)
   obsv.lambda %>% 
     select(-c(phen, mean.phen, phen.date)) %>%
     rename(trt.rate = trt) %>%
@@ -761,6 +756,7 @@ phen.dlambda.compare = merge(
 phen.dlambda.compare %>% mutate(relerr = (csum - d.lambda) / d.lambda)
 # even more accurate!
 
+# Combine to estimate overall delta lambda
 merge(
   obsv.ltre %>% 
     group_by(contrast, trt.phen) %>% 
@@ -815,413 +811,443 @@ boot.phen.ltre = phen.boot.ltre %>%
   ungroup()
 
 # ------------------------------------------------------                  
-# ------ Crude plots -----------------------------------
+# ------ Make plots ------------------------------------
 # ------------------------------------------------------
 
-# obsv.trt.ltre %>%
-#   # I want to do this on the control buddate
-#   filter(trt.phen %in% 'control') %>%
-#   ggplot(aes(x = rate, y = contrib, fill = contrast)) +
-#   geom_col(position = 'dodge')
+# ##### Panel a (all rate plot)
 # 
-# # Picture here: more growth in treatments, less flowering
-# # differing treatment effects on seed production's influence
-# # differing treatment effects on recruit size (other dir.)
+# # Combining into one data frame
+# # Will have only one set of LTRE results here:
+# # Control flowering date (trt.phen) and non-control treatment rates (trt.rate)
+# # (moving up and to the left like for Figure 1 in MS)
+# # The mirrored results will be compiled and exported separately
 # 
-# boot.trt.ltre %>%
-#   # I want to do this on the control buddate
-#   filter(trt.phen %in% 'control') %>%
-#   ggplot(aes(x = rate, y = contrib, colour = contrast)) +
-#   geom_point(position = position_dodge(width = 0.25), alpha = 0.5)
+# ltre.all = rbind(
+#   # --- Observed treatment effects
+#   obsv.trt.ltre %>%
+#     # give me LTRE values for the control dates and remove column
+#     filter(trt.phen %in% 'control') %>%
+#     select(-trt.phen) %>%
+#     # marker for type of observation
+#     mutate(varb = 'psi', samp = 'obsv', type = 'trt'),
+#   # --- Bootstrapped treatment effects
+#   boot.trt.ltre %>%
+#     # give me LTRE values for the control dates and remove unneeded columns
+#     filter(trt.phen %in% 'control') %>%
+#     select(-c(trt.phen, samp)) %>%
+#     # marker for type of observation
+#     mutate(varb = 'psi', samp = 'boot', type = 'trt'),
+#   # --- Observed phenology effects (within treatment)
+#   obsv.phen.ltre %>%
+#     # give me LTRE values where the reference date is the control
+#     # and remove unnecessary column
+#     filter(!trt.rate %in% 'control') %>%
+#     select(-trt.rate) %>%
+#     # Rename column for column agreement
+#     rename(contrast = contrast.phen) %>%
+#     mutate(varb = 'phi', samp = 'obsv', type = 'phen'),
+#   # --- Bootstrapped phenology effects
+#   boot.phen.ltre %>%
+#     # give me LTRE values where the reference date is the control
+#     # and remove unnecessary columns
+#     filter(!trt.rate %in% 'control') %>%
+#     select(-c(trt.rate, samp)) %>%
+#     # Rename column for column agreement
+#     rename(contrast = contrast.phen) %>%
+#     mutate(varb = 'phi', samp = 'boot', type = 'phen')
+# ) %>%
+#   mutate(ltre.varb = paste0(varb, '[', rate, ']'))
 # 
-# obsv.phen.ltre %>%
-#   # think about which trt we want...
-#   filter(trt.rate %in% 'control') %>%
-#   ggplot(aes(x = rate, y = contrib, fill = contrast.phen)) +
-#   geom_col(position = 'dodge')
+# # LTRE summary (get bootstrapped intervals for each rate contribution)
+# # This will make the all-rate LTRE figure
 # 
-# boot.phen.ltre %>%
-#   # We'll do the drought/irrigated differences for these
-#   filter(trt.rate %in% 'control') %>%
-#   ggplot(aes(x = rate, y = contrib, colour = contrast.phen)) +
-#   geom_point(position = position_dodge(width = 0.25), alpha = 0.5)
-
-# Combining...
-
-control.ltre.all = rbind(
-  # --- Observed treatment effects
-  obsv.trt.ltre %>%
-    # give me LTRE values for the control dates and remove column
-    filter(trt.phen %in% 'control') %>%
-    select(-trt.phen) %>%
-    # marker for type of observation
-    mutate(varb = 'psi', samp = 'obsv', type = 'trt'),
-  # --- Bootstrapped treatment effects
-  boot.trt.ltre %>%
-    # give me LTRE values for the control dates and remove unneeded columns
-    filter(trt.phen %in% 'control') %>%
-    select(-c(trt.phen, samp)) %>%
-    # marker for type of observation
-    mutate(varb = 'psi', samp = 'boot', type = 'trt'),
-  # --- Observed phenology effects (within treatment)
-  obsv.phen.ltre %>%
-    # give me LTRE values where the reference date is the control
-    # and remove unnecessary column
-    filter(!trt.rate %in% 'control') %>%
-    select(-trt.rate) %>%
-    # Rename column for column agreement
-    rename(contrast = contrast.phen) %>%
-    mutate(varb = 'phi', samp = 'obsv', type = 'phen'),
-  # --- Bootstrapped phenology effects
-  boot.phen.ltre %>%
-    # give me LTRE values where the reference date is the control
-    # and remove unnecessary columns
-    filter(!trt.rate %in% 'control') %>%
-    select(-c(trt.rate, samp)) %>%
-    # Rename column for column agreement
-    rename(contrast = contrast.phen) %>%
-    mutate(varb = 'phi', samp = 'boot', type = 'phen')
-) %>%
-  mutate(ltre.varb = paste0(varb, '[', rate, ']'))
-
-# control.ltre.all %>%
-#   mutate(ltre.varb = paste0(varb, '[', rate, ']')) %>%
-#   ggplot(aes(x = ltre.varb, y = contrib)) +
-#   geom_point(aes(shape = samp, alpha = samp, size = samp, colour = type)) +
-#   scale_alpha_manual(values = c(0.5, 1)) +
-#   scale_shape_manual(values = c(1, 19)) +
-#   scale_size_manual(values = c(1, 4)) +
-#   scale_colour_manual(values = c('gray11', 'gray66')) +
-#   scale_x_discrete(labels = scales::label_parse()) +
-#   facet_wrap(~ contrast, nrow = 2)
-
-# ugly.
-
-control.ltre.summ = merge(
-  control.ltre.all %>% filter(samp %in% 'obsv') %>% select(-c(rate, samp)),
-  control.ltre.all %>%
-    filter(samp %in% 'boot') %>%
-    group_by(contrast, ltre.varb, varb) %>%
-    reframe(
-      cilim = quantile(contrib, probs = c(0.025, 0.975)),
-      lohi = c('lo', 'hi')
-    ) %>%
-    pivot_wider(names_from = lohi, values_from = cilim)
-) %>%
-  ungroup()
-
-pa = control.ltre.summ %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
-  ) %>%
-  ggplot(aes(x = ltre.varb)) +
-  # geom_col_pattern(
-  #   aes(y = contrib, fill = contrast, pattern = varb),
-  #   colour = 'gray22',
-  #   pattern_colour = 'gray22', pattern_fill = 'gray22',
-  #   pattern_density = 0.025
-  # ) +
-  geom_col(
-    aes(y = contrib, fill = contrast), colour = 'gray22'
-  ) +
-  geom_segment(aes(xend = ltre.varb, y = lo, yend = hi), linewidth = 1.2) +
-  scale_x_discrete(
-    labels = scales::label_parse(),
-    limits = c(
-      'phi[grow]', 'phi[succ]', 'phi[seed]',
-      'psi[grow]', 'psi[flow]', 'psi[seed]', 'psi[recr]'
-    ),
-    guide = guide_axis(n.dodge = 2)
-  ) +
-  # scale_pattern_manual(values = c('stripe', 'crosshatch')) +
-  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
-  facet_wrap(~ contr.pretty) +
-  labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
-  guides(fill = 'none', pattern = 'none') +
-  theme(
-    panel.background = element_blank(),
-    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
-    axis.text.x = element_text(size = 9),
-    axis.text.y = element_text(size = 7),
-    strip.text = element_text(size = 7)
-  )
-
-# pa
-# ggsave('04_analysis/figures/ltre_panel_a.png', width = 8, height = 5)
-
-# distribution of bootstrap estimates - normal?
-control.ltre.all %>% 
-  filter(samp %in% 'boot') %>% 
-  group_by(ltre.varb, contrast) %>%
-  mutate(std.contrib = (contrib - mean(contrib)) / sd(contrib)) %>%
-  ggplot(aes(x = std.contrib, group = interaction(contrast, ltre.varb), colour = contrast)) + 
-  geom_density(aes(colour = contrast))
-# looks normal to me
-
-# Combinations across treatments
-
-obsv.contribs = rbind(
-  # --- Observed treatment effects
-  obsv.trt.ltre %>%
-    # give me LTRE values for the control dates and remove column
-    filter(trt.phen %in% 'control') %>%
-    select(-trt.phen) %>%
-    # marker for type of observation
-    mutate(varb = 'psi', type = 'trt'),
-  # --- Observed phenology effects (within treatment)
-  obsv.phen.ltre %>%
-    # give me LTRE values where the reference date is the control
-    # and remove unnecessary column
-    filter(trt.rate %in% 'control') %>%
-    select(-trt.rate) %>%
-    # Rename column for column agreement
-    rename(contrast = contrast.phen) %>%
-    mutate(varb = 'phi', type = 'phen')
-)
-
-boot.contribs = rbind(
-  # --- Bootstrapped treatment effects
-  boot.trt.ltre %>%
-    # give me LTRE values for the control dates and remove unneeded columns
-    filter(trt.phen %in% 'control') %>%
-    select(-trt.phen) %>%
-    # marker for type of observation
-    mutate(varb = 'psi', type = 'trt'),
-  # --- Bootstrapped phenology effects
-  boot.phen.ltre %>%
-    # give me LTRE values where the reference date is the control
-    # and remove unnecessary columns
-    filter(trt.rate %in% 'control') %>%
-    select(-trt.rate) %>%
-    # Rename column for column agreement
-    rename(contrast = contrast.phen) %>%
-    mutate(varb = 'phi', type = 'phen')
-) 
-
-head(boot.contribs)
-# Aggregations to do:
-# - Growth vs. reproduction
-# - Treatment vs. phenology (alpha vs. beta)
-
-obsv.by.demo.type = obsv.contribs %>%
-  group_by(contrast, demo = ifelse(rate %in% c('grow', 'recr'), 'grow', 'repr'), type) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.demo.type = boot.contribs %>%
-  group_by(contrast, samp, demo = ifelse(rate %in% c('grow', 'recr'), 'grow', 'repr'), type) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.demo.type.summ = boot.by.demo.type %>%
-  group_by(contrast, demo, type) %>%
-  reframe(
-    cilim = quantile(contrib, probs = c(0.025, 0.975)),
-    lohi = c('lo', 'hi')
-  ) %>%
-  pivot_wider(names_from = lohi, values_from = cilim) %>%
-  mutate(contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'))
-
-head(boot.by.demo.type)
-
-pb = obsv.by.demo.type %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'),
-    demo = ifelse(demo %in% 'grow', 'growth', 'reproduction')
-  ) %>%
-  ggplot(aes(x = type, y = contrib)) +
-  geom_col(aes(fill = contr.pretty), colour = 'gray22') +
-  geom_segment(
-    data = boot.by.demo.type.summ %>% mutate(demo = ifelse(demo %in% 'grow', 'growth', 'reproduction')),
-    aes(xend = type, y = lo, yend = hi),
-    linewidth = 1.2
-  ) +
-  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
-  scale_x_discrete(
-    limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
-    guide = guide_axis(n.dodge = 2)
-  ) +
-  guides(fill = 'none') +
-  labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
-  facet_nested( ~ contr.pretty + demo) +
-  theme(
-    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
-    panel.background = element_blank(),
-    axis.text = element_text(size = 7),
-    strip.text = element_text(size = 7)
-  )
-
-
-# pb
-# ggsave('04_analysis/figures/ltre_panel_b.png', width = 5, height = 3)
-
-obsv.by.demo = obsv.by.demo.type %>%
-  group_by(demo, contrast) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-obsv.by.type = obsv.by.demo.type %>%
-  group_by(type, contrast) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.demo = boot.by.demo.type %>%
-  group_by(demo, contrast, samp) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.type = boot.by.demo.type %>%
-  group_by(type, contrast, samp) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.demo.summ = boot.by.demo %>%
-  group_by(contrast, demo) %>%
-  reframe(
-    cilim = quantile(contrib, probs = c(0.025, 0.975)),
-    lohi = c('lo', 'hi')
-  ) %>%
-  pivot_wider(names_from = lohi, values_from = cilim) %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
-  )
-
-boot.by.type.summ = boot.by.type %>%
-  group_by(contrast, type) %>%
-  reframe(
-    cilim = quantile(contrib, probs = c(0.025, 0.975)),
-    lohi = c('lo', 'hi')
-  ) %>%
-  pivot_wider(names_from = lohi, values_from = cilim) %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
-  )
-
-pc = obsv.by.type %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
-  ) %>%
-  ggplot(aes(x = type, y = contrib)) +
-  geom_col(aes(fill = contrast), colour = 'gray22') +
-  geom_segment(
-    data = boot.by.type.summ,
-    aes(xend = type, y = lo, yend = hi),
-    linewidth = 1.2
-  ) +
-  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
-  scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
-  scale_x_discrete(
-    limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
-    guide = guide_axis(n.dodge = 2)
-  ) +
-  scale_y_continuous(limits = c(-0.008, 0.0215)) +
-  # scale_y_continuous(limits = c(-0.025, 0.0375)) +
-  # labs(x = '', y = '') +
-  labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
-  guides(fill = 'none') +
-  facet_wrap( ~ contr.pretty, nrow = 1) +
-  theme(
-    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
-    panel.background = element_blank(),
-    # axis.text.x = element_text(angle = 45),
-    # axis.text.y = element_blank(),
-    # axis.ticks.y = element_blank(),
-    axis.text = element_text(size = 7),
-    strip.text = element_text(size = 7)# ,
-    # plot.margin = margin(l = 5, r = 0)
-  )
-
-pd = obsv.by.demo %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
-  ) %>%
-  ggplot(aes(x = demo, y = contrib)) +
-  geom_col(aes(fill = contr.pretty), colour = 'gray22') +
-  geom_segment(
-    data = boot.by.demo.summ,
-    aes(xend = demo, y = lo, yend = hi),
-    linewidth = 1.2
-  ) +
-  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
-  scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
-  scale_x_discrete(labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)) +
-  scale_y_continuous(limits = c(-0.008, 0.0215)) +
-  # scale_y_continuous(limits = c(-0.025, 0.0375)) +
-  # labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
-  labs(x = '', y = '') +
-  guides(fill = 'none') +
-  facet_wrap( ~ contr.pretty, nrow = 1) +
-  theme(
-    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
-    panel.background = element_blank(),
-    axis.text = element_text(size = 7),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    strip.text = element_text(size = 7)# ,
-    # plot.margin = margin(l = 0, r = 5)
-  )
-
-# plot_grid(pc, pd, labels = c('i', 'ii'), rel_widths = c(1, 1), align = 'vh')
-
-# ggsave('04_analysis/figures/ltre_panel_c.png', width = 5, height = 3)
-
-
-
-# plot limits
-# ggplot_build(pa)$layout$panel_scales_y[[1]]$range$range
+# ltre.summ = merge(
+#   ltre.all %>% filter(samp %in% 'obsv') %>% select(-c(rate, samp)),
+#   ltre.all %>%
+#     filter(samp %in% 'boot') %>%
+#     group_by(contrast, ltre.varb, varb) %>%
+#     reframe(
+#       cilim = quantile(contrib, probs = c(0.025, 0.975)),
+#       lohi = c('lo', 'hi')
+#     ) %>%
+#     pivot_wider(names_from = lohi, values_from = cilim)
+# ) %>%
+#   ungroup()
+# 
+# pa = ltre.summ %>%
+#   mutate(
+#     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+#   ) %>%
+#   ggplot(aes(x = ltre.varb)) +
+#   geom_col(
+#     aes(y = contrib, fill = contrast), colour = 'gray22'
+#   ) +
+#   geom_segment(aes(xend = ltre.varb, y = lo, yend = hi), linewidth = 1.2) +
+#   scale_x_discrete(
+#     labels = scales::label_parse(),
+#     limits = c(
+#       'phi[grow]', 'phi[succ]', 'phi[seed]',
+#       'psi[grow]', 'psi[flow]', 'psi[seed]', 'psi[recr]'
+#     ),
+#     guide = guide_axis(n.dodge = 2)
+#   ) +
+#   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
+#   facet_wrap(~ contr.pretty) +
+#   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
+#   guides(fill = 'none', pattern = 'none') +
+#   theme(
+#     panel.background = element_blank(),
+#     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
+#     axis.text.x = element_text(size = 9),
+#     axis.text.y = element_text(size = 7),
+#     strip.text = element_text(size = 7)
+#   )
+# 
+# # pa
+# # ggsave('04_analysis/figures/ltre_panel_a.png', width = 8, height = 5)
+# 
+# 
+# ##### Panel b (all vital rate by effect type plot)
+# 
+# # Here: collapsing vital rates into growth vs. reproductive and 
+# 
+# obsv.contribs = rbind(
+#   # --- Observed treatment effects
+#   obsv.trt.ltre %>%
+#     # give me LTRE values for the control dates and remove column
+#     filter(trt.phen %in% 'control') %>%
+#     select(-trt.phen) %>%
+#     # marker for type of observation
+#     mutate(varb = 'psi', type = 'trt'),
+#   # --- Observed phenology effects (within treatment)
+#   obsv.phen.ltre %>%
+#     # give me LTRE values where the reference date is *not* the control
+#     # and remove unnecessary column
+#     filter(!trt.rate %in% 'control') %>%
+#     select(-trt.rate) %>%
+#     # Rename column for column agreement
+#     rename(contrast = contrast.phen) %>%
+#     mutate(varb = 'phi', type = 'phen')
+# )
+# 
+# boot.contribs = rbind(
+#   # --- Bootstrapped treatment effects
+#   boot.trt.ltre %>%
+#     # give me LTRE values for the control dates and remove unneeded columns
+#     filter(trt.phen %in% 'control') %>%
+#     select(-trt.phen) %>%
+#     # marker for type of observation
+#     mutate(varb = 'psi', type = 'trt'),
+#   # --- Bootstrapped phenology effects
+#   boot.phen.ltre %>%
+#     # give me LTRE values where the reference date is *not* the control
+#     # and remove unnecessary columns
+#     filter(!trt.rate %in% 'control') %>%
+#     select(-trt.rate) %>%
+#     # Rename column for column agreement
+#     rename(contrast = contrast.phen) %>%
+#     mutate(varb = 'phi', type = 'phen')
+# ) 
+# 
+# head(boot.contribs)
+# # Aggregations to do:
+# # - Growth vs. reproduction
+# # - Treatment vs. phenology (alpha vs. beta)
+# 
+# obsv.by.demo.type = obsv.contribs %>%
+#   group_by(contrast, demo = ifelse(rate %in% c('grow', 'recr'), 'grow', 'repr'), type) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
+# 
+# boot.by.demo.type = boot.contribs %>%
+#   group_by(contrast, samp, demo = ifelse(rate %in% c('grow', 'recr'), 'grow', 'repr'), type) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
+# 
+# boot.by.demo.type.summ = boot.by.demo.type %>%
+#   group_by(contrast, demo, type) %>%
+#   reframe(
+#     cilim = quantile(contrib, probs = c(0.025, 0.975)),
+#     lohi = c('lo', 'hi')
+#   ) %>%
+#   pivot_wider(names_from = lohi, values_from = cilim) %>%
+#   mutate(contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'))
+# 
+# head(boot.by.demo.type)
+# 
+# pb = obsv.by.demo.type %>%
+#   mutate(
+#     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'),
+#     demo = ifelse(demo %in% 'grow', 'growth', 'reproduction')
+#   ) %>%
+#   ggplot(aes(x = type, y = contrib)) +
+#   geom_col(aes(fill = contr.pretty), colour = 'gray22') +
+#   geom_segment(
+#     data = boot.by.demo.type.summ %>% mutate(demo = ifelse(demo %in% 'grow', 'growth', 'reproduction')),
+#     aes(xend = type, y = lo, yend = hi),
+#     linewidth = 1.2
+#   ) +
+#   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
+#   scale_x_discrete(
+#     limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
+#     guide = guide_axis(n.dodge = 2)
+#   ) +
+#   guides(fill = 'none') +
+#   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
+#   facet_nested( ~ contr.pretty + demo) +
+#   theme(
+#     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
+#     panel.background = element_blank(),
+#     axis.text = element_text(size = 7),
+#     strip.text = element_text(size = 7)
+#   )
+# 
+# 
+# # pb
+# # ggsave('04_analysis/figures/ltre_panel_b.png', width = 5, height = 3)
+# 
+# obsv.by.demo = obsv.by.demo.type %>%
+#   group_by(demo, contrast) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
+# 
+# obsv.by.type = obsv.by.demo.type %>%
+#   group_by(type, contrast) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
+# 
+# boot.by.demo = boot.by.demo.type %>%
+#   group_by(demo, contrast, samp) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
+# 
+# boot.by.type = boot.by.demo.type %>%
+#   group_by(type, contrast, samp) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
+# 
+# boot.by.demo.summ = boot.by.demo %>%
+#   group_by(contrast, demo) %>%
+#   reframe(
+#     cilim = quantile(contrib, probs = c(0.025, 0.975)),
+#     lohi = c('lo', 'hi')
+#   ) %>%
+#   pivot_wider(names_from = lohi, values_from = cilim) %>%
+#   mutate(
+#     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
+#   )
+# 
+# boot.by.type.summ = boot.by.type %>%
+#   group_by(contrast, type) %>%
+#   reframe(
+#     cilim = quantile(contrib, probs = c(0.025, 0.975)),
+#     lohi = c('lo', 'hi')
+#   ) %>%
+#   pivot_wider(names_from = lohi, values_from = cilim) %>%
+#   mutate(
+#     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
+#   )
+# 
+# pc = obsv.by.type %>%
+#   mutate(
+#     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
+#   ) %>%
+#   ggplot(aes(x = type, y = contrib)) +
+#   geom_col(aes(fill = contrast), colour = 'gray22') +
+#   geom_segment(
+#     data = boot.by.type.summ,
+#     aes(xend = type, y = lo, yend = hi),
+#     linewidth = 1.2
+#   ) +
+#   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
+#   scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
+#   scale_x_discrete(
+#     limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
+#     guide = guide_axis(n.dodge = 2)
+#   ) +
+#   scale_y_continuous(limits = c(-0.008, 0.0215)) +
+#   # scale_y_continuous(limits = c(-0.025, 0.0375)) +
+#   # labs(x = '', y = '') +
+#   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
+#   guides(fill = 'none') +
+#   facet_wrap( ~ contr.pretty, nrow = 1) +
+#   theme(
+#     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
+#     panel.background = element_blank(),
+#     # axis.text.x = element_text(angle = 45),
+#     # axis.text.y = element_blank(),
+#     # axis.ticks.y = element_blank(),
+#     axis.text = element_text(size = 7),
+#     strip.text = element_text(size = 7)# ,
+#     # plot.margin = margin(l = 5, r = 0)
+#   )
+# 
+# pd = obsv.by.demo %>%
+#   mutate(
+#     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
+#   ) %>%
+#   ggplot(aes(x = demo, y = contrib)) +
+#   geom_col(aes(fill = contr.pretty), colour = 'gray22') +
+#   geom_segment(
+#     data = boot.by.demo.summ,
+#     aes(xend = demo, y = lo, yend = hi),
+#     linewidth = 1.2
+#   ) +
+#   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
+#   scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
+#   scale_x_discrete(labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)) +
+#   scale_y_continuous(limits = c(-0.008, 0.0215)) +
+#   # scale_y_continuous(limits = c(-0.025, 0.0375)) +
+#   # labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
+#   labs(x = '', y = '') +
+#   guides(fill = 'none') +
+#   facet_wrap( ~ contr.pretty, nrow = 1) +
+#   theme(
+#     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
+#     panel.background = element_blank(),
+#     axis.text = element_text(size = 7),
+#     axis.text.y = element_blank(),
+#     axis.ticks.y = element_blank(),
+#     strip.text = element_text(size = 7)# ,
+#     # plot.margin = margin(l = 0, r = 5)
+#   )
+# 
+# # plot_grid(pc, pd, labels = c('i', 'ii'), rel_widths = c(1, 1), align = 'vh')
+# 
+# # ggsave('04_analysis/figures/ltre_panel_c.png', width = 5, height = 3)
+# 
+# 
+# 
+# # plot limits
+# # ggplot_build(pa)$layout$panel_scales_y[[1]]$range$range
 
 # ------------------------------------------------------                  
 # ------ Export plot and csvs --------------------------
 # ------------------------------------------------------
 
-### Plot
+# ### Plot
+# 
+# # R panel of plot (panel a will be left panel)
+# right.panel = plot_grid(
+#   pb, plot_grid(pc, pd, labels = c('ci', 'cii'), rel_widths = c(1, 1), align = 'vh'), 
+#   nrow = 2, labels = c('b', '')
+# )
+# 
+# # left.panel
+# 
+# # Export
+# plot_grid(pa, right.panel, ncol = 2, labels = c('a', '')) # %>%
+#   # save_plot(filename = '04_analysis/figures/ltre_fig_allpanels.png', base_width = 8, base_height = 5)
+#           
+# ### Export CSVs
+# 
+# # Export observed ltre contributions
+# write.csv(
+#   obsv.contribs, row.names = FALSE,
+#   file = '04_analysis/out/all_ltre_observed_contributions.csv'
+# )
+# 
+# # Export all bootstrapped contributions
+# write.csv(
+#   boot.contribs, row.names = FALSE,
+#   file = '04_analysis/out/all_ltre_bootstrapped_contributions.csv'
+# )
+# 
+# # LTRE summary with finest terms (individual alpha-beta terms)
+# write.csv(
+#   control.ltre.summ, row.names = FALSE,
+#   file = '04_analysis/out/overall_ltre_summary.csv'
+# )
+# 
+# # LTRE summary binned by rate (growth vs. reproduction) and effect type (treatment vs. phen)
+# write.csv(
+#   merge(obsv.by.demo.type, boot.by.demo.type.summ), row.names = FALSE,
+#   file = '04_analysis/out/rate-type-combo_ltre_summary.csv'
+# )
+# 
+# # LTRE summary binned by rate OR effect type (each individual contribution is counted twice here)
+# write.csv(
+#   rbind(
+#     merge(obsv.by.demo, boot.by.demo.summ) %>% rename(group = demo),
+#     merge(obsv.by.type, boot.by.type.summ) %>% rename(group = type)
+#   ),
+#   row.names = FALSE,
+#   file = '04_analysis/out/rate_combo_alone_ltre_summary.csv'
+# )
+# 
+# # Bootstrapped lambda values for LTRE design
+# write.csv(
+#   boot.lambda, row.names = FALSE,
+#   file = '04_analysis/out/ltre_design_bootstrapped_lambdas.csv'
+# )
+# 
+# # Export the mirrored results
+# mirror.ltre.all = rbind(
+#   # --- Observed treatment effects
+#   obsv.trt.ltre %>%
+#     # give me LTRE values for the control dates and remove column
+#     filter(!trt.phen %in% 'control') %>%
+#     select(-trt.phen) %>%
+#     # marker for type of observation
+#     mutate(varb = 'psi', samp = 'obsv', type = 'trt'),
+#   # --- Bootstrapped treatment effects
+#   boot.trt.ltre %>%
+#     # give me LTRE values for the control dates and remove unneeded columns
+#     filter(!trt.phen %in% 'control') %>%
+#     select(-c(trt.phen, samp)) %>%
+#     # marker for type of observation
+#     mutate(varb = 'psi', samp = 'boot', type = 'trt'),
+#   # --- Observed phenology effects (within treatment)
+#   obsv.phen.ltre %>%
+#     # give me LTRE values where the reference date is the control
+#     # and remove unnecessary column
+#     filter(trt.rate %in% 'control') %>%
+#     select(-trt.rate) %>%
+#     # Rename column for column agreement
+#     rename(contrast = contrast.phen) %>%
+#     mutate(varb = 'phi', samp = 'obsv', type = 'phen'),
+#   # --- Bootstrapped phenology effects
+#   boot.phen.ltre %>%
+#     # give me LTRE values where the reference date is the control
+#     # and remove unnecessary columns
+#     filter(trt.rate %in% 'control') %>%
+#     select(-c(trt.rate, samp)) %>%
+#     # Rename column for column agreement
+#     rename(contrast = contrast.phen) %>%
+#     mutate(varb = 'phi', samp = 'boot', type = 'phen')
+# ) %>%
+#   mutate(ltre.varb = paste0(varb, '[', rate, ']'))
+# 
+# write.csv(
+#   mirror.ltre.all, row.names = FALSE,
+#   file = '04_analysis/out/mirror_ltre_results.csv'
+# )
 
-# R panel of plot (panel a will be left panel)
-right.panel = plot_grid(
-  pb, plot_grid(pc, pd, labels = c('ci', 'cii'), rel_widths = c(1, 1), align = 'vh'), 
-  nrow = 2, labels = c('b', '')
+# Four data frames with all LTRE contributions
+write.csv(
+  obsv.trt.ltre, row.names = FALSE, 
+  file = '04_analysis/out/trt_ltre_contribs.csv'
 )
 
-# left.panel
-
-# Export
-plot_grid(pa, right.panel, ncol = 2, labels = c('a', '')) # %>%
-  # save_plot(filename = '04_analysis/figures/ltre_fig_allpanels.png', base_width = 8, base_height = 5)
-          
-### Export CSVs
-
-# Export observed ltre contributions
 write.csv(
-  obsv.contribs, row.names = FALSE,
-  file = '04_analysis/out/all_ltre_observed_contributions.csv'
+  obsv.phen.ltre, row.names = FALSE, 
+  file = '04_analysis/out/phen_ltre_contribs.csv'
 )
 
-# Export all bootstrapped contributions
 write.csv(
-  boot.contribs, row.names = FALSE,
-  file = '04_analysis/out/all_ltre_bootstrapped_contributions.csv'
+  boot.trt.ltre, row.names = FALSE, 
+  file = '04_analysis/out/boot_trt_ltre_contribs.csv'
 )
 
-# LTRE summary with finest terms (individual alpha-beta terms)
 write.csv(
-  control.ltre.summ, row.names = FALSE,
-  file = '04_analysis/out/overall_ltre_summary.csv'
+  boot.phen.ltre, row.names = FALSE, 
+  file = '04_analysis/out/boot_phen_ltre_contribs.csv'
 )
 
-# LTRE summary binned by rate (growth vs. reproduction) and effect type (treatment vs. phen)
+# Observed lambdas
 write.csv(
-  merge(obsv.by.demo.type, boot.by.demo.type.summ), row.names = FALSE,
-  file = '04_analysis/out/rate-type-combo_ltre_summary.csv'
-)
-
-# LTRE summary binned by rate OR effect type (each individual contribution is counted twice here)
-write.csv(
-  rbind(
-    merge(obsv.by.demo, boot.by.demo.summ) %>% rename(group = demo),
-    merge(obsv.by.type, boot.by.type.summ) %>% rename(group = type)
-  ),
-  row.names = FALSE,
-  file = '04_analysis/out/rate_combo_alone_ltre_summary.csv'
+  obsv.lambda %>% select(-c(mean.phen, phen.date)), row.names = FALSE,
+  file = '04_analysis/out/ltre_design_lambda'
 )
 
 # Bootstrapped lambda values for LTRE design
@@ -1230,47 +1256,6 @@ write.csv(
   file = '04_analysis/out/ltre_design_bootstrapped_lambdas.csv'
 )
 
-# Export the mirrored results
-mirror.ltre.all = rbind(
-  # --- Observed treatment effects
-  obsv.trt.ltre %>%
-    # give me LTRE values for the control dates and remove column
-    filter(!trt.phen %in% 'control') %>%
-    select(-trt.phen) %>%
-    # marker for type of observation
-    mutate(varb = 'psi', samp = 'obsv', type = 'trt'),
-  # --- Bootstrapped treatment effects
-  boot.trt.ltre %>%
-    # give me LTRE values for the control dates and remove unneeded columns
-    filter(!trt.phen %in% 'control') %>%
-    select(-c(trt.phen, samp)) %>%
-    # marker for type of observation
-    mutate(varb = 'psi', samp = 'boot', type = 'trt'),
-  # --- Observed phenology effects (within treatment)
-  obsv.phen.ltre %>%
-    # give me LTRE values where the reference date is the control
-    # and remove unnecessary column
-    filter(trt.rate %in% 'control') %>%
-    select(-trt.rate) %>%
-    # Rename column for column agreement
-    rename(contrast = contrast.phen) %>%
-    mutate(varb = 'phi', samp = 'obsv', type = 'phen'),
-  # --- Bootstrapped phenology effects
-  boot.phen.ltre %>%
-    # give me LTRE values where the reference date is the control
-    # and remove unnecessary columns
-    filter(trt.rate %in% 'control') %>%
-    select(-c(trt.rate, samp)) %>%
-    # Rename column for column agreement
-    rename(contrast = contrast.phen) %>%
-    mutate(varb = 'phi', samp = 'boot', type = 'phen')
-) %>%
-  mutate(ltre.varb = paste0(varb, '[', rate, ']'))
-
-write.csv(
-  mirror.ltre.all, row.names = FALSE,
-  file = '04_analysis/out/mirror_ltre_results.csv'
-)
 
 cat('Done.\n')
 
