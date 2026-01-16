@@ -33,28 +33,6 @@ head(demo.flow)
 nrow(demo.flow)
 table(demo.flow$Year)
 
-# Dataset for seed analysis
-demo.seed = demo.flow %>%
-  # Give only the records for which we have a record of seed set
-  filter(Year > 2020, phen.umbels > 0) %>%
-  filter(in.seed) %>%
-  # Change year to factor for model fitting
-  mutate(Year = factor(Year))
-
-# # Need to add in rows for umbels that died before the seed counting
-# # This is necessary for estimating the probability of an umbel producing zero seeds
-# demo.seed = rbind(
-#   demo.seed,
-#   demo.seed %>%
-#     group_by(Year, plantid) %>%
-#     mutate(miss.umbel = ifelse(phen.umbels < n(), 0, phen.umbels - n())) %>%
-#     ungroup() %>%
-#     distinct(Year, plantid, .keep_all = TRUE) %>%
-#     uncount(miss.umbel) %>%
-#     mutate(no.seeds = 0)
-# ) %>%
-#   mutate(Year = factor(Year))
-
 # Dataset for estimating recruit size distribution
 demo.recr = all.data %>%
   arrange(Year) %>%
