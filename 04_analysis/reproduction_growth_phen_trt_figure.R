@@ -108,8 +108,8 @@ pan.a = seed.preds %>%
   scale_y_continuous(breaks = (0:4)/4) +
   scale_shape_manual(values = c(4, 19)) +
   # scale_linewidth_manual(values = c(1, 0.25, 0.25)) +
-  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue')) +
-  labs(x = '', y = 'Probability of umbel surviving') +
+  scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue')) +
+  labs(x = '', y = 'Probability of umbel success') +
   theme(
     # axis.text.x = element_blank(),
     legend.position = 'none',
@@ -131,8 +131,8 @@ pan.b = seed.preds %>%
   geom_line(aes(y = s.cond, group = trt, colour = trt), linewidth = 1.2) +
   scale_y_log10() +
   # scale_linewidth_manual(values = c(1, 0.5, 0.5)) +
-  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue')) +
-  labs(x = '', y = 'Seeds per surviving umbel') +
+  scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue')) +
+  labs(x = '', y = 'Seeds per successful umbel') +
   theme(
     # axis.text.x = element_blank(),
     legend.position = 'none',
@@ -149,7 +149,7 @@ pan.c = seed.preds %>%
       filter(!is.na(no.seeds), phen.c > -40) %>%
       mutate(
         n.seeds = ifelse(no.seeds > 0, no.seeds, 1/2),
-        n.seeds.lab = ifelse(n.seeds < 1, 'failed', 'surviving')
+        n.seeds.lab = ifelse(n.seeds < 1, 'failed', 'successful')
       ),
     aes(y = n.seeds, colour = trt, shape = n.seeds.lab),
     alpha = 0.125, size = 2
@@ -158,33 +158,31 @@ pan.c = seed.preds %>%
   scale_y_log10() +
   # scale_linewidth_manual(values = c(1, 0.5, 0.5)) +
   scale_shape_manual(values = c(4, 19)) +
-  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), 'treatment') +
+  scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue'), 'treatment') +
   labs(x = '', y = 'Seeds per umbel') +
   theme(
     legend.position = 'none',
     panel.background = element_blank()
   )
 
-leg.z = get_plot_component(
+leg.z = get_legend(
   pan.c +
     guides(shape = guide_legend('umbel fate'), colour = guide_legend('')) +
-    theme(legend.position = 'top'),
-  'guide-box',
-  return_all = TRUE
-)[[4]]
+    theme(legend.position = 'top')
+)
 
-# okay - something in cowplot must have changed...
-# look for the non-empty element of get_plot_component()
-
-plot_grid(
-  NULL, leg.z, NULL, pan.a, pan.b, pan.c, byrow = TRUE,
-  labels = c('', '', '', 'a', 'b', 'c'),
-  nrow = 2, rel_heights = c(0.1, 1)
-) %>%
-  save_plot(
-    filename = '04_analysis/figures/draft_figures/phen_reproduction.png',
-    base_width = 8, base_height = 5
-  )
+# # okay - something in cowplot must have changed...
+# # look for the non-empty element of get_plot_component()
+# 
+# plot_grid(
+#   NULL, leg.z, NULL, pan.a, pan.b, pan.c, byrow = TRUE,
+#   labels = c('', '', '', 'a', 'b', 'c'),
+#   nrow = 2, rel_heights = c(0.1, 1)
+# ) %>%
+#   save_plot(
+#     filename = '04_analysis/figures/draft_figures/phen_reproduction.png',
+#     base_width = 8, base_height = 5
+#   )
 
 
 # --------------------------------------
@@ -217,7 +215,7 @@ pan.d = demo.grow %>%
     aes(group = trt),
     linewidth = 1.2
   ) +
-  scale_colour_manual(values = c('black', 'goldenrod', 'dodgerblue'), 'treatment') +
+  scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue'), 'treatment') +
   labs(x = '', y = 'Size, year t+1') +
   theme(
     legend.position = 'none',
@@ -264,21 +262,17 @@ pan.e = demo.grow %>%
     panel.background = element_blank()
   )
 
-leg.trt = get_plot_component(
+leg.trt = get_legend(
   pan.c +
     guides(shape = guide_legend('umbel fate'), colour = guide_legend('treatment')) +
-    theme(legend.position = 'top'),
-  'guide-box',
-  return_all = TRUE
-)[[4]]
+    theme(legend.position = 'top')
+)
 
-leg.phen = get_plot_component(
+leg.phen = get_legend(
   pan.e + 
-    guides(colour = guide_legend('Plant mean bud date, year t')) +
-    theme(legend.position = 'top'),
-  'guide-box',
-  return_all = TRUE
-)[[4]]
+    guides(colour = guide_legend('Flowering date, year t')) +
+    theme(legend.position = 'top')
+)
 
 # --------------------------------------
 # ---------- Combining panels ----------
@@ -290,7 +284,7 @@ plot_grid(
     pan.a, pan.b, pan.c, nrow = 1,
     labels = c('a', 'b', 'c'), label_x = -0.005
   ), 
-  grid::textGrob("Plant mean bud date",  vjust = 0),
+  grid::textGrob("Flowering date",  vjust = 0),
   plot_grid(
     pan.d, pan.e, align = 'v',
     labels = c('d', 'e'), label_x = -0.005
