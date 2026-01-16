@@ -137,29 +137,31 @@ trt.annual.buddates = expand.grid(trt = c('control', 'drought', 'irrigated'), Ye
 # Export
 write.csv(trt.annual.buddates, row.names = FALSE, '03_construct_kernels/out/phen_annual_treatment_means.csv')
 
-### Summary statistics
+### --- Summary statistics -------------------------------------------
 
 # Confidence intervals on effect sizes
 round(summary(d_t)$coefficients$cond['trtdrought',1] + c(-1, 0,  1) * 1.96 * summary(d_t)$coefficients$cond['trtdrought',2], 2)
 round(summary(d_t)$coefficients$cond['trtirrigated',1] + c(-1, 0,  1) * 1.96 * summary(d_t)$coefficients$cond['trtirrigated',2], 2)
 
 # Variance explained by treatment (check indexing every time re-run!)
-vars_t = exp(c(1, 2, 2) * d_t$fit$par[7:9])
-# vars_0 = exp(c(1, 2, 2) * d_0$fit$par[5:7])
+vars_t = exp(2 * d_t$fit$par[7:9])
+vars_0 = exp(2 * d_0$fit$par[5:7])
 
 # Pseudo-R^2
 # (one source for this, https://web.pdx.edu/~newsomj/mlrclass/ho_r2.pdf)
 # (see: Snijders and Bosker 1998)
 # 1 - (sum(vars_t) / sum(vars_0))
-# (is very small)
+# 6.3%
 
 # As expected, minimal change to individual- and among-plant plots
 # Reduction in spatial (plot-level) variance:
 # 1 - (vars_t[3] / vars_0[3])
+# 67%
 
 # Looking at year effects
 (as.Date(d_t$fit$par[1] + c(0, d_t$fit$par[4:6]))) %>% range()
 
-# Likelihood ratio test to see if treatment effects vary by year:
-# anova(d_t, d_ty)
-# p-value 0.2535
+### Likelihood ratio tests on effect sizes
+# anova(d_0, d_t) # p = 0.0036
+# anova(d_t, d_ty) # p = 0.04338
+# (pseudo-R^2 is 0.69)
