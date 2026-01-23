@@ -205,30 +205,88 @@ plot_grid(
 
 rm(list = ls())
 
-
 # ======================================================= #
 # LTRE figure
 # ======================================================= #
 
-control.ltre.summ = read.csv('04_analysis/out/overall_ltre_summary.csv')
+# control.ltre.summ = read.csv('04_analysis/out/overall_ltre_summary.csv')
+# 
+# obsv.ltre = read.csv('04_analysis/out/rate-type-combo_ltre_summary.csv')
+# 
+# obsv.by.demo.type = read.csv('04_analysis/out/rate_combo_alone_ltre_summary.csv')
+# obsv.by.demo = obsv.by.demo.type %>% filter(group %in% c('grow', 'repr')) # %>% rename(demo = group)
+# obsv.by.type = obsv.by.demo.type %>% filter(group %in% c('phen', 'trt')) # %>% rename(type = group)
 
-obsv.ltre = read.csv('04_analysis/out/rate-type-combo_ltre_summary.csv')
+### Reading in plot components:
 
-obsv.by.demo.type = read.csv('04_analysis/out/rate_combo_alone_ltre_summary.csv')
-obsv.by.demo = obsv.by.demo.type %>% filter(group %in% c('grow', 'repr')) # %>% rename(demo = group)
-obsv.by.type = obsv.by.demo.type %>% filter(group %in% c('phen', 'trt')) # %>% rename(type = group)
+ltre.trt.contrib  = read.csv('04_analysis/out/trt_ltre_contribs.csv')
+ltre.phen.contrib = read.csv('04_analysis/out/phen_ltre_contribs.csv')
 
-pa = control.ltre.summ %>%
+ltre.boot.trt.contrib  = read.csv('04_analysis/out/boot_trt_ltre_contribs.csv')
+ltre.boot.phen.contrib = read.csv('04_analysis/out/boot_phen_ltre_contribs.csv')
+
+### Combine into a single data frame:
+
+# Mean contributions
+ltre.contribs = rbind(
+  # Treatment contributions:
+  ltre.trt.contrib %>%
+    # Main results: date used is flowering date of control
+    # Mirrored results: date used is the non-control treatments
+    mutate(result.set = ifelse(trt.phen %in% 'control', 'main', 'mirrored')) %>%
+    # Label these as the treatment effects
+    mutate(effect = 'trt') %>%
+    select(result.set, effect, contrast, rate, contrib),
+  # Phenology contributions:
+  ltre.phen.contrib %>%
+    # Main results: treatment is non-control treatments
+    # Mirrored results: uses control
+    mutate(result.set = ifelse(trt.rate %in% 'control', 'mirrored', 'main')) %>%
+    # Label these as the phenology effects
+    mutate(effect = 'phen') %>%
+    select(result.set, effect, contrast = contrast.phen, rate, contrib)
+)
+
+# Bootstrapped contributions
+boot.contribs = rbind(
+  # Treatment contributions:
+  ltre.boot.trt.contrib %>%
+    # Main results: date used is flowering date of control
+    # Mirrored results: date used is the non-control treatments
+    mutate(result.set = ifelse(trt.phen %in% 'control', 'main', 'mirrored')) %>%
+    # Label these as the treatment effects
+    mutate(effect = 'trt') %>%
+    select(result.set, effect, contrast, rate, samp, contrib),
+  # Phenology contributions:
+  ltre.boot.phen.contrib %>%
+    # Main results: treatment is non-control treatments
+    # Mirrored results: uses control
+    mutate(result.set = ifelse(trt.rate %in% 'control', 'mirrored', 'main')) %>%
+    # Label these as the phenology effects
+    mutate(effect = 'phen') %>%
+    select(result.set, effect, contrast = contrast.phen, rate, samp, contrib)
+)
+
+
+### Panel a: all vital rates 
+
+# Merge together the bootstrapped confidence intervals with the estimates:
+ltre.all.rates.summary = merge(
+  ltre.contribs,
+  boot.contribs %>% 
+    group_by(result.set, effect, contrast, rate) %>% 
+    reframe(qq = quantile(contrib, probs = c(0.025, 0.975)), lohi = c('lo', 'hi')) %>% 
+    pivot_wider(names_from = lohi, values_from = qq)
+)  %>%
+  # Add some features to make the plot prettier
   mutate(
+    ltre.varb = paste0(ifelse(effect %in% 'phen', 'phi', 'psi'), '[', rate, ']'),
     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
-  ) %>%
+  )
+
+pa = ltre.all.rates.summary %>%
+  filter(result.set %in% 'main') %>%
   ggplot(aes(x = ltre.varb)) +
-  # geom_col_pattern(
-  #   aes(y = contrib, fill = contrast, pattern = varb),
-  #   colour = 'gray22',
-  #   pattern_colour = 'gray22', pattern_fill = 'gray22',
-  #   pattern_density = 0.025
-  # ) +
   geom_col(
     aes(y = contrib, fill = contrast), colour = 'gray22'
   ) +
@@ -249,33 +307,58 @@ pa = control.ltre.summ %>%
   theme(
     panel.background = element_blank(),
     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
-    axis.text.x = element_text(size = 9),
-    axis.text.y = element_text(size = 7),
-    strip.text = element_text(size = 7)
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 10),
+    strip.text = element_text(size = 10)
   )
 
 pa
 ggsave('04_analysis/figures/ltre_panel_a.png', width = 8, height = 5)
 
 
-pb = obsv.ltre %>%
+### Panel b: 
+
+# Aggregate vital rates into groups:
+ltre.contribs.growth.repr = ltre.contribs %>%
+  group_by(result.set, effect, contrast, demo = ifelse(rate %in% c('grow', 'recr'), 'grow', 'repr')) %>%
+  summarise(contrib = sum(contrib)) %>%
+  ungroup()
+
+boot.contribs.growth.repr = boot.contribs %>%
+  group_by(result.set, effect, contrast, demo = ifelse(rate %in% c('grow', 'recr'), 'grow', 'repr'), samp) %>%
+  summarise(contrib = sum(contrib)) %>%
+  ungroup()
+
+# Combine into single data frame with confidence interavls:
+ltre.growth.repr.summary = merge(
+  ltre.contribs.growth.repr,
+  boot.contribs.growth.repr %>% 
+    group_by(result.set, effect, contrast, demo) %>% 
+    reframe(qq = quantile(contrib, probs = c(0.025, 0.975)), lohi = c('lo', 'hi')) %>% 
+    pivot_wider(names_from = lohi, values_from = qq)
+)  %>%
+  # Add some features to make the plot prettier
   mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'),
-    demo = ifelse(demo %in% 'grow', 'growth', 'reproduction')
-  ) %>%
-  ggplot(aes(x = type, y = contrib)) +
+    effect.pretty = ifelse(effect %in% 'phen', 'phenology', 'treatment'),
+    # demo.pretty = ifelse(demo %in% 'grow', 'growth', 'reproduction'),
+    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+  )
+
+pb = ltre.growth.repr.summary %>%
+  filter(result.set %in% 'main') %>%
+  ggplot(aes(x = demo, y = contrib)) +
   geom_col(aes(fill = contr.pretty), colour = 'gray22') +
   geom_segment(
-    aes(xend = type, y = lo, yend = hi),
+    aes(xend = demo, y = lo, yend = hi),
     linewidth = 1.2
   ) +
   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_discrete(
-    limits = c('phen', 'trt'), labels = c('phenology', 'treatment'), guide = guide_axis(n.dodge = 2)
+    limits = c('grow', 'repr'), labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)
   ) +
   guides(fill = 'none') +
   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
-  facet_nested( ~ contr.pretty + demo) +
+  facet_nested( ~ contr.pretty + effect.pretty) +
   theme(
     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
     panel.background = element_blank(),
@@ -287,12 +370,67 @@ pb = obsv.ltre %>%
 pb
 ggsave('04_analysis/figures/ltre_panel_b.png', width = 5, height = 3)
 
-pc = obsv.by.type %>%
-  rename(type = group) %>%
-  ggplot(aes(x = type, y = contrib)) +
+
+### Panel c: 
+
+# Summed into cumulative effects of effect type (i.e., aggregating over demographic pathways)
+# (used for left panel)
+
+ltre.contribs.by.effect = ltre.contribs.growth.repr %>%
+  group_by(result.set, effect, contrast) %>%
+  summarise(contrib = sum(contrib))
+
+boot.contribs.by.effect = boot.contribs.growth.repr %>%
+  group_by(result.set, effect, contrast, samp) %>%
+  summarise(contrib = sum(contrib))
+
+# Single data frame with confidence intervals:
+ltre.by.effect.summary = merge(
+  ltre.contribs.by.effect,
+  boot.contribs.by.effect %>% 
+    group_by(result.set, effect, contrast) %>% 
+    reframe(qq = quantile(contrib, probs = c(0.025, 0.975)), lohi = c('lo', 'hi')) %>% 
+    pivot_wider(names_from = lohi, values_from = qq)
+)  %>%
+  # Add some features to make the plot prettier
+  mutate(
+    effect.pretty = ifelse(effect %in% 'phen', 'phenology', 'treatment'),
+    # demo.pretty = ifelse(demo %in% 'grow', 'growth', 'reproduction'),
+    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+  )
+
+# Summed into cumulative effects of pathway (i.e., aggregating over drivers)
+
+ltre.contribs.by.demo = ltre.contribs.growth.repr %>%
+  group_by(result.set, demo, contrast) %>%
+  summarise(contrib = sum(contrib))
+
+boot.contribs.by.demo = boot.contribs.growth.repr %>%
+  group_by(result.set, demo, contrast, samp) %>%
+  summarise(contrib = sum(contrib))
+
+# Single data frame with confidence intervals:
+ltre.by.demo.summary = merge(
+  ltre.contribs.by.demo,
+  boot.contribs.by.demo %>% 
+    group_by(result.set, demo, contrast) %>% 
+    reframe(qq = quantile(contrib, probs = c(0.025, 0.975)), lohi = c('lo', 'hi')) %>% 
+    pivot_wider(names_from = lohi, values_from = qq)
+)  %>%
+  # Add some features to make the plot prettier
+  mutate(
+    # effect.pretty = ifelse(effect %in% 'phen', 'phenology', 'treatment'),
+    # demo.pretty = ifelse(demo %in% 'grow', 'growth', 'reproduction'),
+    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+  )
+
+
+pc = ltre.by.effect.summary %>%
+  filter(result.set %in% 'main') %>%
+  ggplot(aes(x = effect, y = contrib)) +
   geom_col(aes(fill = contrast), colour = 'gray22') +
   geom_segment(
-    aes(xend = type, y = lo, yend = hi),
+    aes(xend = effect, y = lo, yend = hi),
     linewidth = 1.2
   ) +
   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
@@ -318,8 +456,8 @@ pc = obsv.by.type %>%
     # plot.margin = margin(l = 5, r = 0)
   )
 
-pd = obsv.by.demo %>%
-  rename(demo = group) %>%
+pd = ltre.by.demo.summary %>%
+  filter(result.set %in% 'main') %>%
   ggplot(aes(x = demo, y = contrib)) +
   geom_col(aes(fill = contr.pretty), colour = 'gray22') +
   geom_segment(
@@ -359,27 +497,8 @@ rm(list = ls())
 # Mirrored LTRE figures
 # ======================================================= #
 
-mirrored.ltre = read.csv('04_analysis/out/out/mirror_ltre_results.csv')
-
-mirrored.ltre.summ = merge(
-  mirrored.ltre %>% filter(samp %in% 'obsv') %>% select(-c(rate, samp)),
-  mirrored.ltre %>%
-    filter(samp %in% 'boot') %>%
-    group_by(contrast, ltre.varb, varb) %>%
-    reframe(
-      cilim = quantile(contrib, probs = c(0.025, 0.975)),
-      lohi = c('lo', 'hi')
-    ) %>%
-    pivot_wider(names_from = lohi, values_from = cilim)
-) %>%
-  ungroup()
-
-# LTRE Panel a) (all vital rate contributions)
-
-pa = mirrored.ltre.summ %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
-  ) %>%
+pma = ltre.all.rates.summary %>%
+  filter(result.set %in% 'mirrored') %>%
   ggplot(aes(x = ltre.varb)) +
   geom_col(
     aes(y = contrib, fill = contrast), colour = 'gray22'
@@ -406,51 +525,25 @@ pa = mirrored.ltre.summ %>%
     strip.text = element_text(size = 7)
   )
 
-pa
-ggsave('04_analysis/figures/ltre_mirror_panel_a.png', width = 8, height = 5)
+pma
+ggsave('04_analysis/figures/ltre_mirror_a.png', width = 8, height = 5)
 
 
-obsv.by.demo.type = mirrored.ltre %>%
-  filter(samp %in% 'obsv') %>%
-  group_by(contrast, demo = ifelse(rate %in% c('grow', 'recr'), 'grow', 'repr'), type) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.demo.type = mirrored.ltre %>%
-  filter(samp %in% 'boot') %>%
-  group_by(contrast, samp, demo = ifelse(rate %in% c('grow', 'recr'), 'grow', 'repr'), type) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.demo.type.summ = boot.by.demo.type %>%
-  group_by(contrast, demo, type) %>%
-  reframe(
-    cilim = quantile(contrib, probs = c(0.025, 0.975)),
-    lohi = c('lo', 'hi')
-  ) %>%
-  pivot_wider(names_from = lohi, values_from = cilim) %>%
-  mutate(contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'))
-
-pb = obsv.by.demo.type %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'),
-    demo = ifelse(demo %in% 'grow', 'growth', 'reproduction')
-  ) %>%
-  ggplot(aes(x = type, y = contrib)) +
+pmb = ltre.growth.repr.summary %>%
+  filter(result.set %in% 'mirrored') %>%
+  ggplot(aes(x = demo, y = contrib)) +
   geom_col(aes(fill = contr.pretty), colour = 'gray22') +
   geom_segment(
-    data = boot.by.demo.type.summ %>% mutate(demo = ifelse(demo %in% 'grow', 'growth', 'reproduction')),
-    aes(xend = type, y = lo, yend = hi),
+    aes(xend = demo, y = lo, yend = hi),
     linewidth = 1.2
   ) +
   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_discrete(
-    limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
-    guide = guide_axis(n.dodge = 2)
+    limits = c('grow', 'repr'), labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)
   ) +
   guides(fill = 'none') +
   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
-  facet_nested( ~ contr.pretty + demo) +
+  facet_nested( ~ contr.pretty + effect.pretty) +
   theme(
     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
     panel.background = element_blank(),
@@ -459,115 +552,5 @@ pb = obsv.by.demo.type %>%
   )
 
 
-# pb
-# ggsave('04_analysis/figures/ltre_mirror_panel_b.png', width = 5, height = 3)
-
-
-obsv.by.demo = obsv.by.demo.type %>%
-  group_by(demo, contrast) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-obsv.by.type = obsv.by.demo.type %>%
-  group_by(type, contrast) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.demo = boot.by.demo.type %>%
-  group_by(demo, contrast, samp) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.type = boot.by.demo.type %>%
-  group_by(type, contrast, samp) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-
-boot.by.demo.summ = boot.by.demo %>%
-  group_by(contrast, demo) %>%
-  reframe(
-    cilim = quantile(contrib, probs = c(0.025, 0.975)),
-    lohi = c('lo', 'hi')
-  ) %>%
-  pivot_wider(names_from = lohi, values_from = cilim) %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
-  )
-
-boot.by.type.summ = boot.by.type %>%
-  group_by(contrast, type) %>%
-  reframe(
-    cilim = quantile(contrib, probs = c(0.025, 0.975)),
-    lohi = c('lo', 'hi')
-  ) %>%
-  pivot_wider(names_from = lohi, values_from = cilim) %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
-  )
-
-pc = obsv.by.type %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
-  ) %>%
-  ggplot(aes(x = type, y = contrib)) +
-  geom_col(aes(fill = contrast), colour = 'gray22') +
-  geom_segment(
-    data = boot.by.type.summ,
-    aes(xend = type, y = lo, yend = hi),
-    linewidth = 1.2
-  ) +
-  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
-  scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
-  scale_x_discrete(
-    limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
-    guide = guide_axis(n.dodge = 2)
-  ) +
-  scale_y_continuous(limits = c(-0.008, 0.0215)) +
-  # scale_y_continuous(limits = c(-0.025, 0.0375)) +
-  # labs(x = '', y = '') +
-  labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
-  guides(fill = 'none') +
-  facet_wrap( ~ contr.pretty, nrow = 1) +
-  theme(
-    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
-    panel.background = element_blank(),
-    # axis.text.x = element_text(angle = 45),
-    # axis.text.y = element_blank(),
-    # axis.ticks.y = element_blank(),
-    axis.text = element_text(size = 7),
-    strip.text = element_text(size = 7)# ,
-    # plot.margin = margin(l = 5, r = 0)
-  )
-
-pd = obsv.by.demo %>%
-  mutate(
-    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), '\nvs. control')
-  ) %>%
-  ggplot(aes(x = demo, y = contrib)) +
-  geom_col(aes(fill = contr.pretty), colour = 'gray22') +
-  geom_segment(
-    data = boot.by.demo.summ,
-    aes(xend = demo, y = lo, yend = hi),
-    linewidth = 1.2
-  ) +
-  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
-  scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
-  scale_x_discrete(labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)) +
-  scale_y_continuous(limits = c(-0.008, 0.0215)) +
-  # scale_y_continuous(limits = c(-0.025, 0.0375)) +
-  # labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
-  labs(x = '', y = '') +
-  guides(fill = 'none') +
-  facet_wrap( ~ contr.pretty, nrow = 1) +
-  theme(
-    strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
-    panel.background = element_blank(),
-    axis.text = element_text(size = 7),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    strip.text = element_text(size = 7)# ,
-    # plot.margin = margin(l = 0, r = 5)
-  )
-
-plot_grid(pc, pd, labels = c('i', 'ii'), rel_widths = c(1, 1), align = 'vh')
-ggsave('04_analysis/figures/ltre_mirror_panel_c.png', width = 5, height = 3)
+pmb
+ggsave('04_analysis/figures/ltre_mirror_b.png', width = 5, height = 3)
