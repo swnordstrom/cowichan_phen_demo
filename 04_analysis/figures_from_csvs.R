@@ -84,12 +84,12 @@ lambda.trt.pan = all.lambda %>%
   ) +
   geom_point(
     data = ltre.lambda %>% filter(trt.rate == trt.phen),
-    aes(y = lambda, fill = trt.rate), size = 4, shape = 21
+    aes(y = lambda, fill = trt.rate, shape = trt.rate), size = 4
   ) +
-  # scale_shape_manual(values = c(NA, 19)) +
+  scale_shape_manual(values = c(21, 24, 25), '') +
   scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue'), '') +
   scale_fill_manual(values = c('black', 'goldenrod1', 'dodgerblue'), '') +
-  guides(shape = 'none') +
+  # guides(shape = 'none') +
   labs(x = '', y = expression(lambda)) +
   theme(
     panel.background = element_blank(),
@@ -554,3 +554,83 @@ pmb = ltre.growth.repr.summary %>%
 
 pmb
 ggsave('04_analysis/figures/ltre_mirror_b.png', width = 5, height = 3)
+
+
+# ======================================================= #
+# Comparing LTRE contributions with observed Delta lambda
+# ======================================================= #
+
+rm(list = ls())
+
+# Observed lambdas
+ltre.lambda = read.csv('04_analysis/out/ltre_design_lambda.csv')
+
+# LTRE contributions
+ltre.trt.contrib  = read.csv('04_analysis/out/trt_ltre_contribs.csv')
+ltre.phen.contrib = read.csv('04_analysis/out/phen_ltre_contribs.csv')
+
+### Individual trt/phen estimates
+trt.delta.lambda = ltre.lambda %>%
+  select(trt.phen, trt.rate, lambda) %>%
+  pivot_wider(names_from = trt.rate, values_from = lambda) %>%
+  mutate(d.c = drought - control, i.c = irrigated - control) %>%
+  mutate(result.set = ifelse(trt.phen %in% 'control', 'main', 'mirrored')) %>%
+  select(result.set, d.c, i.c) %>%
+  pivot_longer(
+    c(d.c, i.c), 
+    names_to = 'contrast', values_to = 'Dlambda', 
+    values_drop_na = TRUE
+  ) %>%
+  mutate(contrast.type = 'trt')
+phen.delta.lambda = ltre.lambda %>%
+  select(trt.phen, trt.rate, lambda) %>%
+  pivot_wider(names_from = trt.phen, values_from = lambda) %>%
+  mutate(d.c = drought - control, i.c = irrigated - control) %>%
+  mutate(result.set = ifelse(trt.rate %in% 'control', 'mirrored', 'main')) %>%
+  select(result.set, d.c, i.c) %>%
+  pivot_longer(
+    c(d.c, i.c),
+    names_to = 'contrast', values_to = 'Dlambda',
+    values_drop_na = TRUE
+  ) %>%
+  mutate(contrast.type = 'phen')
+
+# Get the sums of LTRE contributions across all vital rates
+ltre.trt.contribs = ltre.trt.contrib %>%
+  mutate(result.set = ifelse(trt.phen %in% 'control', 'main', 'mirrored')) %>%
+  group_by(contrast, result.set) %>%
+  summarise(trt.contrib = sum(contrib)) %>%
+  ungroup()
+ltre.phen.contribs = ltre.phen.contrib %>%
+  mutate(result.set = ifelse(trt.rate %in% 'control', 'mirrored', 'main')) %>%
+  group_by(contrast = contrast.phen, result.set) %>%
+  summarise(phen.contrib = sum(contrib)) %>%
+  ungroup()
+
+compare.trt.dlambda = merge(trt.delta.lambda, ltre.trt.contribs) %>%
+  # Relative error
+  mutate(reltve.error = (Dlambda - trt.contrib) / Dlambda)
+compare.phen.dlambda = merge(phen.delta.lambda, ltre.phen.contribs) %>%
+  # Relative error
+  mutate(reltve.error = (Dlambda - phen.contrib) / Dlambda)
+
+### Overall contrast estimates
+
+# Get Delta lambdas
+ltre.delta.lambda = ltre.lambda %>%
+  filter(trt.phen == trt.rate) %>%
+  select(trt = trt.phen, lambda) %>%
+  pivot_wider(names_from = trt, values_from = lambda) %>%
+  mutate(d.c = drought - control, i.c = irrigated - control) %>%
+  select(d.c, i.c) %>%
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'Dlambda')
+
+compare.contribs.dlambda = merge(ltre.trt.contribs, ltre.phen.contribs) %>%
+  merge(ltre.delta.lambda) %>%
+  mutate(
+    ltre.Dlambda = trt.contrib + phen.contrib,
+    reltve.error = (ltre.Dlambda - Dlambda) / Dlambda
+  )
+
+compare.contribs.dlambda %>%
+  mutate(across(where(is.double), ~ round(., 6)))
