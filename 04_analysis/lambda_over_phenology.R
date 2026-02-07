@@ -5,12 +5,12 @@
 # ---------------------------
 
 # --- Setup ---------------------------------------------------
-library(ggplot2)
-library(ggh4x)
+# library(ggplot2)
+# library(ggh4x)
 library(tidyr)
 library(dplyr)
-library(glmmTMB)
-library(cowplot)
+# library(glmmTMB)
+# library(cowplot)
 
 rm(list = ls())
 
@@ -66,7 +66,7 @@ phen.ctrl.mean = read.csv('03_construct_kernels/out/phen_treatment_means.csv') %
 phen.annual.mean = read.csv('03_construct_kernels/out/phen_annual_treatment_means.csv')
 
 # Germination probability
-p.germ = .001
+p.germ = .009
 # p.germ = 0.0058007812
 
 
@@ -209,7 +209,7 @@ kernel.boot.ltre.df = merge(
   select(-c(pred.surv, pv.grow.size, pf.grow.size, prob.flower))
 
 ltre.boot.lambda = split(
-  kernel.boot.ltre.df, kernel.boot.ltre.df[,c("trt.phen.idx", "boot")], sep = '_', drop = TRUE
+  kernel.boot.ltre.df, kernel.boot.ltre.df[, c("trt.phen.idx", "boot")], sep = '_', drop = TRUE
 ) %>%
   lapply(
     function(df) {
@@ -334,15 +334,6 @@ boot.lambda.diff.interval = boot.lambda.diff %>%
       select(-c(drought, control, irrigated)) %>%
       pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'mean.d.lambda')
   )
-
-# # (was: all.boot.lambda... but I think that's wrong - should be LTRE?)
-# (also... this doesn't actually get called anywhere in this script)
-# ltre.lambda.diff = all.boot.lambda %>%
-#   pivot_wider(names_from = trt, values_from = lambda) %>%
-#   mutate(d.c = drought - control, i.c = irrigated - control) %>%
-#   select(-c(drought, control, irrigated)) %>%
-#   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda') %>%
-#   filter(!is.na(d.lambda))
 
 lambda.contr.pan = boot.lambda.diff %>%
   filter(as.numeric(gsub('b', '', boot)) < 101) %>%

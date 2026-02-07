@@ -5,11 +5,11 @@
 
 ### ---------------------------------
 
-library(ggplot2)
-library(ggh4x)
+# library(ggplot2)
+# library(ggh4x)
 library(dplyr)
 library(tidyr)
-library(cowplot)
+# library(cowplot)
 
 rm(list = ls())
 
@@ -106,7 +106,7 @@ trt.phen.ltre.key = merge(
 # lambdas.
 
 # Germination probability
-p.germ = .001
+p.germ = .009
 # p.germ = 0.0058007812
 
 # --- Observed kernel
