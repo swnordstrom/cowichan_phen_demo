@@ -106,8 +106,8 @@ trt.phen.ltre.key = merge(
 # lambdas.
 
 # Germination probability
-p.germ = .009
-# p.germ = 0.0058007812
+# p.germ = .009
+p.germ = 0.004613155
 
 # --- Observed kernel
 obsv.kernel.df = merge(
