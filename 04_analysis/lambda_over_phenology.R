@@ -67,7 +67,7 @@ phen.annual.mean = read.csv('03_construct_kernels/out/phen_annual_treatment_mean
 
 # Germination probability
 # p.germ = .009
-p.germ = 0.004613155
+p.germ = 0.004632985
 
 
 # --- All-phenology kernels

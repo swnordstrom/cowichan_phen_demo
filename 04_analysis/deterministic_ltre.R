@@ -107,7 +107,7 @@ trt.phen.ltre.key = merge(
 
 # Germination probability
 # p.germ = .009
-p.germ = 0.004613155
+p.germ = 0.004632985
 
 # --- Observed kernel
 obsv.kernel.df = merge(
@@ -1247,7 +1247,7 @@ write.csv(
 # Observed lambdas
 write.csv(
   obsv.lambda %>% select(-c(mean.phen, phen.date)), row.names = FALSE,
-  file = '04_analysis/out/ltre_design_lambda'
+  file = '04_analysis/out/ltre_design_lambda.csv'
 )
 
 # Bootstrapped lambda values for LTRE design
