@@ -99,7 +99,7 @@ pan.a = seed.preds %>%
       mutate(umbel.succ = as.numeric(no.seeds > 0)),
     aes(y = umbel.succ, colour = trt, shape = no.seeds > 0),
     position = position_jitter(height = 0.0625),
-    alpha = 0.125, size = 2
+    alpha = 0.125
   ) +
   geom_line(
     aes(y = p.succ, group = trt),
@@ -109,11 +109,14 @@ pan.a = seed.preds %>%
   scale_shape_manual(values = c(4, 19)) +
   # scale_linewidth_manual(values = c(1, 0.25, 0.25)) +
   scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue')) +
-  labs(x = '', y = 'Probability of umbel success') +
+  labs(x = '', y = 'Prob. inflorescence success') +
   theme(
     # axis.text.x = element_blank(),
     legend.position = 'none',
-    panel.background = element_blank()
+    panel.background = element_blank(),
+    text = element_text(size = 6)
+    # axis.line.x.bottom = element_line(colour = 'gray44'),
+    # axis.line.y.left = element_line(colour = 'gray44')
   )
 
 # Figure panel b)
@@ -126,20 +129,21 @@ pan.b = seed.preds %>%
   geom_point(
     data = seed %>% filter(!is.na(no.seeds), phen.c > -40, no.seeds > 0),
     aes(y = no.seeds, colour = trt),
-    alpha = 0.125, size = 2
+    alpha = 0.125
   ) +
   geom_line(aes(y = s.cond, group = trt, colour = trt), linewidth = 1.2) +
   scale_y_log10() +
   # scale_linewidth_manual(values = c(1, 0.5, 0.5)) +
   scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue')) +
-  labs(x = '', y = 'Seeds per successful umbel') +
+  labs(x = '', y = 'Seeds / successful inflorescence') +
   theme(
     # axis.text.x = element_blank(),
     legend.position = 'none',
-    panel.background = element_blank()
+    panel.background = element_blank(),
+    text = element_text(size = 6)
+    # axis.line.x.bottom = element_line(colour = 'gray44'),
+    # axis.line.y.left = element_line(colour = 'gray44')
   )
-
-# Not great.
 
 pan.c = seed.preds %>%
   # filter(phen.umbels < 2) %>%
@@ -152,37 +156,27 @@ pan.c = seed.preds %>%
         n.seeds.lab = ifelse(n.seeds < 1, 'failed', 'successful')
       ),
     aes(y = n.seeds, colour = trt, shape = n.seeds.lab),
-    alpha = 0.125, size = 2
+    alpha = 0.125
   ) +
   geom_line(aes(y = n.seed, group = trt, colour = trt), linewidth = 1.2) +
   scale_y_log10() +
   # scale_linewidth_manual(values = c(1, 0.5, 0.5)) +
   scale_shape_manual(values = c(4, 19)) +
   scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue'), 'treatment') +
-  labs(x = '', y = 'Seeds per umbel') +
+  labs(x = '', y = 'Seeds / inflorescence') +
   theme(
     legend.position = 'none',
-    panel.background = element_blank()
+    panel.background = element_blank(),
+    text = element_text(size = 6)
+    # axis.line.x.bottom = element_line(colour = 'gray44'),
+    # axis.line.y.left = element_line(colour = 'gray44')
   )
 
 leg.z = get_legend(
   pan.c +
-    guides(shape = guide_legend('umbel fate'), colour = guide_legend('')) +
+    guides(shape = guide_legend('inflorescence fate'), colour = guide_legend('')) +
     theme(legend.position = 'top')
 )
-
-# # okay - something in cowplot must have changed...
-# # look for the non-empty element of get_plot_component()
-# 
-# plot_grid(
-#   NULL, leg.z, NULL, pan.a, pan.b, pan.c, byrow = TRUE,
-#   labels = c('', '', '', 'a', 'b', 'c'),
-#   nrow = 2, rel_heights = c(0.1, 1)
-# ) %>%
-#   save_plot(
-#     filename = '04_analysis/figures/draft_figures/phen_reproduction.png',
-#     base_width = 8, base_height = 5
-#   )
 
 
 # --------------------------------------
@@ -209,17 +203,18 @@ growth.veg.pred = expand.grid(
 
 pan.d = demo.grow %>%
   ggplot(aes(x = size.prev, y = size.cur, colour = trt, fill = trt)) +
-  geom_point(size = 2, alpha = 0.1) +
-  geom_line(
-    data = growth.veg.pred,
-    aes(group = trt),
-    linewidth = 1.2
-  ) +
+  # annotate('segment', x = 0.5, xend = 6, y = 0.5, yend = 6, linetype = 2, colour = 'gray') +
+  geom_point(alpha = 0.1) +
+  geom_line(data = growth.veg.pred, aes(group = trt), linewidth = 1.2) +
   scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue'), 'treatment') +
-  labs(x = '', y = 'Size, year t+1') +
+  labs(x = '', y = 'Size, year t') +
+  coord_fixed() +
   theme(
     legend.position = 'none',
-    panel.background = element_blank()
+    panel.background = element_blank(),
+    text = element_text(size = 6)
+    # axis.line.x.bottom = element_line(colour = 'gray44'),
+    # axis.line.y.left = element_line(colour = 'gray44')
   )
 
 # Figure panel e)
@@ -243,35 +238,48 @@ growth.flow.pred
 
 pan.e = demo.grow %>%
   filter(!is.na(phen.c)) %>%
+  mutate(
+    phen.c = ifelse(phen.c < -14, -14, ifelse(phen.c > 14, 14, phen.c))
+  ) %>%
   ggplot(aes(x = size.prev, y = size.cur)) +
-  geom_point(size = 2, alpha = 0.1) +
-  geom_line(
-    data = growth.flow.pred,
-    aes(group = phen.c, colour = phen.c),
-    linewidth = 1.2
-  ) +
+  # annotate('segment', x = 0.5, xend = 6, y = 0.5, yend = 6, linetype = 2, colour = 'gray') +
+  geom_point(aes(colour = phen.c), alpha = 0.1) +
+  geom_line(data = growth.flow.pred, aes(group = phen.c, colour = phen.c), linewidth = 1.2) +
   scale_colour_gradient2(
-    low = 'yellow', high = 'magenta', mid = 'black', midpoint = 0,
+    low = 'green', high = 'magenta', mid = 'black', midpoint = 0,
     breaks = c(-1:1) * 14,
     labels = format(as.Date((-1:1) * 14 + phen.ctrl.mean), '%b %d')
   ) +
+  guides(colour = guide_legend('flowering date,\nyear t-1'), position = 'inside') +
   lims(x = c(0.5, 6), y = c(0.5, 6)) +
   labs(x = '', y = '') +
+  coord_fixed() +
   theme(
-    legend.position = 'none',
-    panel.background = element_blank()
+    legend.position = 'inside',
+    legend.justification.inside = c(0, 1),
+    legend.background = element_blank(),
+    panel.background = element_blank(),
+    text = element_text(size = 6)
+    # axis.line.x.bottom = element_line(colour = 'gray44'),
+    # axis.line.y.left = element_line(colour = 'gray44')
   )
 
 leg.trt = get_legend(
   pan.c +
-    guides(shape = guide_legend('umbel fate'), colour = guide_legend('treatment')) +
+    guides(shape = guide_legend('inflorescence fate'), colour = guide_legend('treatment')) +
     theme(legend.position = 'top')
 )
 
 leg.phen = get_legend(
   pan.e + 
-    guides(colour = guide_legend('Flowering date, year t')) +
+    guides(colour = guide_legend('flowering date, year t-1')) +
     theme(legend.position = 'top')
+)
+
+leg.phen.vert = get_legend(
+  pan.e + 
+    guides(colour = guide_legend('flowering date,\nyear t-1')) +
+    theme(legend.position = 'right', legend.title = element_text(hjust = 0))
 )
 
 # --------------------------------------
@@ -284,15 +292,40 @@ plot_grid(
     pan.a, pan.b, pan.c, nrow = 1,
     labels = c('a', 'b', 'c'), label_x = -0.005
   ), 
-  grid::textGrob("Flowering date",  vjust = 0),
+  grid::textGrob("Flowering date, year t",  vjust = 0),
   plot_grid(
     pan.d, pan.e, align = 'v',
     labels = c('d', 'e'), label_x = -0.005
   ), 
-  grid::textGrob("Size, year t", vjust = 0),
+  grid::textGrob("Size, year t-1", vjust = 0),
+  nrow = 5, rel_heights = c(0.2, 1, 0.025, 1, 0.025)
+)
+
+x.ax.lab.abc = ggdraw() +
+  draw_label('Flowering date, year t', size = 7, vjust = -0.5) # +
+  # theme(plot.margin = margin(0, 0, 10, 0))
+
+x.ax.lab.de = ggdraw() +
+  draw_label('Size, year t-1', size = 7, vjust = -0.5) # +
+# theme(plot.margin = margin(0, 0, 10, 0))
+
+plot_grid(
+  leg.trt,
+  plot_grid(
+    pan.a, pan.b, pan.c, nrow = 1,
+    labels = c('a', 'b', 'c'), label_size = 6, label_x = -0.005
+  ), 
+  # grid::textGrob("Flowering date, year t", vjust = -0.5),
+  x.ax.lab.abc,
+  plot_grid(
+    pan.d, pan.e, align = 'v',
+    labels = c('d', 'e'), label_size = 6, label_x = -0.005, nrow = 1
+  ), 
+  # grid::textGrob("Size, year t-1", vjust = -0.5),
+  x.ax.lab.de,
   nrow = 5, rel_heights = c(0.2, 1, 0.025, 1, 0.025)
 ) %>%
   save_plot(
-    filename = '04_analysis/figures/draft_figures/reproduction_growth_phen_trt.png',
-    base_height = 8, base_width = 8,
+    filename = '04_analysis/figures/Fig2.tiff',
+    base_height = 14, base_width = 14, unit = 'cm'
   )

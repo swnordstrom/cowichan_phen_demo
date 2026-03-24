@@ -132,7 +132,7 @@ pred.seed.counts %>%
   ggplot(aes(x = size, y = value, group = trt, colour = trt)) +
   geom_line() +
   scale_colour_manual(
-    values = c('black', 'goldenrod', 'dodgerblue'), 
+    values = c('black', 'goldenrod1', 'dodgerblue'), 
     breaks = c('control', 'drought', 'irrigated')
   ) +
   facet_wrap(~ varb, scale = 'free_y')
@@ -160,7 +160,7 @@ p.a = pred.umbel.counts %>%
   ) +
   geom_line(linewidth = 1.2) +
   scale_colour_manual(
-    values = c('black', 'goldenrod', 'dodgerblue'), 
+    values = c('black', 'goldenrod1', 'dodgerblue'), 
     breaks = c('control', 'drought', 'irrigated')
   ) +
   scale_shape_manual(values = c(4, 19), labels = c('no', 'yes')) +
@@ -178,9 +178,9 @@ p.b = pred.umbel.counts %>%
     position = position_jitter(height = 0.2), size = 2, alpha = 0.05
   ) +
   geom_line(linewidth = 1.2, colour = 'gray77') +
-  labs(x = '', y = 'umbels / flowering plant') +
+  labs(x = '', y = 'infl. / flowering plant') +
   scale_colour_manual(
-    values = c('black', 'goldenrod', 'dodgerblue'), 
+    values = c('black', 'goldenrod1', 'dodgerblue'), 
     breaks = c('control', 'drought', 'irrigated')
   ) +
   # scale_y_log10() +
@@ -198,11 +198,11 @@ p.c = pred.umbel.counts %>%
   ) +
   geom_line(linewidth = 1.2) +
   scale_colour_manual(
-    values = c('black', 'goldenrod', 'dodgerblue'), 
+    values = c('black', 'goldenrod1', 'dodgerblue'), 
     breaks = c('control', 'drought', 'irrigated')
   ) +
   scale_shape_manual(values = c(4, 19)) +
-  labs(x = '', y = 'umbels / plant') +
+  labs(x = '', y = 'infl. / plant') +
   # scale_y_log10() +
   theme(
     legend.position = 'none',
@@ -235,10 +235,10 @@ p.d = pred.seed.counts %>%
   geom_line(linewidth = 1.2, colour = 'gray77') +
   scale_shape_manual(values = c(4, 19), labels = c('unsuccessful', 'successful')) +
   scale_colour_manual(
-    values = c('black', 'goldenrod', 'dodgerblue'), 
+    values = c('black', 'goldenrod1', 'dodgerblue'), 
     breaks = c('control', 'drought', 'irrigated')
   ) +
-  labs(x = '', y = 'prob. of umbel success') +
+  labs(x = '', y = 'prob. of infl. success') +
   theme(
     legend.position = 'none',
     panel.background = element_blank()
@@ -253,11 +253,11 @@ p.e = pred.seed.counts %>%
   ) +
   geom_line(linewidth = 1.2) +
   scale_colour_manual(
-    values = c('black', 'goldenrod', 'dodgerblue'), 
+    values = c('black', 'goldenrod1', 'dodgerblue'), 
     breaks = c('control', 'drought', 'irrigated')
   ) +
   scale_y_log10() +
-  labs(x = '', y = 'seeds / successful umbel') +
+  labs(x = '', y = 'seeds / successful infl.') +
   theme(
     legend.position = 'none',
     panel.background = element_blank()
@@ -273,11 +273,11 @@ p.f = pred.seed.counts %>%
   geom_line(linewidth = 1.2) +
   scale_shape_manual(values = c(4, 19)) +
   scale_colour_manual(
-    values = c('black', 'goldenrod', 'dodgerblue'), 
+    values = c('black', 'goldenrod1', 'dodgerblue'), 
     breaks = c('control', 'drought', 'irrigated')
   ) +
   scale_y_log10() +
-  labs(x = '', y = 'seeds / umbel') +
+  labs(x = '', y = 'seeds / inflorescence') +
   theme(
     legend.position = 'none',
     panel.background = element_blank()
@@ -285,7 +285,7 @@ p.f = pred.seed.counts %>%
 
 seed.legend = get_legend(
   p.d +
-    guides(shape = guide_legend('umbel fate', override.aes = list(alpha = 1)), colour = 'none') +
+    guides(shape = guide_legend('inflorescence fate', override.aes = list(alpha = 1)), colour = 'none') +
     theme(legend.position = 'top', legend.box = 'vertical', legend.spacing.y = unit(0.1, 'points'))
 )
 
@@ -304,7 +304,7 @@ p.g = pred.seed.counts %>%
   ) +
   geom_line(linewidth = 1.2) +
   scale_colour_manual(
-    values = c('black', 'goldenrod', 'dodgerblue'), 
+    values = c('black', 'goldenrod1', 'dodgerblue'), 
     breaks = c('control', 'drought', 'irrigated')
   ) +
   labs(x = '', y = 'seeds / plant') +
@@ -325,7 +325,7 @@ p.h = pred.seed.counts %>%
   ) +
   geom_line(linewidth = 1.2) +
   scale_colour_manual(
-    values = c('black', 'goldenrod', 'dodgerblue'), 
+    values = c('black', 'goldenrod1', 'dodgerblue'), 
     breaks = c('control', 'drought', 'irrigated')
   ) +
   # scale_y_log10() +
