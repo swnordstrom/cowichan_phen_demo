@@ -157,26 +157,27 @@ x0 = model.matrix(~ Year, d_0$frame)
 b0 = fixef(d_0)$cond
 vars_0 = exp(2 * d_0$fit$par[5:7])
 
-colnames(x0) == names(b0)
+# check here to make sure these matrices are aligned with each other
+# (should be all TRUE)
+all(colnames(x0) == names(b0))
 
 sigma2_f0 = var(x0 %*% as.matrix(b0))
 
-rsq0 = sigma2_f0 / (sigma2_f0 + sum(vars_0))
+(rsq0 = sigma2_f0 / (sigma2_f0 + sum(vars_0)))
 # Year explains 27.4%
 
 x1 = model.matrix(~ trt + Year, d_t$frame)
 b1 = fixef(d_t)$cond
 vars_t = exp(2 * d_t$fit$par[7:9])
 
-colnames(x1) == names(b1)
+all(colnames(x1) == names(b1))
 
 sigma2_f1 = var(x1 %*% as.matrix(b1))
 
-rsq1 = sigma2_f / (sigma2_f + sum(vars_t))
-# Adding years gives gives 32.6%
-# (but it includes the year effects...)
-# (how to describe this...)
+(rsq1 = sigma2_f1 / (sigma2_f1 + sum(vars_t)))
+# Adding treatment gives gives 32.5%
 
+(rsq1 - rsq0)
 (rsq1 - rsq0) / (1 - rsq0)
 
 # As expected, minimal change to individual- and among-plant plots
