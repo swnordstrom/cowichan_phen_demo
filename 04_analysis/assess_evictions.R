@@ -72,11 +72,11 @@ if (!file.exists('04_analysis/out/eviction_growsurv_subkernel.csv')) {
 # Our subkernels:
 growsurv = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen_ltre.csv') %>%
   # Give us only the control kernels
-  filter(trt.phen.idx %in% 4) %>%
+  filter(trt.phen.idx %in% 7) %>%
   select(-trt.phen.idx)
 reprod = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen_ltre.csv') %>%
   # Give us only the control kernels
-  filter(trt.phen.idx %in% 4) %>%
+  filter(trt.phen.idx %in% 7) %>%
   select(-trt.phen.idx)
 
 # Eviction subkernels
@@ -86,7 +86,7 @@ ev_growsurv = read.csv('04_analysis/out/eviction_growsurv_subkernel.csv')
 # ----- Process data (build kernels) -----
 
 # Set a germination rate
-p.germ = 0.001
+p.germ = 0.004632985
 
 # Kernel first:
 # Dataframe of rates
@@ -121,7 +121,7 @@ all.eigs = all.kernels %>%
       )
   )
 
-lambda = all.eigs$l[1]
+(lambda = all.eigs$l[1])
 
 # ----- Get data frame with rho_L and rho_U -----
 # (see supporting material)
@@ -134,7 +134,8 @@ eviction.probs = ev_growsurv %>%
   arrange(size.prev, size.cur) %>%
   # Break down transition probabilities into below/above kernel dimensions
   group_by(size.prev, low.hi = ifelse(size.cur < 0.5, 'l', 'u')) %>%
-  summarise(rho = sum(p.size.cur) / 0.1) %>%
+  # take the sum and multiply by 0.1 (the binwidth; dx in the Riemann sum)
+  summarise(rho = sum(p.size.cur) * 0.1) %>%
   ungroup()
 
 # Formula in SI:
@@ -162,7 +163,7 @@ dl.vals = all.eigs %>%
 
 dl.vals
 #           dl_U         dl_L
-# 1 5.536139e-05 1.125147e-05
+# 1 8.956528e-07 1.462964e-07
 sum(dl.vals)
 
 # Check of "eviction" caused by lower boundary and recruit size distribution
