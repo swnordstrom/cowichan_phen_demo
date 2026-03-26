@@ -13,9 +13,7 @@ if (!dir.exists('04_analysis/out')) {
 }
 
 # Get rid of this super annoying feature
-options(
-  dplyr.summarise.inform = FALSE
-)
+options(dplyr.summarise.inform = FALSE)
 
 ### Scripts to get subkernels and related values
 
@@ -45,9 +43,9 @@ rm(list = ls())
 
 ### Scripts to construct kernels and run analysis
 
-# Figure 2 (Lambda across growing season)
+# Figure 3 (Lambda across growing season)
 source('04_analysis/lambda_over_phenology.R')
 rm(list = ls())
 
-# Figure 3 (LTRE)
+# Figure 4 (LTRE)
 source('04_analysis/deterministic_ltre.R')
