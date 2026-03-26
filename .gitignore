@@ -2,5 +2,9 @@
 .Rhistory
 .RData
 .Ruserdata
+*.png
+*.pdf
+03_construct_kernels/sandbox/*
 03_construct_kernels/out/old/*
 03_construct_kernels/bootstrapped_model_coefs/*
+04_analysis/sandbox/*
