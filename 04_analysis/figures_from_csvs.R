@@ -25,16 +25,17 @@ all.boot.intervals = all.boot.lambda %>%
   pivot_wider(names_from = lohi, values_from = cibound)
 
 ltre.lambda = read.csv('04_analysis/out/ltre_design_lambda.csv') %>%
-  mutate(phen.date = as.Date(mean.phen))
+  mutate(phen.date = as.Date(phen)) %>%
+  rename(trt.rate = trt)
 
 annual.phen.dates = read.csv('03_construct_kernels/out/phen_annual_treatment_means.csv') %>%
   # Convert to date format (for plotting)
   mutate(phen.date = as.Date(mean.bud, format = '%b-%d')) %>%
   mutate(
     ydodge = case_when(
-      trt %in% 'control' ~ 0.9225,
-      trt %in% 'drought' ~ 0.925,
-      trt %in% 'irrigated' ~ 0.92
+      trt %in% 'control' ~ 0.9725,
+      trt %in% 'drought' ~ 0.975,
+      trt %in% 'irrigated' ~ 0.97
     )
   )
 
@@ -65,46 +66,45 @@ lambda.trt.pan = all.lambda %>%
   annotate(
     'segment', linetype = 2, colour = 'gray',
     x = min(all.lambda$phen.date), xend = max(all.lambda$phen.date),
-    y = 1, yend = 1
+    y = 1, yend = 1, linewidth = 0.25
   ) +
   geom_ribbon(
     data = all.boot.intervals,
     aes(x = phen.date, ymin = lo, ymax = hi, fill = trt, group = trt),
-    alpha = 0.125
+    alpha = 0.125, show.legend = FALSE
   ) +
-  geom_line(aes(y = lambda, colour = trt, group = trt), linewidth = 1.2) +
-  # geom_segment(
-  #   data = ltre.boot.intervals,
-  #   aes(xend = phen.date, y = lo, yend = hi, colour = trt)
-  # ) +
+  geom_line(aes(y = lambda, colour = trt, group = trt)) +
   geom_point(
     data = annual.phen.dates,
     aes(x = phen.date, y = ydodge, colour = trt),
-    size = 10, shape = '*'
+    size = 4, shape = '*', show.legend = FALSE
   ) +
   geom_point(
     data = ltre.lambda %>% filter(trt.rate == trt.phen),
-    aes(y = lambda, fill = trt.rate, shape = trt.rate), size = 4
+    aes(y = lambda, fill = trt.rate, shape = trt.rate), 
+    size = 1.2
   ) +
   scale_shape_manual(values = c(21, 24, 25), '') +
   scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue'), '') +
   scale_fill_manual(values = c('black', 'goldenrod1', 'dodgerblue'), '') +
-  # guides(shape = 'none') +
   labs(x = '', y = expression(lambda)) +
   theme(
     panel.background = element_blank(),
-    # legend.position = 'top'
     legend.position = 'inside',
-    legend.position.inside = c(0.5, 0.85),
-    legend.direction = 'horizontal'
+    legend.position.inside = c(0.5, 0.9),
+    legend.direction = 'horizontal',
+    legend.background = element_blank(),
+    legend.key.size = unit(0.2, 'cm'),
+    legend.key.spacing = unit(0.1, 'cm'),
+    axis.ticks = element_line(linewidth = 0.125),
+    text = element_text(size = 6)
   )
 
 # lambda.trt.pan
 
-lambda.contr.pan = boot.lambda.diff %>%
-  filter(as.numeric(gsub('b', '', boot)) < 101) %>%
+lambda.contr.pan = merge(boot.lambda.diff, boot.lambda.diff.interval) %>%
+  filter(d.lambda < lo | d.lambda > hi) %>%
   mutate(
-    # contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
     contrast = ifelse(
       contrast %in% 'd.c',
       'i) drought vs. control',
@@ -116,16 +116,11 @@ lambda.contr.pan = boot.lambda.diff %>%
     'segment',
     x = as.Date('1970-04-22'), xend = as.Date('1970-05-20'),
     y = 0, yend = 0,
-    linetype = 2, colour = 'gray'
-  ) +
-  geom_point(
-    aes(y = d.lambda), 
-    position = position_jitter(width = 1), alpha = 0.125
+    linetype = 2, colour = 'gray', linewidth = 0.25
   ) +
   geom_point(
     data = boot.lambda.diff.interval %>%
       mutate(
-        # contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
         contrast = ifelse(
           contrast %in% 'd.c',
           'i) drought vs. control',
@@ -133,7 +128,19 @@ lambda.contr.pan = boot.lambda.diff %>%
         )
       ),
     aes(y = mean.d.lambda),
-    size = 4, shape = 21, stroke = 2
+    size = 1.2, shape = 21
+  ) +
+  geom_line(
+    data = boot.lambda.diff.interval %>%
+      mutate(
+        contrast = ifelse(
+          contrast %in% 'd.c',
+          'i) drought vs. control',
+          'ii) irrigated vs. control'
+        )
+      ),
+    aes(y = mean.d.lambda),
+    linewidth = 0.25
   ) +
   geom_point(
     # y limits here found by:
@@ -141,34 +148,31 @@ lambda.contr.pan = boot.lambda.diff %>%
     data = annual.phen.dates %>%
       filter(!(trt %in% 'control')) %>%
       mutate(
-        # contrast - paste(trt, 'vs. control')),
         contrast = ifelse(
           trt %in% 'drought',
           'i) drought vs. control',
           'ii) irrigated vs. control'
         )
       ),
-    aes(x = phen.date, y = -0.007, colour = contrast),
-    shape = '*', size = 10
+    aes(x = phen.date, y = -0.020, colour = contrast),
+    shape = '*', size = 4
   ) +
-  geom_segment(
+  geom_ribbon(
     data = boot.lambda.diff.interval %>%
-      mutate(
-        # contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
-        contrast = ifelse(
-          contrast %in% 'd.c',
-          'i) drought vs. control',
-          'ii) irrigated vs. control'
-        )
-      ),
-    aes(xend = phen.date, y = lo, yend = hi)
+          mutate(
+            contrast = ifelse(
+              contrast %in% 'd.c',
+              'i) drought vs. control',
+              'ii) irrigated vs. control'
+            )
+          ),
+    aes(x = phen.date, ymin = lo, ymax = hi, fill = contrast),
+    alpha = 0.125
   ) +
-  # scale_shape_manual(values = c(1, 19)) +
   labs(x = '', y = expression(Delta~lambda)) +
   guides(colour = 'none', fill = 'none') +
-  # scale_colour_manual(values = c('red', 'blue')) +
-  # scale_fill_manual(values = c('red', 'blue')) +
   scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
+  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_continuous(
     breaks = as.Date(c('1970-04-27', '1970-05-04', '1970-05-11', '1970-05-18')),
     labels = format(as.Date(c('1970-04-27', '1970-05-04', '1970-05-11', '1970-05-18')), '%b %d')
@@ -177,30 +181,28 @@ lambda.contr.pan = boot.lambda.diff %>%
   theme(
     panel.background = element_blank(),
     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
-    legend.position = 'none'
+    legend.position = 'none',
+    axis.ticks = element_line(linewidth = 0.125),
+    text = element_text(size = 6)
   )
 
-lambda.legend = get_plot_component(
-  lambda.trt.pan + theme(legend.position = 'top'),
-  pattern = 'guide-box', return_all = TRUE
-)[[4]]
-
 x.ax.lab = ggdraw() +
-  draw_label('Flowering date', vjust = 0) +
+  draw_label('Flowering date', size = 7, vjust = 0) +
   theme(plot.margin = margin(0, 0, 10, 0))
 
 plot_grid(
   plot_grid(
     lambda.trt.pan, lambda.contr.pan,
-    labels = c('a', 'b'), rel_widths = c(1, 0.5),
+    labels = c('a', 'b'), label_size = 6,
+    rel_widths = c(1, 0.75),
     nrow = 1
   ),
   x.ax.lab,
   ncol = 1, rel_heights = c(1, 0.01)
 ) %>%
   save_plot(
-    filename = '04_analysis/figures/draft_figures/lambdas_phen.png',
-    base_height = 5, base_width = 8
+    filename = '04_analysis/figures/Fig3.tiff',
+    base_width = 10, base_height = 6, units = 'cm'
   )
 
 rm(list = ls())
@@ -347,11 +349,8 @@ ltre.growth.repr.summary = merge(
 pb = ltre.growth.repr.summary %>%
   filter(result.set %in% 'main') %>%
   ggplot(aes(x = demo, y = contrib)) +
-  geom_col(aes(fill = contr.pretty), colour = 'gray22') +
-  geom_segment(
-    aes(xend = demo, y = lo, yend = hi),
-    linewidth = 1.2
-  ) +
+  geom_col(aes(fill = contr.pretty), linewidth = 0.25, colour = 'gray22') +
+  geom_segment(aes(xend = demo, y = lo, yend = hi), linewidth = 0.25) + # ,linewidth = 1.2) +
   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_discrete(
     limits = c('grow', 'repr'), labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)
@@ -362,13 +361,15 @@ pb = ltre.growth.repr.summary %>%
   theme(
     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
     panel.background = element_blank(),
-    axis.text = element_text(size = 7),
-    strip.text = element_text(size = 7)
+    text = element_text(size = 6),
+    axis.ticks = element_line(linewidth = 0.125),
+    # axis.text = element_text(size = 4),
+    # strip.text = element_text(size = 4)
   )
 
 
 pb
-ggsave('04_analysis/figures/ltre_panel_b.png', width = 5, height = 3)
+ggsave('04_analysis/figures/Fig4.tiff', width = 8, height = 5, units = 'cm')
 
 
 ### Panel c: 
@@ -439,7 +440,7 @@ pc = ltre.by.effect.summary %>%
     limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
     guide = guide_axis(n.dodge = 2)
   ) +
-  scale_y_continuous(limits = c(-0.008, 0.0215)) +
+  scale_y_continuous(limits = c(-0.03, 0.05)) +
   # scale_y_continuous(limits = c(-0.025, 0.0375)) +
   # labs(x = '', y = '') +
   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
@@ -467,7 +468,7 @@ pd = ltre.by.demo.summary %>%
   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_discrete(labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)) +
-  scale_y_continuous(limits = c(-0.008, 0.0215)) +
+  scale_y_continuous(limits = c(-0.03, 0.05)) +
   # scale_y_continuous(limits = c(-0.025, 0.0375)) +
   # labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
   labs(x = '', y = '') +
@@ -488,9 +489,6 @@ pd = ltre.by.demo.summary %>%
 
 plot_grid(pc, pd, labels = c('a', 'b'), rel_widths = c(1, 1), align = 'vh') %>%
   save_plot(filename = '04_analysis/figures/ltre_panel_c.png', base_width = 5, base_height = 3)
-
-
-rm(list = ls())
 
 
 # ======================================================= #
@@ -563,7 +561,8 @@ ggsave('04_analysis/figures/ltre_mirror_b.png', width = 5, height = 3)
 rm(list = ls())
 
 # Observed lambdas
-ltre.lambda = read.csv('04_analysis/out/ltre_design_lambda.csv')
+ltre.lambda = read.csv('04_analysis/out/ltre_design_lambda.csv') %>%
+  rename(trt.rate = trt)
 
 # LTRE contributions
 ltre.trt.contrib  = read.csv('04_analysis/out/trt_ltre_contribs.csv')
