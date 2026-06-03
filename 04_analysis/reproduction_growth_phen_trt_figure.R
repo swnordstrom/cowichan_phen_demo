@@ -183,41 +183,7 @@ leg.z = get_legend(
 # ---------- Growth panels -------------
 # --------------------------------------
 
-
 # Figure panel d)
-# - vegetative growth kernel
-# - data points colored by treatment
-# - lines giving growth estimates for each treatment
-
-growth.veg.pred = expand.grid(
-  size.prev = (5:60)/10, 
-  trt = c('control', 'drought', 'irrigated')
-) %>%
-  mutate(
-    size.cur = predict(g_st.ty, newdata = ., allow.new.levels = TRUE, re.form = ~ 0)
-  )
-
-# Plot
-
-# set.seed(3007)
-
-pan.d = demo.grow %>%
-  ggplot(aes(x = size.prev, y = size.cur, colour = trt, fill = trt)) +
-  # annotate('segment', x = 0.5, xend = 6, y = 0.5, yend = 6, linetype = 2, colour = 'gray') +
-  geom_point(alpha = 0.1) +
-  geom_line(data = growth.veg.pred, aes(group = trt), linewidth = 1.2) +
-  scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue'), 'treatment') +
-  labs(x = '', y = 'Size, year t') +
-  coord_fixed() +
-  theme(
-    legend.position = 'none',
-    panel.background = element_blank(),
-    text = element_text(size = 6)
-    # axis.line.x.bottom = element_line(colour = 'gray44'),
-    # axis.line.y.left = element_line(colour = 'gray44')
-  )
-
-# Figure panel e)
 # - flowering growth kernel with phenology
 # - data points colored by phenology
 # - lines giving growth estimates for each treatment
@@ -236,7 +202,7 @@ growth.flow.pred = expand.grid(
 
 growth.flow.pred
 
-pan.e = demo.grow %>%
+pan.d = demo.grow %>%
   filter(!is.na(phen.c)) %>%
   mutate(
     phen.c = ifelse(phen.c < -14, -14, ifelse(phen.c > 14, 14, phen.c))
@@ -252,12 +218,48 @@ pan.e = demo.grow %>%
   ) +
   guides(colour = guide_legend('flowering date,\nyear t-1'), position = 'inside') +
   lims(x = c(0.5, 6), y = c(0.5, 6)) +
-  labs(x = '', y = '') +
+  # labs(x = '', y = '') +
+  labs(x = '', y = 'Size, year t') +
   coord_fixed() +
   theme(
     legend.position = 'inside',
     legend.justification.inside = c(0, 1),
     legend.background = element_blank(),
+    panel.background = element_blank(),
+    text = element_text(size = 6)
+    # axis.line.x.bottom = element_line(colour = 'gray44'),
+    # axis.line.y.left = element_line(colour = 'gray44')
+  )
+
+
+# Figure panel e)
+# - vegetative growth kernel
+# - data points colored by treatment
+# - lines giving growth estimates for each treatment
+
+growth.veg.pred = expand.grid(
+  size.prev = (5:60)/10, 
+  trt = c('control', 'drought', 'irrigated')
+) %>%
+  mutate(
+    size.cur = predict(g_st.ty, newdata = ., allow.new.levels = TRUE, re.form = ~ 0)
+  )
+
+# Plot
+
+# set.seed(3007)
+
+pan.e = demo.grow %>%
+  ggplot(aes(x = size.prev, y = size.cur, colour = trt, fill = trt)) +
+  # annotate('segment', x = 0.5, xend = 6, y = 0.5, yend = 6, linetype = 2, colour = 'gray') +
+  geom_point(alpha = 0.1) +
+  geom_line(data = growth.veg.pred, aes(group = trt), linewidth = 1.2) +
+  scale_colour_manual(values = c('black', 'goldenrod1', 'dodgerblue'), 'treatment') +
+  # labs(x = '', y = 'Size, year t') +
+  labs(x = '', y = '') +
+  coord_fixed() +
+  theme(
+    legend.position = 'none',
     panel.background = element_blank(),
     text = element_text(size = 6)
     # axis.line.x.bottom = element_line(colour = 'gray44'),
@@ -271,13 +273,13 @@ leg.trt = get_legend(
 )
 
 leg.phen = get_legend(
-  pan.e + 
+  pan.d + 
     guides(colour = guide_legend('flowering date, year t-1')) +
     theme(legend.position = 'top')
 )
 
 leg.phen.vert = get_legend(
-  pan.e + 
+  pan.d + 
     guides(colour = guide_legend('flowering date,\nyear t-1')) +
     theme(legend.position = 'right', legend.title = element_text(hjust = 0))
 )
@@ -286,20 +288,20 @@ leg.phen.vert = get_legend(
 # ---------- Combining panels ----------
 # --------------------------------------
 
-plot_grid(
-  plot_grid(leg.trt, leg.phen, nrow = 2),
-  plot_grid(
-    pan.a, pan.b, pan.c, nrow = 1,
-    labels = c('a', 'b', 'c'), label_x = -0.005
-  ), 
-  grid::textGrob("Flowering date, year t",  vjust = 0),
-  plot_grid(
-    pan.d, pan.e, align = 'v',
-    labels = c('d', 'e'), label_x = -0.005
-  ), 
-  grid::textGrob("Size, year t-1", vjust = 0),
-  nrow = 5, rel_heights = c(0.2, 1, 0.025, 1, 0.025)
-)
+# plot_grid(
+#   plot_grid(leg.trt, leg.phen, nrow = 2),
+#   plot_grid(
+#     pan.a, pan.b, pan.c, nrow = 1,
+#     labels = c('a', 'b', 'c'), label_x = -0.005
+#   ), 
+#   grid::textGrob("Flowering date, year t",  vjust = 0),
+#   plot_grid(
+#     pan.d, pan.e, align = 'v',
+#     labels = c('d', 'e'), label_x = -0.005
+#   ), 
+#   grid::textGrob("Size, year t-1", vjust = 0),
+#   nrow = 5, rel_heights = c(0.2, 1, 0.025, 1, 0.025)
+# )
 
 x.ax.lab.abc = ggdraw() +
   draw_label('Flowering date, year t', size = 7, vjust = -0.5) # +
@@ -313,13 +315,13 @@ plot_grid(
   leg.trt,
   plot_grid(
     pan.a, pan.b, pan.c, nrow = 1,
-    labels = c('a', 'b', 'c'), label_size = 6, label_x = -0.005
+    labels = c('a)', 'b)', 'c)'), label_size = 6, label_x = -0.005
   ), 
   # grid::textGrob("Flowering date, year t", vjust = -0.5),
   x.ax.lab.abc,
   plot_grid(
     pan.d, pan.e, align = 'v',
-    labels = c('d', 'e'), label_size = 6, label_x = -0.005, nrow = 1
+    labels = c('d)', 'e)'), label_size = 6, label_x = -0.005, nrow = 1
   ), 
   # grid::textGrob("Size, year t-1", vjust = -0.5),
   x.ax.lab.de,
@@ -327,5 +329,5 @@ plot_grid(
 ) %>%
   save_plot(
     filename = '04_analysis/figures/Fig2.tiff',
-    base_height = 14, base_width = 14, unit = 'cm'
+    base_height = 14, base_width = 14, unit = 'cm', bg = NULL
   )
