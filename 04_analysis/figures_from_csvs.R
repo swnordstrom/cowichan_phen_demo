@@ -202,8 +202,28 @@ plot_grid(
 ) %>%
   save_plot(
     filename = '04_analysis/figures/Fig3.tiff',
-    base_width = 10, base_height = 6, units = 'cm'
+    base_width = 11, base_height = 6.75, units = 'cm'
   )
+
+##### Summary statistics:
+
+# Estimate in delta lambda / week
+all.lambda %>%
+  pivot_wider(names_from = trt, values_from = lambda) %>% 
+  slice(c(1, 8, 15, 22, 29)) %>%
+  mutate(across(c(control, drought, irrigated), ~ c(diff(.), NA)))
+
+# Uncertainty in delta lambda / week
+all.boot.lambda %>%
+  group_by(trt, boot) %>% mutate(delta.lambda = c(diff(lambda), NA)) %>%
+  filter(!is.na(delta.lambda)) %>%
+  group_by(trt, phen) %>% 
+  reframe(
+    cilo = quantile(delta.lambda, 0.025), 
+    cihi = quantile(delta.lambda, 0.975), 
+    pv = mean(delta.lambda > 0)
+  )
+
 
 rm(list = ls())
 
@@ -270,7 +290,7 @@ boot.contribs = rbind(
 )
 
 
-### Panel a: all vital rates 
+### Manuscript Fig. S6 (originally panel a of multi-panel figure)
 
 # Merge together the bootstrapped confidence intervals with the estimates:
 ltre.all.rates.summary = merge(
@@ -290,9 +310,9 @@ pa = ltre.all.rates.summary %>%
   filter(result.set %in% 'main') %>%
   ggplot(aes(x = ltre.varb)) +
   geom_col(
-    aes(y = contrib, fill = contrast), colour = 'gray22'
+    aes(y = contrib, fill = contrast), colour = 'gray22', linewidth = 0.25
   ) +
-  geom_segment(aes(xend = ltre.varb, y = lo, yend = hi), linewidth = 1.2) +
+  geom_segment(aes(xend = ltre.varb, y = lo, yend = hi), linewidth = 0.25) +
   scale_x_discrete(
     labels = scales::label_parse(),
     limits = c(
@@ -309,16 +329,18 @@ pa = ltre.all.rates.summary %>%
   theme(
     panel.background = element_blank(),
     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
-    axis.text.x = element_text(size = 12),
-    axis.text.y = element_text(size = 10),
-    strip.text = element_text(size = 10)
+    text = element_text(size = 6),
+    axis.ticks = element_line(linewidth = 0.125)
+    # axis.text.x = element_text(size = 12),
+    # axis.text.y = element_text(size = 10),
+    # strip.text = element_text(size = 10)
   )
 
 pa
 ggsave('04_analysis/figures/ltre_panel_a.png', width = 8, height = 5)
 
 
-### Panel b: 
+### Main Text Figure 4 (originally panel b)
 
 # Aggregate vital rates into groups:
 ltre.contribs.growth.repr = ltre.contribs %>%
@@ -350,10 +372,11 @@ pb = ltre.growth.repr.summary %>%
   filter(result.set %in% 'main') %>%
   ggplot(aes(x = demo, y = contrib)) +
   geom_col(aes(fill = contr.pretty), linewidth = 0.25, colour = 'gray22') +
-  geom_segment(aes(xend = demo, y = lo, yend = hi), linewidth = 0.25) + # ,linewidth = 1.2) +
+  geom_segment(aes(xend = demo, y = lo, yend = hi), linewidth = 0.25) +
   scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
   scale_x_discrete(
-    limits = c('grow', 'repr'), labels = c('growth', 'reproduction'), guide = guide_axis(n.dodge = 2)
+    limits = c('grow', 'repr'), labels = c('growth', 'reproduction'), 
+    guide = guide_axis(n.dodge = 2)
   ) +
   guides(fill = 'none') +
   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
@@ -362,6 +385,7 @@ pb = ltre.growth.repr.summary %>%
     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
     panel.background = element_blank(),
     text = element_text(size = 6),
+    axis.text.x = element_text(size = 4),
     axis.ticks = element_line(linewidth = 0.125),
     # axis.text = element_text(size = 4),
     # strip.text = element_text(size = 4)
@@ -369,7 +393,19 @@ pb = ltre.growth.repr.summary %>%
 
 
 pb
-ggsave('04_analysis/figures/Fig4.tiff', width = 8, height = 5, units = 'cm')
+ggsave('04_analysis/figures/Fig4.tiff', width = 11, height = 6.75, units = 'cm')
+
+
+### Combining panels a and b into a single Fig. 4:
+
+plot_grid(
+  pa, pb, labels = c('a)', 'b)'), label_size = 6, nrow = 2, align = 'h'
+) |>
+  save_plot(
+    filename = '04_analysis/figures/Fig4_2pan.tiff',
+    base_width = 8, base_height = 8, units = 'cm'
+    # base_width = 11, base_height = 6.75, units = 'cm'
+  )
 
 
 ### Panel c: 
