@@ -510,3 +510,24 @@ expand.grid(phen.c = 0:-7, Year = 2021:2024) %>%
 # Model comparisons: treatment-phenology effects on reproduction
 anova(s_st.p_s.u.p, s_st.tp_s.u.p)
 anova(s_st.p_s.u.p, s_st.p_s.u.tp)
+
+# Model comparisons: quadratic terms for phenology
+# Tests of these above were did not include fits of full model + quadratic terms
+# Fitting those here for comparison:
+
+s_st.p2_s.u.p = glmmTMB(
+  no.seeds ~ trt * size + Year + poly(phen.c, 2) + (1 | Plot / plantid),
+  family = 'nbinom2',
+  ziformula = ~ size + phen.umbels + Year + phen.c + (1 | Plot / plantid),
+  data = seed
+)
+
+s_st.p_s.u.p2 = glmmTMB(
+  no.seeds ~ trt * size + Year + phen.c + (1 | Plot / plantid),
+  family = 'nbinom2',
+  ziformula = ~ size + phen.umbels + Year + poly(phen.c, 2) + (1 | Plot / plantid),
+  data = seed
+)
+
+anova(s_st.p_s.u.p, s_st.p2_s.u.p)
+anova(s_st.p_s.u.p, s_st.p_s.u.p2)
