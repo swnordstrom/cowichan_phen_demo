@@ -1,11 +1,12 @@
 # Script for generating figures and estimates for Lomatium manuscript
 # Here working only with reproductive vital rates
+# This exports Fig. S3
+
 library(ggplot2)
 library(cowplot)
 library(dplyr)
 library(tidyr)
 library(glmmTMB)
-
 
 # =====================================
 #  ------------------------------------
@@ -348,6 +349,6 @@ plot_grid(
   rel_heights = c(3, 1), nrow = 2
 ) %>%
   save_plot(
-    '04_analysis/figures/draft_figures/fig_supp_reproduction.png', 
+    '04_analysis/figures/draft_figures/fig_s3_reproduction.png', 
     plot = ., base_height = 8, base_asp = 1.1
   )

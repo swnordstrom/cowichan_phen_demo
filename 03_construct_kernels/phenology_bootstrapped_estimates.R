@@ -191,138 +191,160 @@ phen.boot.trt %>%
 
 cat('Done.\n')
 
-# # ====== Bootstrap means in interaction model ==============================
-# # Repeating the bootstrapping procedure on a model with an interaction
-# # *for visualization purposes*.
-# 
-# # Fit interaction model
-# # This is needed for centering the bootstrapped coefficients
-# d_ty = glmmTMB(
-#   phen.julian ~ trt * Year + (1 | Plot / plantid),
-#   data = phen.by.plant
-# )
-# 
-# set.seed(8823104)
-# 
-# phen.boot = phen.by.plant %>%
-#   # Add an 'obs.no' for distinguishing umbels
-#   group_by(plantid, Year) %>%
-#   mutate(obs.no = 1:n()) %>%
-#   ungroup() %>%
-#   uncount(weights = n.straps) %>%
-#   # Label these entries with a `samp` (sample) column to delineate different
-#   # bootstrap samples
-#   group_by(plantid, Year, obs.no) %>%
-#   mutate(samp = 1:n()) %>%
-#   # Perform the resampling, preserving plot and survival structure
-#   group_by(Plot, Year, samp) %>%
-#   sample_n(size = n(), replace = TRUE) %>%
-#   ungroup() %>%
-#   # Split the dataset by each sample and re-fit the umbel success/seed model
-#   split(.$samp) %>%
-#   lapply(
-#     function(df) {
-#       glmmTMB(
-#         phen.julian ~ trt * Year + (1 | Plot / plantid),
-#         data = df
-#       ) %>%
-#         # extract model parameters
-#         (function(mod) mod$fit$par)
-#     }
-#   ) %>%
-#   # mclapply(
-#   #   function(df) {
-#   #     glmmTMB(
-#   #       phen.julian ~ trt + Year + (1 | Plot / plantid),
-#   #       data = df
-#   #     ) %>%
-#   #       # extract model parameters
-#   #       (function(mod) mod$fit$par)
-#   #   },
-#   #   mc.cores = 6
-#   # ) %>%
-#   # Combine into single data frame
-#   do.call(rbind, .) %>%
-#   data.frame() %>%
-#   mutate(mod = 'phen', i = 1:n.straps) %>%
-#   select(mod, i, everything())
-# 
-# # Center bootstrapped coefficients
-# phen.boot[,-(1:2)] = phen.boot[-(1:2)] + matrix(
-#   (d_ty$fit$par - colMeans(phen.boot[,-(1:2)])),
-#   nrow = n.straps, ncol = length(d_ty$fit$par), byrow = TRUE
-# )
-# 
-# # Get predicted means from the interaction model
-# # NOTE: not aggregating by year here (because want annual differences)
-# phen.list.out = map(
-#   1:n.straps,
-#   \(i) phen.backbone %>%
-#     mutate(
-#       pred.phen = predict(
-#         d_ty, newdata = phen.backbone, allow.new.levels = TRUE, re.form = ~ 0,
-#         newparams = phen.boot[i, -(1:2)]
-#       )
-#     ) %>%
-#     mutate(boot = i),
-#   .progress = FALSE
-# )
-# 
-# # Get treatment effects (by year)
-# phen.interaction.df = do.call(rbind, phen.list.out) %>%
-#   pivot_wider(names_from = trt, values_from = pred.phen) %>%
-#   mutate(d.c = drought - control, i.c = irrigated - control) %>%
-#   select(-c(control, drought, irrigated)) %>%
-#   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'phen.diff') %>%
-#   # For the plot
-#   mutate(
-#     Year = as.numeric(as.character(Year)),
-#     contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. controls')
-#   )
-# 
-# phen.interaction.summ = phen.interaction.df %>%
-#   group_by(Year = Year, contrast) %>%
-#   reframe(
-#     q95 = quantile(phen.diff, probs = c(0.025, 0.975)),
-#     q99 = quantile(phen.diff, probs = c(0.005, 0.995)),
-#     hilo = c('lo', 'hi')
-#   ) %>%
-#   pivot_wider(names_from = hilo, values_from = c(q95, q99))
-# 
-# phen.interaction.df %>%
-#   group_by(Year, contrast) %>%
-#   sample_n(size = 100) %>%
-#   ggplot(aes(x = Year, y = phen.diff, colour = contrast)) +
-#   annotate('segment', x = 2020.5, xend = 2024.5, y = 0, yend = 0, linetype = 2, colour = 'gray77') +
-#   geom_point(size = 3, alpha = 0.25, position = position_jitter(width = 0.25)) +
-#   geom_segment(
-#     data = phen.interaction.summ,
-#     aes(x = Year, xend = Year, y = q95_lo, yend = q95_hi),
-#     colour = 'gray11'
-#   ) +
-#   # geom_segment(
-#   #   data = phen.interaction.summ,
-#   #   aes(x = Year, xend = Year, y = q99_lo, yend = q99_hi),
-#   #   colour = 'gray11', linewidth = 0.25
-#   # ) +
-#   # geom_point(
-#   #   data = phen.interaction.summ,
-#   #   aes(x = Year, y = q95_lo),
-#   #   shape = '-', colour = 'gray11', size = 8
-#   # ) +
-#   scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
-#   scale_y_continuous(breaks = (-4:3) * 2) +
-#   labs(y = 'Phenological shift (days)') +
-#   theme(
-#     panel.background = element_blank(),
-#     legend.position = 'none'
-#   ) +
-#   facet_wrap(~ contrast)
-# 
-# ggsave('04_analysis/figures/fig_supp_trt_year.png', width = 5, height = 3)
-# 
-# # empirical p-values for each year
-# phen.interaction.df %>%
-#   group_by(Year, contrast) %>%
-#   mutate(bootstrap.mean = mean(phen.diff)) %>%
-#   summarise(p = mean(sign(phen.diff) != sign(bootstrap.mean)))
+# ====== Bootstrap means in interaction model ==============================
+# Repeating the bootstrapping procedure on a model with an interaction
+# *for visualization purposes*.
+
+# Fit interaction model
+# This is needed for centering the bootstrapped coefficients
+d_ty = glmmTMB(
+  phen.julian ~ trt * Year + (1 | Plot / plantid),
+  data = phen.by.plant
+)
+
+# Define number of bootstraps
+n.straps = 500
+
+# Set seed
+set.seed(8823104)
+
+phen.boot = phen.by.plant %>%
+  # Add an 'obs.no' for distinguishing umbels
+  group_by(plantid, Year) %>%
+  mutate(obs.no = 1:n()) %>%
+  ungroup() %>%
+  uncount(weights = n.straps) %>%
+  # Label these entries with a `samp` (sample) column to delineate different
+  # bootstrap samples
+  group_by(plantid, Year, obs.no) %>%
+  mutate(samp = 1:n()) %>%
+  # Perform the resampling, preserving plot and survival structure
+  group_by(Plot, Year, samp) %>%
+  sample_n(size = n(), replace = TRUE) %>%
+  ungroup() %>%
+  # Split the dataset by each sample and re-fit the umbel success/seed model
+  split(.$samp) %>%
+  lapply(
+    function(df) {
+      glmmTMB(
+        phen.julian ~ trt * Year + (1 | Plot / plantid),
+        data = df
+      ) %>%
+        # extract model parameters
+        (function(mod) mod$fit$par)
+    }
+  ) %>%
+  # mclapply(
+  #   function(df) {
+  #     glmmTMB(
+  #       phen.julian ~ trt + Year + (1 | Plot / plantid),
+  #       data = df
+  #     ) %>%
+  #       # extract model parameters
+  #       (function(mod) mod$fit$par)
+  #   },
+  #   mc.cores = 6
+  # ) %>%
+  # Combine into single data frame
+  do.call(rbind, .) %>%
+  data.frame() %>%
+  mutate(mod = 'phen', i = 1:n.straps) %>%
+  select(mod, i, everything())
+
+# Center bootstrapped coefficients
+phen.boot[,-(1:2)] = phen.boot[-(1:2)] + matrix(
+  (d_ty$fit$par - colMeans(phen.boot[,-(1:2)])),
+  nrow = n.straps, ncol = length(d_ty$fit$par), byrow = TRUE
+)
+
+# Get predicted means from the interaction model
+# NOTE: not aggregating by year here (because want annual differences)
+phen.list.out = map(
+  1:n.straps,
+  \(i) phen.backbone %>%
+    mutate(
+      pred.phen = predict(
+        d_ty, newdata = phen.backbone, allow.new.levels = TRUE, re.form = ~ 0,
+        newparams = phen.boot[i, -(1:2)]
+      )
+    ) %>%
+    mutate(boot = i),
+  .progress = FALSE
+)
+
+# Get bootstrapped treatment effects (by year)
+phen.interaction.df = do.call(rbind, phen.list.out) %>%
+  pivot_wider(names_from = trt, values_from = pred.phen) %>%
+  mutate(d.c = drought - control, i.c = irrigated - control) %>%
+  select(-c(control, drought, irrigated)) %>%
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'phen.diff') %>%
+  # For the figure
+  mutate(
+    Year = as.numeric(as.character(Year)),
+    contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. controls')
+  )
+
+# Get true (estimated) treatment effects
+phen.interaction.observed = phen.backbone %>%
+  mutate(
+    pred.phen = predict(d_ty, newdata = ., re.form = ~ 0, allow.new.levels = TRUE)
+  ) %>%
+  pivot_wider(names_from = trt, values_from = pred.phen) %>%
+  mutate(d.c = drought - control, i.c = irrigated - control) %>%
+  select(-c(control, drought, irrigated)) %>%
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'phen.diff') %>%
+  # For the figure
+  mutate(
+    Year = as.numeric(as.character(Year)),
+    contrast = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. controls')
+  )
+
+# Summarise the interaction effects
+phen.interaction.summ = phen.interaction.df %>%
+  group_by(Year = Year, contrast) %>%
+  reframe(
+    q95 = quantile(phen.diff, probs = c(0.025, 0.975)),
+    q99 = quantile(phen.diff, probs = c(0.005, 0.995)),
+    hilo = c('lo', 'hi')
+  ) %>%
+  pivot_wider(names_from = hilo, values_from = c(q95, q99)) %>%
+  # Merge in the observed values
+  merge(phen.interaction.observed)
+
+# Export a figure (is in Manuscript Supporting Info as Fig. S1)
+phen.interaction.df %>%
+  group_by(Year, contrast) %>%
+  # Sample of 100 bootstrapped estimates
+  sample_n(size = 100) %>%
+  ggplot(aes(x = Year, y = phen.diff)) +
+  annotate('segment', x = 2020.5, xend = 2024.5, y = 0, yend = 0, linetype = 2, colour = 'gray77') +
+  geom_point(aes(colour = contrast), size = 1, alpha = 0.5, position = position_jitter(width = 0.25)) +
+  # Plot on top the estimated difference and the CIs (both from the summary data frame)
+  geom_point(
+    data = phen.interaction.summ,
+    aes(fill = contrast),
+    size = 5, shape = 22
+  ) +
+  geom_segment(
+    data = phen.interaction.summ,
+    aes(x = Year, xend = Year, y = q95_lo, yend = q95_hi),
+    colour = 'gray11'
+  ) +
+  scale_colour_manual(values = c('goldenrod1', 'dodgerblue')) +
+  scale_fill_manual(values = c('goldenrod1', 'dodgerblue')) +
+  scale_y_continuous(breaks = (-4:3) * 2) +
+  labs(y = 'Phenological shift (days)') +
+  theme(
+    panel.background = element_blank(),
+    legend.position = 'none'
+  ) +
+  facet_wrap(~ contrast)
+
+ggsave('04_analysis/figures/fig_s1_supp_trt_year.png', width = 5, height = 3)
+
+# empirical p-values for each year
+phen.interaction.df %>%
+  group_by(Year, contrast) %>%
+  mutate(bootstrap.mean = mean(phen.diff)) %>%
+  summarise(p = mean(sign(phen.diff) != sign(bootstrap.mean)))
+

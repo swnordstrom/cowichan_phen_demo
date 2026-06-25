@@ -1,4 +1,8 @@
-# CHECK DELTA VALUE
+# Script for estimating Delta lambda and LTRE contributions at different
+# establishment probabilities.
+# These are Figs. S4 and S5 respectively
+# Script was copied from original `deterministic_ltre.R` script and modified.
+# 
 
 ### ---------------------------------
 
@@ -9,8 +13,6 @@ library(tidyr)
 library(cowplot)
 
 rm(list = ls())
-
-cat('Building kernels for LTRE and Figure 3... ')
 
 # ------------------------------------------------------                  
 # ------ Read in all data ------------------------------
@@ -27,6 +29,12 @@ gs.obsv = read.csv('03_construct_kernels/out/deterministic_growsurv_kernel_phen_
 # Flowering + reproduction subkernel
 fr.obsv = read.csv('03_construct_kernels/out/deterministic_reprod_kernel_phen_ltre.csv')
 
+# --- Read in kernels from bootstrapped resampling
+gs.boot = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_ltre.csv') %>%
+  filter(trt.phen.idx %in% c(1, 3, 7))
+fr.boot = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_ltre.csv') %>%
+  filter(trt.phen.idx %in% c(1, 3, 7)) %>%
+  mutate(boot = gsub('b', '', boot))
 
 # --- Read in perturbed subkernels (on observed data)
 # (these get used for sensitivity analysis)
@@ -74,7 +82,7 @@ trt.phen.ltre.key = merge(
 # lambdas.
 
 # Germination probabilities
-p.germ = as.vector((c(.5, 1) %o% 10^(-(4:2))))
+p.germ = as.vector(c(1e-4, (c(.3, 1) %o% 10^(-(3:2)))))
 # p.germ = 0.0058007812
 
 # --- Observed kernel
@@ -89,6 +97,20 @@ obsv.kernel.df = merge(
   ) %>%
   select(-c(pred.surv, pv.grow.size, pf.grow.size, prob.flower))
 
+# --- Bootstrapped kernel
+
+boot.kernel.df = merge(
+  gs.boot,
+  fr.boot,
+  by.x = c('size.prev', 'size.cur', 'trt.phen.idx', 'boot'), by.y = c('size.prev', 'size.nex', 'trt.phen.idx', 'boot'),
+  suffixes = c('.g', '.f')
+) %>%
+  merge(y = data.frame(p.germ = p.germ)) %>%
+  mutate(
+    p.size.cur = pred.surv * (pv.grow.size * (1 - prob.flower) + pf.grow.size * prob.flower) + (p.size.cur * p.germ)
+  ) %>%
+  select(-c(pred.surv, pv.grow.size, pf.grow.size, prob.flower)) %>%
+  rename(samp = boot)
 
 # --- Perturbed kernels (just point estimates, not bootstrapped)
 # Idea here is to merge the perturbed kernels (where only *one* parameter is
@@ -127,6 +149,11 @@ obsv.pert.kernel.df = rbind(
 
 # Observed kernels
 obsv.kernel.df = merge(obsv.kernel.df, trt.phen.ltre.key) %>%
+  select(-trt.phen.idx) %>%
+  rename(trt = trt.rate)
+
+# Bootstrapped kernels
+boot.kernel.df = merge(boot.kernel.df, trt.phen.ltre.key %>% select(-mean.phen)) %>%
   select(-trt.phen.idx) %>%
   rename(trt = trt.rate)
 
@@ -236,6 +263,26 @@ obsv.lambda = split(
     phen.date = as.Date(mean.phen, format = '%b-%d')
   )
 
+# Bootstrapped lambdas
+# Build data frame with bootstrapped (non-perturbed) lambdas
+boot.lambda = split(
+  boot.kernel.df, boot.kernel.df[,c("trt", "trt.phen", "samp", "p.germ")],
+  sep = '_', drop = TRUE
+) %>%
+  lapply(
+    function(df) {
+      df %>%
+        arrange(size.prev, size.cur) %>%
+        pivot_wider(names_from = size.prev, values_from = p.size.cur) %>%
+        select(-c(trt, trt.phen, samp, size.cur, p.germ)) %>%
+        as.matrix()
+    }
+  ) %>%
+  sapply(function (m) Re(eigen(m)$values[1])) %>%
+  data.frame(lambda = .) %>%
+  mutate(tps = row.names(.)) %>%
+  separate(tps, into = c('trt', 'trt.phen', 'samp', 'p.germ'), sep = '_')
+
 # Get lambda for the midpoint of observed matrices
 midp.obsv.lambda = split(
   midp.obsv.kernel.df, midp.obsv.kernel.df[,c("contrast", 'trt.phen', "mean.phen", "p.germ")],
@@ -342,11 +389,6 @@ midp.phen.sens = merge(
   rename(trt.rate = trt) %>%
   mutate(sv = ((lambda.pert - lambda.orig) / 0.001))
 
-# # Need a -1 in here for when the contrast in phenology is positive or negative
-# mutate(
-#   sv = ((lambda.pert - lambda.orig) / 0.0001) * ifelse(grepl('^d', trt) | grepl('^d', contrast.phen), -1, 1)
-# )
-
 # ------------------------------------------------------                  
 # ------ Get parameter differences ---------------------
 # ------------------------------------------------------
@@ -425,7 +467,6 @@ obsv.dlambda.compare = merge(
 obsv.dlambda.compare %>% mutate(relerr = (csum - d.lambda) / d.lambda)
 # Okay better than before! 3/4 are <1% and the final one is at 2.2%...
 
-
 phen.dlambda.compare = merge(
   phen.ltre %>% 
     group_by(contrast.phen, trt.rate, p.germ) %>% 
@@ -440,7 +481,6 @@ phen.dlambda.compare = merge(
 )
 
 phen.dlambda.compare %>% mutate(relerr = (csum - d.lambda) / d.lambda)
-# uh...
 
 merge(
   obsv.ltre %>% 
@@ -465,6 +505,7 @@ merge(
 
 
 ####################
+# Making Delta lambda ~ establishment rate plot
 
 obsv.lambda %>%
   mutate(p.germ = as.numeric(p.germ)) %>%
@@ -474,6 +515,7 @@ obsv.lambda %>%
   geom_point() +
   scale_x_log10()
 
+# Get the observed Delta lambda across germination probabilities
 obsv.d.lambda = obsv.lambda %>% 
   pivot_wider(names_from = trt, values_from = lambda) %>% 
   mutate(d.c = drought - control, i.c = irrigated - control) %>% 
@@ -481,15 +523,39 @@ obsv.d.lambda = obsv.lambda %>%
   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda', values_drop_na = TRUE) %>%
   select(-c(phen.date, mean.phen))
 
-obsv.d.lambda %>%
-  filter(trt.phen %in% 'control') %>%
-  mutate(p.germ = as.numeric(p.germ)) %>%
+# Get bootstrapped estimates for Delta lambda
+boot.d.lambda = boot.lambda %>% 
+  select(-trt.phen) %>%
+  pivot_wider(names_from = trt, values_from = lambda) %>% 
+  mutate(d.c = drought - control, i.c = irrigated - control) %>% 
+  select(-c(control, drought, irrigated)) %>% 
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda', values_drop_na = TRUE) %>%
+  # Get bootstrapped confidence intervals
+  group_by(contrast, p.germ) %>%
+  reframe(
+    qq = quantile(d.lambda, probs = c(0.025, 0.975)),
+    lohi = c('lo', 'hi')
+  ) %>%
+  pivot_wider(names_from = lohi, values_from = qq)
+
+merge(
+  obsv.d.lambda %>% filter(trt.phen %in% 'control'),
+  boot.d.lambda
+) %>%
+  mutate(
+    p.germ = as.numeric(p.germ),
+    contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control')
+  ) %>%
   ggplot(aes(x = p.germ, y = d.lambda, group = contrast)) +
   annotate('segment', x = min(p.germ), xend = max(p.germ), y = 0, yend = 0, colour = 'gray77', linetype = 2) +
+  annotate('segment', x = 0.004632985, xend = 0.004632985, y = -0.025, yend = 0.05, linetype = 3) +
   geom_line(aes(colour = contrast)) +
+  geom_ribbon(aes(ymin = lo, ymax = hi, fill = contrast), alpha = 0.25) +
   geom_point(aes(fill = contrast), size = 3, shape = 21) +
-  scale_x_log10() +
-  # scale_y_continuous(limits = c(0, NA)) +
+  scale_x_log10(
+    breaks = p.germ,
+    labels = c('.0001', '.0003', '.001', '.003', '.01')
+  ) +
   scale_colour_manual(
     values = c('goldenrod1', 'dodgerblue'),
     labels = c('drought vs. control', 'irrigated vs. control'),
@@ -500,13 +566,18 @@ obsv.d.lambda %>%
     labels = c('drought vs. control', 'irrigated vs. control'),
     ''
   ) +
-  labs(x = 'Probability of germination', y = expression(paste(Delta, lambda))) +
+  labs(x = 'Probability of establishment', y = expression(paste(Delta, lambda))) +
   theme(
     panel.background = element_blank(),
-    legend.position = 'top'
-  )
+    legend.position = 'none',
+  ) +
+  facet_wrap(~ contr.pretty)
 
-ggsave('04_analysis/figures/ltre_germ_delta_lambda.png', width = 5, height = 5)
+ggsave('04_analysis/figures/fig_s4_germ_delta_lambda.png', width = 5, height = 3)
+
+
+####################
+# Making LTRE ~ establishment rate plot
 
 obsv.ltre %>%
   mutate(p.germ = as.numeric(p.germ)) %>%
@@ -520,31 +591,6 @@ obsv.ltre %>%
   geom_point() +
   scale_x_log10() +
   facet_wrap(~ param)
-
-# hmm...
-
-# obsv.ltre %>%
-#   mutate(p.germ = as.numeric(p.germ)) %>%
-#   ggplot(
-#     aes(
-#       x = param, y = contrib, fill = contrast, 
-#       group = interaction(contrast, p.germ)
-#     )
-#   ) +
-#   geom_col(position = position_dodge()) +
-#   facet_wrap(~ trt.phen + phen)
-# # oh...
-# 
-# phen.ltre %>%
-#   mutate(p.germ = as.numeric(p.germ)) %>%
-#   ggplot(
-#     aes(
-#       x = rate, y = contrib, fill = contrast.phen, 
-#       group = interaction(contrast.phen, p.germ)
-#     )
-#   ) +
-#   geom_col(position = position_dodge()) +
-#   facet_wrap(~ trt.rate + contrast.phen)
 
 obsv.trt.ltre = obsv.ltre %>%
   separate(param, into = c('rate', 'param'), sep = '\\.') %>%
@@ -584,7 +630,7 @@ control.ltre.all = rbind(
   obsv.phen.ltre %>%
     # give me LTRE values where the reference date is the control
     # and remove unnecessary column
-    filter(trt.rate %in% 'control') %>%
+    filter(!(trt.rate %in% 'control')) %>%
     select(-trt.rate) %>%
     # Rename column for column agreement
     rename(contrast = contrast.phen) %>%
@@ -649,18 +695,16 @@ obsv.by.demo.type %>%
   mutate(
     contr.pretty = paste(ifelse(contrast %in% 'd.c', 'drought', 'irrigated'), 'vs. control'),
     demo = ifelse(demo %in% 'grow', 'growth', 'reproduction'),
-    p.germ = as.factor(as.numeric(p.germ))
+    p.germ = factor(as.numeric(p.germ), labels = c('0.0001', '0.0003', '0.001', '0.003', '0.01')),
+    type = ifelse(type %in% 'phen', 'phenology', 'treatment')
   ) %>%
-  ggplot(aes(x = type, y = contrib, group = p.germ)) +
+  ggplot(aes(x = demo, y = contrib, group = p.germ)) +
   geom_col(aes(fill = p.germ), position = position_dodge(), colour = 'gray22') +
-  scale_x_discrete(
-    limits = c('phen', 'trt'), labels = c('phenology', 'treatment'),
-    guide = guide_axis(n.dodge = 2)
-  ) +
-  scale_fill_viridis_d(option = 'A', 'germintion rate') +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  scale_fill_viridis_d(option = 'A', 'establishment probability') +
   labs(x = '', y = expression(paste('Contribution to ', Delta, lambda))) +
   guides(fill = guide_legend(nrow = 1)) +
-  facet_nested( ~ contr.pretty + demo) +
+  facet_nested( ~ contr.pretty + type) +
   theme(
     strip.background = element_part_rect(fill = 'white', side = 'b', colour = 'gray22'),
     panel.background = element_blank(),
@@ -670,4 +714,4 @@ obsv.by.demo.type %>%
     legend.direction = 'horizontal'
   )
 
-ggsave('04_analysis/figures/ltre_germ_panb.png', width = 8, height = 5)
+ggsave('04_analysis/figures/fig_s5_ltre_germ.png', width = 8, height = 5)
