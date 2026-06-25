@@ -376,8 +376,7 @@ for (i in 1:length(forms)) {
   )
   print(i)
 }
-# why the fuck am I getting singularities
-# fuck man
+# why am I getting singularities
 # I mean maybe this is good... it means no variance in random effects after incorporating slope...?
 
 form.scores
@@ -390,16 +389,14 @@ form.scores %>%
   geom_line()
 # okay... really minimal differences among these...
 # maybe there just isn't very much annual variation...
-# even adding in these shitty motherfucking shits none of these fucking results change
 # they're all identical to the year-only model
-# what the fuck is happening?
+# what is happening?
 
 data.frame(
   form = forms,
   mean.score = rowMeans(form.scores) %>% round(2)
 ) %>%
   arrange(mean.score)
-# these are all fucking identical! what the absolute fuck? fuck this man.
 
 g_f0.f1 = lmer(
   formula = size ~ flowering  + flowering.prev  + (size.prev | Year) + (1 | Plot),
@@ -468,7 +465,7 @@ demo.grow.cl %>%
   geom_point(
     aes(y = g.lin, colour = interaction(flowering.prev, flowering)),
     alpha = 0.5,
-    position = position_jitterdodge(dodge.width = 0.25),
+    posifucktion = position_jitterdodge(dodge.width = 0.25),
   )
 
 demo.grow.cl %>%
@@ -485,6 +482,6 @@ demo.grow.cl %>%
   ggplot(aes(x = size.prev, y = size, colour = grow_meanTemp)) +
   geom_point() +
   geom_segment(aes(x = 1, xend = 5, y = 1, yend = 5), linetype = 2, colour = 'white')
-# lmao, fuck
+# lmao 
 
 

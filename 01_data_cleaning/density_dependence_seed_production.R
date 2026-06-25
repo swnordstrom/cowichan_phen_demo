@@ -276,7 +276,7 @@ s_n = glmmTMB(
 )
 
 anova(s_n, s_0)
-# Wow. Shit. Fuck. Goddamnit. How?
+# Wow. Shit. Goddamnit. How?
 
 summary(s_n)
 # negative density dependence... More neighbors means fewer seeds?

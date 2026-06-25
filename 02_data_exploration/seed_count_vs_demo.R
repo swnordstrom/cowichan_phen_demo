@@ -273,7 +273,7 @@ nz.seedcount.0 = glmer.nb(
   formula = no.seeds ~ (1 | plot / plantid.demo),
   data = non.zeros
 )
-# ahhhhhh fuck
+# ahhhhh
 summary(nz.seedcount.0)
 # the within-plant variance is suddenly super small...
 # come on man! shit.

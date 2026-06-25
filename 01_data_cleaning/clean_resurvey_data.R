@@ -350,10 +350,10 @@ proc22 = proc22 %>%
     # missing week means seeding plant was not recorded and diff() treats plants as different
     no.seeding = ifelse(plantid %in% '3705_13' & survey.date %in% as.Date('2022-06-14'), 1, no.seeding),
     # 3021... has to be a mistake on 5/16... but what is the truth?
-    # god this data is such fucking garbage in some places
+    # god this data is such a mess in some places
     # it's a 3 on the datasheet but it only can be consistent with the other data if it's a 1
     no.flowers = ifelse(plantid %in% '3021_15' & survey.date %in% as.Date('2022-05-16'), 1, no.flowers),
-    # 3083... none of this shit makes any sense. god fucking damnit, what were these people thiinking
+    # 3083... none of this shit makes any sense. god damnit
     # going to assume that the pods are buds
     no.buds = ifelse(plantid %in% '3083_15' & survey.date %in% as.Date('2022-05-16'), 2, no.buds),
     no.pods = ifelse(plantid %in% '3083_15' & survey.date %in% as.Date('2022-05-16'), 2, no.pods),
@@ -377,11 +377,11 @@ exclude.plantids = exclude.plantids %>%
   mutate(exclude = ifelse(plantid %in% '3196_13' & year %in% 2022, TRUE, exclude)) %>%
   # Plant 3430 - not surveyed one critical week, so possible issues
   mutate(exclude = ifelse(plantid %in% '3430_14' & year %in% 2022, TRUE, exclude)) %>%
-  # Plant 3426 - again, just total fucking garbage
+  # Plant 3426 - again, messy
   mutate(exclude = ifelse(plantid %in% '3426_15' & year %in% 2022, TRUE, exclude)) %>%
   # Plant 3740 - note says this plant's records include a different plant (3403)
   # but there IS no 3403 in plot 15, only in plot 7
-  # what the absolute fuck is going on in this data? christ what a fucking disaster
+  # what the absolute heck is going on in this data? man what a mess
   mutate(exclude = ifelse(plantid %in% '3403_15' & year %in% 2022, TRUE, exclude)) %>%
   # Plant 3755 - pulled out, records unclear, seems likely missed true bud date
   mutate(exclude = ifelse(plantid %in% '3755_15' & year %in% 2022, TRUE, exclude))
@@ -512,7 +512,7 @@ proc23 = proc23 %>%
     # assume it died and just wasn't counted? ugh
     no.dead = ifelse(tag %in% 3401 & plot %in% 15 & survey.date %in% as.Date('2023-05-26'), 1, no.dead),
     no.dead = ifelse(tag %in% 3401 & plot %in% 15 & survey.date %in% as.Date('2023-06-04'), 2, no.dead),
-    # plant 3482 - another one of these stupid fucking buds. god this data is such shit
+    # plant 3482 - another one of these stupid buds.
     no.dead = ifelse(tag %in% 3482 & plot %in% 15 & survey.date %in% as.Date('2023-05-26'), 1, no.dead),
     no.dead = ifelse(tag %in% 3482 & plot %in% 15 & survey.date %in% as.Date('2023-06-04'), 2, no.dead),
     # plant 3706 (tag mis-entered as 3076, corrected later) - another one of these buds

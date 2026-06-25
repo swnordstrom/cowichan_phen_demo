@@ -206,7 +206,7 @@ AIC(g.yf.s2, g.yf)
 # a polynomial effect...?
 
 summary(g.yf.s2)
-# what the fuck...
+# what the
 
 ### So far... would appear that the best model is g.yf (flowering effect varying by year, independent of size)
 # shall we plot?
@@ -254,7 +254,7 @@ demo.prev.for.mod %>%
   summarise(p.grow = mean(size > size.prev)) %>% 
   pivot_wider(names_from = flowering.prev, values_from = p.grow)
   
-# whoa... what the fuck
+# whoa... what
 
 # Okay... look at size components...
 
