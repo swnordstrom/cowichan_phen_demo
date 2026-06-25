@@ -1,4 +1,5 @@
-### Supplemental figure for displaying observed phenology data
+# Script for creating Fig. 2 of manuscript,, summarizing treatment effects on
+# flowering phenology.
 
 # Load in packages
 library(ggplot2)
@@ -30,7 +31,8 @@ plot_breaks = as.Date(
 )
 
 # Get estimated mean treatment effects on phenology
-# (object phen.treatment.means is loaded in from `prepare_demo_data_repr.R` script above)
+# (object phen.treatment.means is loaded in from `prepare_demo_data_repr.R`
+# script above)
 phen_trt_effects = phen.treatment.means |>
   pivot_wider(names_from = trt, values_from = mean.phen) |>
   mutate(across(everything(), ~ . - control)) |>
@@ -60,11 +62,13 @@ d_t = glmmTMB(
   data = phen_by_plant
 )
 
+# Backbone for generating model predictions
 annual_means = expand.grid(
   Year = factor(2021:2024), 
   trt = c('control', 'drought', 'irrigated')
 )
 
+# Add model predictions
 annual_means = annual_means |>
   mutate(
     mean.phen = predict(
@@ -76,8 +80,9 @@ annual_means = annual_means |>
   )
 
 
+### Make the plot
 
-# Make the plot
+# Panel with raw phenology data (plus annual means)
 pan_raw = phen_by_plant |>
   mutate(
     # modifying the factor order for plot aesthetics
@@ -134,6 +139,7 @@ pan_raw = phen_by_plant |>
 
 # Consider flipping axes (would then want to totally reverse factor order)
 
+# Panel with summary statistcs for treatment effects
 pan_stat = phen_boot_contrast_intervals |>
   mutate(contrast = factor(contrast, levels = c('irrigated', 'drought'))) |>
   ggplot(aes(x = contrast)) +
@@ -168,11 +174,11 @@ pan_stat = phen_boot_contrast_intervals |>
   ) +
   coord_flip()
 
-trt_legend = get_legend(
-  pan_raw + theme(legend.position = 'top')
-)
+# Legend (for treatment)
+trt_legend = get_legend(pan_raw + theme(legend.position = 'top'))
 
-# Flag for whether to include 
+# Flag for whether to include the picture of Lomatium bud as inset
+# (default will be FALSE because I don't want to include the photo in the repo)
 
 plot_img = FALSE
 
@@ -181,9 +187,7 @@ if (plot_img) {
   plot_grid(
     trt_legend,
     plot_grid(
-      # ggdraw(pan_raw) + draw_image('~/Downloads/9.png', halign = 0.25, scale = 0.5, valign = 0.875),
-      # CHANGE FILE OR FILE PATH
-      ggdraw(pan_raw) + draw_image('~/Downloads/9.png', halign = 0.25, scale = 0.45, valign = 0.8),
+      ggdraw(pan_raw) + draw_image('9.png', halign = 0.2, scale = 0.48, valign = 0.8),
       pan_stat,
       labels = c('a)', 'b)'),
       rel_widths = c(1, .75),
@@ -192,7 +196,8 @@ if (plot_img) {
     nrow = 2, rel_heights = c(0.1, 1)
   ) |>
     save_plot(
-      filename = '04_analysis/figures/draft_phen_fig.png',
+      # filename = '04_analysis/figures/Fig2_trt_phenology.tiff',
+      filename = '04_analysis/figures/Fig2_trt_phenology.pdf',
       base_width = 11, base_height = 6.75, units = 'cm'
     )
   
@@ -207,7 +212,3 @@ if (plot_img) {
     #   base_width = 11, base_height = 6, units = 'cm'
     # )
 }
-
-
-# ggsave('04_analysis/figures/fig_supp_phen_raw.png', width = 8, height = 5)  
-
