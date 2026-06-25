@@ -1,3 +1,7 @@
+# Script for recreating Figure 3 in manuscript,
+# which summarizes phenology effects on components of reproduction
+# and phenology and treatment effects on growth
+
 library(ggplot2)
 library(dplyr)
 library(tidyr)
@@ -328,6 +332,7 @@ plot_grid(
   nrow = 5, rel_heights = c(0.2, 1, 0.025, 1, 0.025)
 ) %>%
   save_plot(
-    filename = '04_analysis/figures/Fig2.tiff',
+    # filename = '04_analysis/figures/Fig3_phen_vitals.tiff',
+    filename = '04_analysis/figures/Fig3_phen_vitals.pdf',
     base_height = 14, base_width = 14, unit = 'cm', bg = NULL
   )
