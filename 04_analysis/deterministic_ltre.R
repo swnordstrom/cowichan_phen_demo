@@ -13,7 +13,9 @@ library(tidyr)
 
 rm(list = ls())
 
-cat('Building kernels for LTRE and Figure 3...\n')
+cat('Building kernels for LTRE and Figure 5...\n')
+
+n.samps = Inf
 
 # ------------------------------------------------------                  
 # ------ Read in all data ------------------------------
@@ -46,16 +48,20 @@ fr.obsv.pert = read.csv('03_construct_kernels/out/deterministic_repr_coef_pertur
 
 # --- Read in kernels from bootstrapped resampling
 
-gs.boot = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_ltre.csv')
+gs.boot = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstrap_ltre.csv') %>%
+  filter(as.numeric(as.character(boot)) <= n.samps)
 fr.boot = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrap_ltre.csv') %>%
-  mutate(boot = gsub('b', '', boot))
+  mutate(boot = gsub('b', '', boot)) %>%
+  filter(as.numeric(as.character(boot)) <= n.samps)
 
 
 # --- Read in perturbed kernels from bootstrapped sampling
 
-gs.boot.pert = read.csv('03_construct_kernels/out/deterministic_growsurv_perturb_bootstraps.csv')
-fr.boot.pert = read.csv('03_construct_kernels/out/deterministic_reprod_perturb_bootstraps.csv')
-
+gs.boot.pert = read.csv('03_construct_kernels/out/deterministic_growsurv_perturb_bootstraps.csv') %>%
+  filter(as.numeric(as.character(boot)) <= n.samps)
+fr.boot.pert = read.csv('03_construct_kernels/out/deterministic_reprod_perturb_bootstraps.csv') %>%
+  mutate(boot = gsub('b', '', boot)) %>%
+  filter(as.numeric(as.character(boot)) <= n.samps)
 
 # --- Read in parameters used in bootstrapping
 # (these give the differences in beta in the LTRE)
@@ -66,15 +72,6 @@ gs.pert.pars = read.csv('03_construct_kernels/out/deterministic_growsurv_bootstr
 
 fr.pert.pars = read.csv('03_construct_kernels/out/deterministic_reprod_bootstrapped_perturbed_params.csv') 
 # Do this in two steps because this file also contains the phen dates used in the bootstarp
-
-# Dates used in phen bootstrapping
-phen.boots = read.csv('03_construct_kernels/out/phenology_bootstrapped_means.csv') # %>%
-  # select(c(boot, contains('phen'))) %>%
-  # pivot_longer(-boot, names_to = 'trt.phen', values_to = 'phen') %>%
-  # mutate(
-  #   trt.phen = gsub('phen\\_', '', trt.phen),
-  #   phen = as.Date(as.numeric(phen), format = '%b-%d')
-  # )
 
 # # Reproductive bootstrapped parameters
 # fr.pert.pars = fr.pert.pars %>%
@@ -120,7 +117,6 @@ obsv.kernel.df = merge(
   ) %>%
   select(-c(pred.surv, pv.grow.size, pf.grow.size, prob.flower))
 
-
 # --- Perturbed kernels (just point estimates, not bootstrapped)
 # Idea here is to merge the perturbed kernels (where only *one* parameter is
 # perturbed at a time) with the un-perturbed kernels to make sure we're getting
@@ -159,7 +155,8 @@ obsv.pert.kernel.df = rbind(
 boot.kernel.df = merge(
   gs.boot, # %>% pivot_longer(starts_with('b'), names_to = 'boot', values_to = 'p.size.cur'),
   fr.boot, # %>% pivot_longer(starts_with('b'), names_to = 'boot', values_to = 'p.size.cur'),
-  by.x = c('size.prev', 'size.cur', 'trt.phen.idx', 'boot'), by.y = c('size.prev', 'size.nex', 'trt.phen.idx', 'boot'),
+  by.x = c('size.prev', 'size.cur', 'trt.phen.idx', 'boot'), 
+  by.y = c('size.prev', 'size.nex', 'trt.phen.idx', 'boot'),
   suffixes = c('.g', '.f')
 ) %>%
   mutate(
@@ -181,7 +178,8 @@ boot.pert.kernel.df = rbind(
     fr.boot, # %>% 
       # pivot_longer(starts_with('b'), names_to = 'samp', values_to = 'p.size.cur') %>%
       # mutate(samp = gsub('b', '', samp)),
-    by.x = c('size.prev', 'size.cur', 'trt.phen.idx', 'boot'), by.y = c('size.prev', 'size.nex', 'trt.phen.idx', 'boot'),
+    by.x = c('size.prev', 'size.cur', 'trt.phen.idx', 'boot'), 
+    by.y = c('size.prev', 'size.nex', 'trt.phen.idx', 'boot'),
     suffixes = c('.g', '.f')
   ) %>%
     select(
@@ -195,7 +193,8 @@ boot.pert.kernel.df = rbind(
     fr.boot.pert, # %>%
       # pivot_longer(starts_with('b'), names_to = 'samp', values_to = 'p.size.cur') %>%
       # mutate(samp = gsub('b', '', samp)),
-    by.x = c('size.prev', 'size.cur', 'trt.phen.idx', 'boot'), by.y = c('size.prev', 'size.nex', 'trt.phen.idx', 'boot'),
+    by.x = c('size.prev', 'size.cur', 'trt.phen.idx', 'boot'), 
+    by.y = c('size.prev', 'size.nex', 'trt.phen.idx', 'boot'),
     suffixes = c('.g', '.f')
   ) %>%
     select(
@@ -237,96 +236,96 @@ boot.pert.kernel.df = merge(boot.pert.kernel.df, trt.phen.ltre.key %>% select(-m
 # ------ Build midpoint kernels ------------------------
 # ------------------------------------------------------
 
-# These are used for the sensitivity analysis
-# The sensitivity of lambda to a given vital rate will be estimated by getting
-# the midpoint kernel of the two treatments for each level (combo of phen,
-# perturbed vital rate, and bootstrap sample).
-
-# Here the `contrast` column has levels `d.c` (comparing or averaging drought
-# and control) and `i.c` (comparing or averaging irrigation and control)
-
-# Midpoints of observed data
-midp.obsv.kernel.df = obsv.kernel.df %>%
-  pivot_wider(names_from = trt, values_from = p.size.cur) %>%
-  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
-  select(-c(drought, control, irrigated)) %>%
-  # 'mentry' is just mean entry
-  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'mentry') %>%
-  # remove empty rows - this is for differences that we don't estimate
-  # differences for
-  filter(!is.na(mentry))
-
-# Midpoints from perturbed kernels
-midp.pert.kernel.df = obsv.pert.kernel.df %>%
-  select(-orig.parval) %>%
-  # remove phen perturbations
-  filter(!grepl('phen', param)) %>%
-  pivot_wider(names_from = trt, values_from = p.size.cur) %>%
-  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
-  select(-c(drought, control, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'mentry') %>%
-  # filter out NAs
-  filter(!is.na(mentry))
-
-# Bootstrapped midpoints (not perturbed)
-midp.boot.kernel.df = boot.kernel.df %>%
-  pivot_wider(names_from = trt, values_from = p.size.cur) %>%
-  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
-  select(-c(drought, control, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'p.size.cur') %>%
-  filter(!is.na(p.size.cur))
-
-# Bootstrapped midpoints (perturbed)
-midp.boot.pert.kernel.df = boot.pert.kernel.df %>%
-  # remove phen perturbations
-  filter(!grepl('phen', param)) %>%
-  pivot_wider(names_from = trt, values_from = p.size.cur) %>%
-  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
-  select(-c(drought, control, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'p.size.cur') %>%
-  filter(!is.na(p.size.cur))
-
-# Get midpoints for PHENOLOGY
-# Here - to estimate the sensitivity of lambda to phenology, getting a midpoint
-# kernel between phen levels
-
-midp.phen.kernel.df = obsv.kernel.df %>%
-  select(-mean.phen) %>%
-  # NOTE: pivoting out by trt.phen instead of trt (because we're averaging
-  # across different phens)
-  pivot_wider(names_from = trt.phen, values_from = p.size.cur) %>%
-  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
-  select(-c(control, drought, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'mentry', values_drop_na = TRUE)
-
-midp.phen.pert.kernel.df = obsv.pert.kernel.df %>%
-  select(-c(orig.parval,  mean.phen)) %>%
-  # subsetting out ONLY the phenology-related vital rates
-  filter(grepl('phen', param)) %>%
-  # NOTE: pivoting out by trt.phen instead of trt (because we're averaging
-  # across different phens)
-  pivot_wider(names_from = trt.phen, values_from = p.size.cur) %>%
-  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
-  select(-c(control, drought, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'mentry', values_drop_na = TRUE)
-
-midp.phen.boot.kernel.df = boot.kernel.df %>%
-  # NOTE: pivoting out by trt.phen instead of trt (because we're averaging
-  # across different phens)
-  pivot_wider(names_from = trt.phen, values_from = p.size.cur) %>%
-  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
-  select(-c(control, drought, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'mentry', values_drop_na = TRUE)
-
-midp.phen.boot.pert.kernel.df = boot.pert.kernel.df %>%
-  # subsetting out ONLY the phenology-related vital rates
-  filter(grepl('phen', param)) %>%
-  # NOTE: pivoting out by trt.phen instead of trt (because we're averaging
-  # across different phens)
-  pivot_wider(names_from = trt.phen, values_from = p.size.cur) %>%
-  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
-  select(-c(control, drought, irrigated)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'mentry', values_drop_na = TRUE)
+# # These are used for the sensitivity analysis
+# # The sensitivity of lambda to a given vital rate will be estimated by getting
+# # the midpoint kernel of the two treatments for each level (combo of phen,
+# # perturbed vital rate, and bootstrap sample).
+# 
+# # Here the `contrast` column has levels `d.c` (comparing or averaging drought
+# # and control) and `i.c` (comparing or averaging irrigation and control)
+# 
+# # Midpoints of observed data
+# midp.obsv.kernel.df = obsv.kernel.df %>%
+#   pivot_wider(names_from = trt, values_from = p.size.cur) %>%
+#   mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+#   select(-c(drought, control, irrigated)) %>%
+#   # 'mentry' is just mean entry
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'mentry') %>%
+#   # remove empty rows - this is for differences that we don't estimate
+#   # differences for
+#   filter(!is.na(mentry))
+# 
+# # Midpoints from perturbed kernels
+# midp.pert.kernel.df = obsv.pert.kernel.df %>%
+#   select(-orig.parval) %>%
+#   # remove phen perturbations
+#   filter(!grepl('phen', param)) %>%
+#   pivot_wider(names_from = trt, values_from = p.size.cur) %>%
+#   mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+#   select(-c(drought, control, irrigated)) %>%
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'mentry') %>%
+#   # filter out NAs
+#   filter(!is.na(mentry))
+# 
+# # Bootstrapped midpoints (not perturbed)
+# midp.boot.kernel.df = boot.kernel.df %>%
+#   pivot_wider(names_from = trt, values_from = p.size.cur) %>%
+#   mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+#   select(-c(drought, control, irrigated)) %>%
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'p.size.cur') %>%
+#   filter(!is.na(p.size.cur))
+# 
+# # Bootstrapped midpoints (perturbed)
+# midp.boot.pert.kernel.df = boot.pert.kernel.df %>%
+#   # remove phen perturbations
+#   filter(!grepl('phen', param)) %>%
+#   pivot_wider(names_from = trt, values_from = p.size.cur) %>%
+#   mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+#   select(-c(drought, control, irrigated)) %>%
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'p.size.cur') %>%
+#   filter(!is.na(p.size.cur))
+# 
+# # Get midpoints for PHENOLOGY
+# # Here - to estimate the sensitivity of lambda to phenology, getting a midpoint
+# # kernel between phen levels
+# 
+# midp.phen.kernel.df = obsv.kernel.df %>%
+#   select(-mean.phen) %>%
+#   # NOTE: pivoting out by trt.phen instead of trt (because we're averaging
+#   # across different phens)
+#   pivot_wider(names_from = trt.phen, values_from = p.size.cur) %>%
+#   mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+#   select(-c(control, drought, irrigated)) %>%
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'mentry', values_drop_na = TRUE)
+# 
+# midp.phen.pert.kernel.df = obsv.pert.kernel.df %>%
+#   select(-c(orig.parval,  mean.phen)) %>%
+#   # subsetting out ONLY the phenology-related vital rates
+#   filter(grepl('phen', param)) %>%
+#   # NOTE: pivoting out by trt.phen instead of trt (because we're averaging
+#   # across different phens)
+#   pivot_wider(names_from = trt.phen, values_from = p.size.cur) %>%
+#   mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+#   select(-c(control, drought, irrigated)) %>%
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'mentry', values_drop_na = TRUE)
+# 
+# midp.phen.boot.kernel.df = boot.kernel.df %>%
+#   # NOTE: pivoting out by trt.phen instead of trt (because we're averaging
+#   # across different phens)
+#   pivot_wider(names_from = trt.phen, values_from = p.size.cur) %>%
+#   mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+#   select(-c(control, drought, irrigated)) %>%
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'mentry', values_drop_na = TRUE)
+# 
+# midp.phen.boot.pert.kernel.df = boot.pert.kernel.df %>%
+#   # subsetting out ONLY the phenology-related vital rates
+#   filter(grepl('phen', param)) %>%
+#   # NOTE: pivoting out by trt.phen instead of trt (because we're averaging
+#   # across different phens)
+#   pivot_wider(names_from = trt.phen, values_from = p.size.cur) %>%
+#   mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+#   select(-c(control, drought, irrigated)) %>%
+#   pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'mentry', values_drop_na = TRUE)
 
 # ------------------------------------------------------                  
 # ------ Estimate lambdas ------------------------------
@@ -389,206 +388,347 @@ boot.lambda = split(
   mutate(tps = row.names(.)) %>%
   separate(tps, into = c('trt', 'trt.phen', 'samp'), sep = '_')
 
-# Get lambda for the midpoint of observed matrices
-midp.obsv.lambda = split(
-  midp.obsv.kernel.df, midp.obsv.kernel.df[,c("contrast", 'trt.phen', "mean.phen")],
+# Get the lambdas for each perturbed matrix
+obsv.pert.lambda = split(
+  obsv.pert.kernel.df, 
+  obsv.pert.kernel.df[,c("trt", "trt.phen", "param")], 
   sep = '_', drop = TRUE
 ) %>%
-  lapply(
-    function(df) {
-      df %>%
-        arrange(size.prev, size.cur) %>%
-        pivot_wider(names_from = size.prev, values_from = mentry) %>%
-        select(-c(contrast, trt.phen, mean.phen, size.cur)) %>%
-        as.matrix()
-    }
-  ) %>%
-  sapply(function(x) Re(eigen(x)$values[1])) %>%
-  data.frame(lambda = .) %>%
-  mutate(c_tp = row.names(.)) %>%
-  separate(c_tp, into = c('contrast', 'trt.phen', 'phen'), sep = '_')  
-
-# Get lambdas for the midpoint perturbed matrices
-midp.pert.lambda = split(
-  midp.pert.kernel.df,
-  midp.pert.kernel.df[,c("contrast", 'trt.phen', 'mean.phen', 'param')],
-  sep = '_', drop = TRUE
-) %>%
+  # split() splits the kernel df into a list where each entry is a data frame
+  # for one phen-treatment kernel
   lapply(
     function(df) {
       df %>%
         arrange(size.prev, size.nex) %>%
-        pivot_wider(names_from = size.prev, values_from = mentry) %>%
-        select(-c(contrast, trt.phen, param, mean.phen, size.nex)) %>%
+        pivot_wider(names_from = size.prev, values_from = p.size.cur) %>%
+        select(-c(trt, trt.phen, mean.phen, param, size.nex, orig.parval)) %>%
         as.matrix()
     }
   ) %>%
-  sapply(function(x) Re(eigen(x)$values[1])) %>%
+  # estimate the dominant eigenvalue 
+  sapply(function(m) Re(eigen(m)$values[1])) %>%
   data.frame(lambda = .) %>%
-  mutate(c_pg = row.names(.)) %>%
-  separate(c_pg, into = c('contrast', 'trt.phen', 'phen', 'param'), sep = '_')  
+  # get treatment and phen from rownames
+  mutate(ttp = row.names(.)) %>%
+  separate(ttp, into = c('trt', 'trt.phen', 'param'), sep = '_') %>%
+  arrange(trt)
 
-# Get lambdas for the midpoint of the bootstrapped observed matrices
-# (takes a sec to run - mclapply may be useful...)
-midp.boot.lambda = split(
-  midp.boot.kernel.df,
-  midp.boot.kernel.df[,c("contrast", "trt.phen", "samp")],
+# Get the lambdas for each of the bootstrapped perturbed matrices
+boot.pert.lambda = split(
+  boot.pert.kernel.df, 
+  boot.pert.kernel.df[,c("trt", "trt.phen", "param", "boot")], 
   sep = '_', drop = TRUE
 ) %>%
+  # split() splits the kernel df into a list where each entry is a data frame
+  # for one phen-treatment kernel
   lapply(
     function(df) {
       df %>%
         arrange(size.prev, size.cur) %>%
         pivot_wider(names_from = size.prev, values_from = p.size.cur) %>%
-        select(-c(contrast, samp, trt.phen, size.cur)) %>%
+        select(-c(trt, trt.phen, param, size.cur, boot)) %>%
         as.matrix()
     }
   ) %>%
-  sapply(function (m) Re(eigen(m)$values[1])) %>%
+  # estimate the dominant eigenvalue 
+  sapply(function(m) Re(eigen(m)$values[1])) %>%
   data.frame(lambda = .) %>%
-  mutate(cps = row.names(.)) %>%
-  separate(cps, into = c('contrast', 'trt.phen', 'samp'), sep = '_')
+  # get treatment and phen from rownames
+  mutate(ttpb = row.names(.)) %>%
+  separate(ttpb, into = c('trt', 'trt.phen', 'param', 'boot'), sep = '_') %>%
+  arrange(trt)
 
-# Get lambdas for midpoint of perturbed bootstrap matrices
-# (also slow - slower than the above, takes about a minute)
-midp.boot.pert.lambda = split(
-  midp.boot.pert.kernel.df, 
-  midp.boot.pert.kernel.df[,c("contrast", "trt.phen", "param", "boot")],
-  sep = '_', drop = TRUE
-) %>%
-  lapply(
-    function(df) {
-      df %>%
-        arrange(size.prev, size.cur) %>%
-        pivot_wider(names_from = size.prev, values_from = p.size.cur) %>%
-        select(-c(contrast, boot, param, trt.phen, size.cur)) %>%
-        as.matrix()
-    }
-  ) %>%
-  sapply(function(x) Re(eigen(x)$values[1])) %>%
-  data.frame(lambda = .) %>%
-  mutate(tpps = row.names(.)) %>%
-  separate(tpps, into = c('contrast', 'trt.phen', "param", 'samp'), sep = '_')
-
-# Phenology midpoint lambdas
-midp.phen.lambda = split(
-  midp.phen.kernel.df,
-  midp.phen.kernel.df[,c("trt", "contrast.phen")],
-  sep = '_', drop = TRUE
-) %>%
-  lapply(
-    function(df) {
-      df %>%
-        arrange(size.prev, size.cur) %>%
-        pivot_wider(names_from = size.prev, values_from = mentry) %>%
-        select(-c(trt, contrast.phen, size.cur)) %>%
-        as.matrix()
-    }
-  ) %>%
-  sapply(function(x) Re(eigen(x)$values[1])) %>%
-  data.frame(lambda = .) %>%
-  mutate(tc = row.names(.)) %>%
-  separate(tc, into = c('trt', 'contrast.phen'), sep = '_')
-
-# Phenology midpoint lambdas after perturbation
-midp.phen.pert.lambda = split(
-  midp.phen.pert.kernel.df,
-  midp.phen.pert.kernel.df[,c("trt", "param", "contrast.phen")],
-  sep = '_', drop = TRUE
-) %>%
-  lapply(
-    function(df) {
-      df %>%
-        arrange(size.prev, size.nex) %>%
-        pivot_wider(names_from = size.prev, values_from = mentry) %>%
-        select(-c(trt, contrast.phen, param, size.nex)) %>%
-        as.matrix()
-    }
-  ) %>%
-  sapply(function(x) Re(eigen(x)$values[1])) %>%
-  data.frame(lambda = .) %>%
-  mutate(tpi = row.names(.)) %>%
-  separate(tpi, into = c('trt', 'rate', 'contrast.phen'), sep = '_')
-
-midp.phen.boot.lambda = split(
-  midp.phen.boot.kernel.df,
-  midp.phen.boot.kernel.df[,c("trt", "samp", "contrast.phen")],
-  sep = '_', drop = TRUE
-) %>%
-  lapply(
-    function(df) {
-      df %>%
-        arrange(size.prev, size.cur) %>%
-        pivot_wider(names_from = size.prev, values_from = mentry) %>%
-        select(-c(trt, contrast.phen, samp, size.cur)) %>%
-        as.matrix()
-    }
-  ) %>%
-  sapply(function(x) Re(eigen(x)$values[1])) %>%
-  data.frame(lambda = .) %>%
-  mutate(tpi = row.names(.)) %>%
-  separate(tpi, into = c('trt', 'samp', 'contrast.phen'), sep = '_')
-
-# Lambda for phenology midpoint bootstraps
-midp.phen.boot.pert.lambda = split(
-  midp.phen.boot.pert.kernel.df,
-  midp.phen.boot.pert.kernel.df[,c("trt", "param", "contrast.phen", "boot")],
-  sep = '_', drop = TRUE
-) %>%
-  lapply(
-    function(df) {
-      df %>%
-        arrange(size.prev, size.cur) %>%
-        pivot_wider(names_from = size.prev, values_from = mentry) %>%
-        select(-c(trt, contrast.phen, param, boot, size.cur)) %>%
-        as.matrix()
-    }
-  ) %>%
-  sapply(function(x) Re(eigen(x)$values[1])) %>%
-  data.frame(lambda = .) %>%
-  mutate(tpi = row.names(.)) %>%
-  separate(tpi, into = c('trt', 'rate', 'contrast.phen', 'samp'), sep = '_')
+# OLD using POTENTIALLY OBSOLETE MIDPOINT METHOD
+# # Get lambda for the midpoint of observed matrices
+# midp.obsv.lambda = split(
+#   midp.obsv.kernel.df, midp.obsv.kernel.df[,c("contrast", 'trt.phen', "mean.phen")],
+#   sep = '_', drop = TRUE
+# ) %>%
+#   lapply(
+#     function(df) {
+#       df %>%
+#         arrange(size.prev, size.cur) %>%
+#         pivot_wider(names_from = size.prev, values_from = mentry) %>%
+#         select(-c(contrast, trt.phen, mean.phen, size.cur)) %>%
+#         as.matrix()
+#     }
+#   ) %>%
+#   sapply(function(x) Re(eigen(x)$values[1])) %>%
+#   data.frame(lambda = .) %>%
+#   mutate(c_tp = row.names(.)) %>%
+#   separate(c_tp, into = c('contrast', 'trt.phen', 'phen'), sep = '_')  
+# 
+# # Get lambdas for the midpoint perturbed matrices
+# midp.pert.lambda = split(
+#   midp.pert.kernel.df,
+#   midp.pert.kernel.df[,c("contrast", 'trt.phen', 'mean.phen', 'param')],
+#   sep = '_', drop = TRUE
+# ) %>%
+#   lapply(
+#     function(df) {
+#       df %>%
+#         arrange(size.prev, size.nex) %>%
+#         pivot_wider(names_from = size.prev, values_from = mentry) %>%
+#         select(-c(contrast, trt.phen, param, mean.phen, size.nex)) %>%
+#         as.matrix()
+#     }
+#   ) %>%
+#   sapply(function(x) Re(eigen(x)$values[1])) %>%
+#   data.frame(lambda = .) %>%
+#   mutate(c_pg = row.names(.)) %>%
+#   separate(c_pg, into = c('contrast', 'trt.phen', 'phen', 'param'), sep = '_')  
+# 
+# # Get lambdas for the midpoint of the bootstrapped observed matrices
+# # (takes a sec to run - mclapply may be useful...)
+# midp.boot.lambda = split(
+#   midp.boot.kernel.df,
+#   midp.boot.kernel.df[,c("contrast", "trt.phen", "samp")],
+#   sep = '_', drop = TRUE
+# ) %>%
+#   lapply(
+#     function(df) {
+#       df %>%
+#         arrange(size.prev, size.cur) %>%
+#         pivot_wider(names_from = size.prev, values_from = p.size.cur) %>%
+#         select(-c(contrast, samp, trt.phen, size.cur)) %>%
+#         as.matrix()
+#     }
+#   ) %>%
+#   sapply(function (m) Re(eigen(m)$values[1])) %>%
+#   data.frame(lambda = .) %>%
+#   mutate(cps = row.names(.)) %>%
+#   separate(cps, into = c('contrast', 'trt.phen', 'samp'), sep = '_')
+# 
+# # Get lambdas for midpoint of perturbed bootstrap matrices
+# # (also slow - slower than the above, takes about a minute)
+# midp.boot.pert.lambda = split(
+#   midp.boot.pert.kernel.df, 
+#   midp.boot.pert.kernel.df[,c("contrast", "trt.phen", "param", "boot")],
+#   sep = '_', drop = TRUE
+# ) %>%
+#   lapply(
+#     function(df) {
+#       df %>%
+#         arrange(size.prev, size.cur) %>%
+#         pivot_wider(names_from = size.prev, values_from = p.size.cur) %>%
+#         select(-c(contrast, boot, param, trt.phen, size.cur)) %>%
+#         as.matrix()
+#     }
+#   ) %>%
+#   sapply(function(x) Re(eigen(x)$values[1])) %>%
+#   data.frame(lambda = .) %>%
+#   mutate(tpps = row.names(.)) %>%
+#   separate(tpps, into = c('contrast', 'trt.phen', "param", 'samp'), sep = '_')
+# 
+# # Phenology midpoint lambdas
+# midp.phen.lambda = split(
+#   midp.phen.kernel.df,
+#   midp.phen.kernel.df[,c("trt", "contrast.phen")],
+#   sep = '_', drop = TRUE
+# ) %>%
+#   lapply(
+#     function(df) {
+#       df %>%
+#         arrange(size.prev, size.cur) %>%
+#         pivot_wider(names_from = size.prev, values_from = mentry) %>%
+#         select(-c(trt, contrast.phen, size.cur)) %>%
+#         as.matrix()
+#     }
+#   ) %>%
+#   sapply(function(x) Re(eigen(x)$values[1])) %>%
+#   data.frame(lambda = .) %>%
+#   mutate(tc = row.names(.)) %>%
+#   separate(tc, into = c('trt', 'contrast.phen'), sep = '_')
+# 
+# # Phenology midpoint lambdas after perturbation
+# midp.phen.pert.lambda = split(
+#   midp.phen.pert.kernel.df,
+#   midp.phen.pert.kernel.df[,c("trt", "param", "contrast.phen")],
+#   sep = '_', drop = TRUE
+# ) %>%
+#   lapply(
+#     function(df) {
+#       df %>%
+#         arrange(size.prev, size.nex) %>%
+#         pivot_wider(names_from = size.prev, values_from = mentry) %>%
+#         select(-c(trt, contrast.phen, param, size.nex)) %>%
+#         as.matrix()
+#     }
+#   ) %>%
+#   sapply(function(x) Re(eigen(x)$values[1])) %>%
+#   data.frame(lambda = .) %>%
+#   mutate(tpi = row.names(.)) %>%
+#   separate(tpi, into = c('trt', 'rate', 'contrast.phen'), sep = '_')
+# 
+# midp.phen.boot.lambda = split(
+#   midp.phen.boot.kernel.df,
+#   midp.phen.boot.kernel.df[,c("trt", "samp", "contrast.phen")],
+#   sep = '_', drop = TRUE
+# ) %>%
+#   lapply(
+#     function(df) {
+#       df %>%
+#         arrange(size.prev, size.cur) %>%
+#         pivot_wider(names_from = size.prev, values_from = mentry) %>%
+#         select(-c(trt, contrast.phen, samp, size.cur)) %>%
+#         as.matrix()
+#     }
+#   ) %>%
+#   sapply(function(x) Re(eigen(x)$values[1])) %>%
+#   data.frame(lambda = .) %>%
+#   mutate(tpi = row.names(.)) %>%
+#   separate(tpi, into = c('trt', 'samp', 'contrast.phen'), sep = '_')
+# 
+# # Lambda for phenology midpoint bootstraps
+# midp.phen.boot.pert.lambda = split(
+#   midp.phen.boot.pert.kernel.df,
+#   midp.phen.boot.pert.kernel.df[,c("trt", "param", "contrast.phen", "boot")],
+#   sep = '_', drop = TRUE
+# ) %>%
+#   lapply(
+#     function(df) {
+#       df %>%
+#         arrange(size.prev, size.cur) %>%
+#         pivot_wider(names_from = size.prev, values_from = mentry) %>%
+#         select(-c(trt, contrast.phen, param, boot, size.cur)) %>%
+#         as.matrix()
+#     }
+#   ) %>%
+#   sapply(function(x) Re(eigen(x)$values[1])) %>%
+#   data.frame(lambda = .) %>%
+#   mutate(tpi = row.names(.)) %>%
+#   separate(tpi, into = c('trt', 'rate', 'contrast.phen', 'samp'), sep = '_')
 
 # Clear some more memory
 rm(
-  boot.kernel.df, boot.pert.kernel.df, midp.boot.kernel.df,
-  midp.boot.pert.kernel.df, midp.obsv.kernel.df, midp.pert.kernel.df,
-  midp.phen.boot.kernel.df, midp.phen.boot.pert.kernel.df, 
-  midp.phen.kernel.df, midp.phen.pert.kernel.df, obsv.pert.kernel.df
+  boot.kernel.df, boot.pert.kernel.df
+  # midp.boot.kernel.df,
+  # midp.boot.pert.kernel.df, midp.obsv.kernel.df, midp.pert.kernel.df,
+  # midp.phen.boot.kernel.df, midp.phen.boot.pert.kernel.df, 
+  # midp.phen.kernel.df, midp.phen.pert.kernel.df, obsv.pert.kernel.df
 )
 
 # ------------------------------------------------------                  
 # ------ Estimate sensitivities ------------------------
 # ------------------------------------------------------
 
-midp.obsv.sens = merge(
-  midp.obsv.lambda, midp.pert.lambda,
-  by = c('contrast', 'trt.phen', 'phen'), suffixes = c('.orig', '.pert')
+# Sensitivity of each vital rate estimated at each combination of
+# treatment-phenology.
+all.sv = merge(
+  obsv.lambda, obsv.pert.lambda,
+  by = c('trt', 'trt.phen'),
+  suffixes = c('', '.pert')
 ) %>%
-  # NOTE the delta value is hard-coded in here
-  mutate(sv = (lambda.pert - lambda.orig) / .001) %>%
-  mutate(phen = as.numeric(phen))
+  mutate(sv = (lambda.pert - lambda) / 0.001)
 
-midp.boot.sens = merge(
-  midp.boot.lambda, midp.boot.pert.lambda,
-  by = c('contrast', 'trt.phen', 'samp'), suffixes = c('.orig', '.pert')
-) %>%
-  # NOTE the delta value is hard-coded here too
-  mutate(sv = (lambda.pert - lambda.orig) / 0.001)
+# First order sensitivity wrt direct treatment effects
+obsv.sv.order1 = all.sv %>%
+  filter(!grepl('^phen', param)) %>%
+  filter(trt.phen %in% 'control') %>%
+  select(trt, param, sv) %>%
+  pivot_wider(names_from = trt, values_from = sv) %>%
+  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+  select(-c(drought, control, irrigated)) %>%
+  # 'mentry' is just mean entry
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'sv')
 
-midp.phen.sens = merge(
-   midp.phen.lambda, midp.phen.pert.lambda,
-   by = c('trt', 'contrast.phen'), suffixes = c('.orig', '.pert')
-) %>%
-  rename(trt.rate = trt) %>%
-  mutate(sv = ((lambda.pert - lambda.orig) / 0.001))
+# First order sensitivity wrt phenology
+phen.sv.order1 = all.sv %>%
+  filter(grepl('^phen', param)) %>%
+  filter(trt %in% 'control') %>%
+  select(trt.phen, param, sv) %>%
+  pivot_wider(names_from = trt.phen, values_from = sv) %>%
+  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+  select(-c(drought, control, irrigated)) %>%
+  # 'mentry' is just mean entry
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'sv')
 
-midp.phen.boot.sens = merge(
-  midp.phen.boot.lambda, midp.phen.boot.pert.lambda,
-  by = c('trt', 'contrast.phen', 'samp'), suffixes = c('.orig', '.pert')
+# Sensitivity with respect to both phenology and dir. treatment
+# i.e., second-order phenology effects
+both.sv.order2 = all.sv %>%
+  # Give me only the sensitivities at control,control or 
+  # at sites where both direct. treatment and phenology have changed
+  filter(trt == trt.phen) %>%
+  select(trt, param, sv) %>%
+  pivot_wider(names_from = trt, values_from = sv) %>%
+  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+  select(-c(drought, control, irrigated)) %>%
+  # 'mentry' is just mean entry
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'sv')
+
+# Do the same for the bootstraps:
+all.boot.sv = merge(
+  boot.lambda, boot.pert.lambda,
+  by.x = c('trt', 'trt.phen', 'samp'), 
+  by.y = c('trt', 'trt.phen', 'boot'),
+  suffixes = c('', '.pert')
 ) %>%
-  rename(trt.rate = trt) %>%
-  mutate(sv = ((lambda.pert - lambda.orig) / 0.001))
+  mutate(sv = (lambda.pert - lambda) / 0.001)
+
+# Averaging first-order sensitivity to direct treatment effects
+boot.trt.sv.order1 = all.boot.sv %>%
+  filter(!grepl('^phen', param)) %>%
+  filter(trt.phen %in% 'control') %>%
+  select(trt, param, boot = samp, sv) %>%
+  pivot_wider(names_from = trt, values_from = sv) %>%
+  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+  select(-c(drought, control, irrigated)) %>%
+  # 'mentry' is just mean entry
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'sv')
+
+# First-order sensitivity to phenology shift
+boot.phen.sv.order1 = all.boot.sv %>%
+  filter(grepl('^phen', param)) %>%
+  filter(trt %in% 'control') %>%
+  select(trt.phen, param, boot = samp, sv) %>%
+  pivot_wider(names_from = trt.phen, values_from = sv) %>%
+  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+  select(-c(drought, control, irrigated)) %>%
+  # 'mentry' is just mean entry
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'sv')
+
+# Estimate our second-order sensitivities in bootstraps
+boot.both.sv.order2 = all.boot.sv %>%
+  # Give me only the sensitivities at control,control or 
+  # at sites where both direct. treatment and phenology have changed
+  filter(trt == trt.phen) %>%
+  select(trt, param, boot = samp, sv) %>%
+  pivot_wider(names_from = trt, values_from = sv) %>%
+  mutate(d.c = (drought + control) / 2, i.c = (irrigated + control) / 2) %>%
+  select(-c(drought, control, irrigated)) %>%
+  # 'mentry' is just mean entry
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'sv')
+
+
+# OLD using POTENTIALLY OBSOLETE midpoint sensitivity method
+# midp.obsv.sens = merge(
+#   midp.obsv.lambda, midp.pert.lambda,
+#   by = c('contrast', 'trt.phen', 'phen'), suffixes = c('.orig', '.pert')
+# ) %>%
+#   # NOTE the delta value is hard-coded in here
+#   mutate(sv = (lambda.pert - lambda.orig) / .001) %>%
+#   mutate(phen = as.numeric(phen))
+# 
+# midp.boot.sens = merge(
+#   midp.boot.lambda, midp.boot.pert.lambda,
+#   by = c('contrast', 'trt.phen', 'samp'), suffixes = c('.orig', '.pert')
+# ) %>%
+#   # NOTE the delta value is hard-coded here too
+#   mutate(sv = (lambda.pert - lambda.orig) / 0.001)
+# 
+# midp.phen.sens = merge(
+#    midp.phen.lambda, midp.phen.pert.lambda,
+#    by = c('trt', 'contrast.phen'), suffixes = c('.orig', '.pert')
+# ) %>%
+#   rename(trt.rate = trt) %>%
+#   mutate(sv = ((lambda.pert - lambda.orig) / 0.001))
+# 
+# midp.phen.boot.sens = merge(
+#   midp.phen.boot.lambda, midp.phen.boot.pert.lambda,
+#   by = c('trt', 'contrast.phen', 'samp'), suffixes = c('.orig', '.pert')
+# ) %>%
+#   rename(trt.rate = trt) %>%
+#   mutate(sv = ((lambda.pert - lambda.orig) / 0.001))
   
 
 # ------------------------------------------------------                  
@@ -597,23 +737,35 @@ midp.phen.boot.sens = merge(
 
 # Here, just getting the paramter differences (to multiply by the sensitivities)
 
-# For the observed datasets, these were stored in the observed perturbed data frames
-# For the bootstrap dataset, these were stored in separate CSVs
+trt.param.diffs = rbind(
+  gs.obsv.pert %>% distinct(trt.phen.idx, param, orig.parval), 
+  fr.obsv.pert %>% distinct(trt.phen.idx, param, orig.parval)
+) %>%
+  merge(trt.phen.ltre.key %>% select(-mean.phen)) %>%
+  select(-c(trt.phen.idx)) %>% 
+  filter(!grepl('^phen', param), trt.phen %in% 'control') %>%
+  select(-trt.phen) %>%
+  # Now get differences between treatments
+  pivot_wider(names_from = trt.rate, values_from = orig.parval) %>%
+  mutate(d.c = drought - control, i.c = irrigated - control) %>%
+  select(-c(drought, irrigated, control)) %>%
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'pardiff')
 
-obsv.param.diffs = rbind(
+phen.param.diffs = rbind(
   gs.obsv.pert %>% distinct(trt.phen.idx, param, orig.parval), 
   fr.obsv.pert %>% distinct(trt.phen.idx, param, orig.parval)
 ) %>%
   merge(trt.phen.ltre.key %>% select(-mean.phen)) %>%
   select(-c(trt.phen.idx)) %>%
-  rename(trt = trt.rate) %>%
-  # get rid of the phen 
-  filter(!grepl('phen', param)) %>%
-  # Get differences between treatments
-  pivot_wider(names_from = trt, values_from = orig.parval) %>%
+  filter(grepl('^phen', param), trt.rate %in% 'control') %>%
+  select(-trt.rate) %>%
+  # Get differences between treatment(-phenologies)
+  pivot_wider(names_from = trt.phen, values_from = orig.parval) %>%
   mutate(d.c = drought - control, i.c = irrigated - control) %>%
   select(-c(drought, irrigated, control)) %>%
   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'pardiff')
+
+# Parameter differences in the bootstrap procedure:
 
 boot.param.diffs = merge(gs.pert.pars, fr.pert.pars, by = 'boot') %>%
   pivot_longer(-boot, names_to = 'partrt', values_to = 'parval') %>%
@@ -622,75 +774,7 @@ boot.param.diffs = merge(gs.pert.pars, fr.pert.pars, by = 'boot') %>%
   mutate(d.c = drought - control, i.c = irrigated - control) %>%
   select(-c(control, drought, irrigated)) %>%
   pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'pardiff', values_drop_na = TRUE) %>%
-  rename(
-    samp = boot,
-    param = rate
-  )
-
-# Phenology parameter differences
-
-obsv.phen.diffs = rbind(
-  gs.obsv.pert %>% distinct(trt.phen.idx, param, orig.parval), 
-  fr.obsv.pert %>% distinct(trt.phen.idx, param, orig.parval)
-) %>%
-  merge(trt.phen.ltre.key %>% select(-mean.phen)) %>%
-  select(-c(trt.phen.idx)) %>%
-  rename(trt = trt.phen) %>%
-  # Now, select only the phen
-  filter(grepl('phen', param)) %>%
-  rename(rate = param) %>%
-  # Get differences between treatments
-  pivot_wider(names_from = trt, values_from = orig.parval) %>%
-  mutate(d.c = drought - control, i.c = irrigated - control) %>%
-  select(-c(drought, irrigated, control)) %>%
-  pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'pardiff')
-
-# boot.phen.diffs = phen.boots %>%
-#   rename(samp = boot) %>%
-#   # looks like I already exported this as wide-format
-#   # mutate(phen = as.numeric(phen)) %>%
-#   # pivot_wider(names_from = trt.phen, values_from = phen) %>%
-#   mutate(d.c = drought - control, i.c = irrigated - control) %>%
-#   select(-c(control, drought, irrigated)) %>%
-#   pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'phen.diff')
-# 
-# # The code above gives only the differences *from the control perspective*
-# # But we will also want to get differences from the drought/irrigated perspective
-# # which will require negating the phen diff
-# boot.phen.diffs = rbind(
-#     boot.phen.diffs %>% mutate(trt = 'control'),
-#     boot.phen.diffs %>% 
-#       mutate(trt = ifelse(contrast.phen %in% 'd.c', 'drought', 'irrigated')) %>% 
-#       mutate(phen.diff = -1 * phen.diff)
-#   )
-
-# Checks:
-# head(boot.phen.diffs)
-# sum(boot.phen.diffs$phen.diff) # good - should be zero
-
-# # Phenology: just take from the observed lambda data frame
-# phen.param.diffs = obsv.lambda %>% 
-#   # Get the observed phenology column
-#   mutate(
-#     trt.obs.phen = case_when(
-#       trt %in% 'control' & floor(mean.phen) == 125 ~ 'observed',
-#       trt %in% 'drought' & floor(mean.phen) == 122 ~ 'observed',
-#       trt %in% 'irrigated' & floor(mean.phen) == 127 ~ 'observed',
-#       .default = 'hypothetical'
-#     )
-#   ) %>%
-#   select(-c(phen.date, phen)) %>%
-#   uncount(weights = 1 + as.numeric(trt %in% 'control' & trt.obs.phen %in% 'observed')) %>%
-#   group_by(trt) %>%
-#   # ii column will help us distinguish between the two different control-on-control dates
-#   mutate(ii = cumsum(duplicated(mean.phen))) %>%
-#   ungroup() %>%
-#   pivot_wider(id_cols = c(trt, ii), names_from = trt.obs.phen, values_from = c(lambda, mean.phen)) %>%
-#   mutate(
-#     lambda.diff = lambda_hypothetical - lambda_observed,
-#     phen.diff = mean.phen_hypothetical - mean.phen_observed 
-#   ) %>%
-#   select(trt, ii, phen.diff, lambda.diff)
+  rename(param = rate)
 
 # ------------------------------------------------------                  
 # ------ Estimate LTRE contributions -------------------
@@ -699,116 +783,181 @@ obsv.phen.diffs = rbind(
 # Multipling the sensitivities by the rate differences
 # So, merging and then making a column for the distinct contribution
 
-# From observed data
-obsv.ltre = merge(midp.obsv.sens, obsv.param.diffs) %>%
+# First observed effects:
+
+# First-order direct treatment effects only i.e. psi terms
+trt.ltre.order1 = merge(obsv.sv.order1, trt.param.diffs) %>%
   mutate(contrib = pardiff * sv)
 
-# From bootstraps
-boot.ltre = merge(midp.boot.sens, boot.param.diffs %>% filter(!grepl('phen', param))) %>%
+# First-order phenology-only effects i.e. phi terms
+phen.ltre.order1 = merge(phen.sv.order1, phen.param.diffs) %>%
   mutate(contrib = pardiff * sv)
 
-# Phenology effects
-phen.ltre = merge(midp.phen.sens, obsv.phen.diffs) %>%
-  mutate(contrib = pardiff * sv)
+# Combining these into a single data frame 
+both.ltre.order1 = rbind(trt.ltre.order1, phen.ltre.order1) %>%
+  # Delineating the driver of the change for each estimate
+  mutate(type = ifelse(grepl('^phen', param), 'phen', 'trt'))
 
-phen.boot.ltre = merge(
-  midp.phen.boot.sens, 
-  boot.param.diffs %>% filter(grepl('phen', param)) %>% rename(contrast.phen = contrast, rate = param)
+# Estimating second-order (interactive) effects between 
+# treatment and phenology
+
+complete.ltre = merge(
+  both.ltre.order1, both.sv.order2, 
+  by = c('param', 'contrast'), suffixes = c('1', '2')
 ) %>%
+  # 
+  mutate(interaction.contrib = pardiff * sv2 - contrib)
+
+
+# Then, bootstrapped versions of LTRE:
+
+boot.trt.ltre.order1 = merge(boot.trt.sv.order1, boot.param.diffs) %>%
   mutate(contrib = pardiff * sv)
+
+boot.phen.ltre.order1 = merge(boot.phen.sv.order1, boot.param.diffs) %>%
+  mutate(contrib = pardiff * sv)
+
+boot.both.ltre.order1 =  rbind(boot.trt.ltre.order1, boot.phen.ltre.order1) %>%
+  # Delineating the driver of the change for each estimate
+  mutate(type = ifelse(grepl('^phen', param), 'phen', 'trt'))
+
+complete.boot.ltre = merge(
+  boot.both.ltre.order1, boot.both.sv.order2, 
+  by = c('param', 'contrast', 'boot'), suffixes = c('1', '2')
+) %>%
+  # 
+  mutate(interaction.contrib = pardiff * sv2 - contrib)
 
 # ------------------------------------------------------                  
 # ------ Check that lambda differences match LTRE sums -
 # ------------------------------------------------------
 
-obsv.dlambda.compare = merge(
-  # Sum of LTRE contributions (treatment effects only)
-  obsv.ltre %>% 
-    group_by(contrast, trt.phen) %>% 
-    summarise(csum = sum(contrib)),
-  # Observed differences in lambda (treatment effects only)
-  obsv.lambda %>% 
-    pivot_wider(names_from = trt, values_from = lambda) %>% 
-    mutate(d.c = drought - control, i.c = irrigated - control) %>% 
-    select(-c(control, drought, irrigated)) %>% 
-    pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda', values_drop_na = TRUE) %>%
-    select(-c(phen.date, mean.phen))
+# Observed (through IPMs), true cumulative effects of treatment
+# (first- and second-order effects should recapitulate these numbers)
+obsv.d.lambda = obsv.lambda %>%
+  # Total treatment effects means we want cases where treatment and phenology
+  # correspond to controls or the cases where they have both simultaneously
+  # changed
+  filter(trt == trt.phen) %>%
+  select(trt, lambda) %>%
+  pivot_wider(names_from = trt, values_from = lambda) %>%
+  mutate(d.c = drought - control, i.c = irrigated - control) %>%
+  select(-c(drought, irrigated, control)) %>%
+  pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'dlambda')
+
+# Observed (through IPMs),
+# these are first order differences i.e. 
+# with respect to only one variable at a time, 
+# separated out by effect type (driver: phen or trt)
+obsv.d.lambda.by.driver = rbind(
+  # Treatment differences in estimated lambda (on the date assoc. with control)
+  obsv.lambda %>%
+    filter(trt.phen %in% 'control') %>%
+    select(trt, lambda) %>%
+    pivot_wider(names_from = trt, values_from = lambda) %>%
+    mutate(d.c = drought - control, i.c = irrigated - control) %>%
+    select(-c(drought, irrigated, control)) %>%
+    pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'partial.dlambda') %>%
+    mutate(type = 'trt'),
+  # Phenology differences in estimated lambda (using the control treatment rate parameters)
+  obsv.lambda %>%
+    filter(trt %in% 'control') %>%
+    select(trt.phen, lambda) %>%
+    pivot_wider(names_from = trt.phen, values_from = lambda) %>%
+    mutate(d.c = drought - control, i.c = irrigated - control) %>%
+    select(-c(drought, irrigated, control)) %>%
+    pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'partial.dlambda') %>%
+    mutate(type = 'phen')
 )
 
-obsv.dlambda.compare %>% mutate(relerr = (csum - d.lambda) / d.lambda)
-# Okay better than before! 3/4 are <1% and the final one is at 2.2%...
-
-phen.dlambda.compare = merge(
-  # Sum of LTRE contributions (phenology effects only)
-  phen.ltre %>% 
-    group_by(contrast.phen, trt.rate) %>% 
-    summarise(csum = sum(contrib)),
-  # Observed differences in lambda (phenology effects only)
-  obsv.lambda %>% 
-    select(-c(phen, mean.phen, phen.date)) %>%
-    rename(trt.rate = trt) %>%
-    pivot_wider(names_from = trt.phen, values_from = lambda) %>% 
-    mutate(d.c = drought - control, i.c = irrigated - control) %>% 
-    select(-c(control, drought, irrigated)) %>% 
-    pivot_longer(c(d.c, i.c), names_to = 'contrast.phen', values_to = 'd.lambda', values_drop_na = TRUE)
-)
-
-phen.dlambda.compare %>% mutate(relerr = (csum - d.lambda) / d.lambda)
-# even more accurate!
-
-# Combine to estimate overall delta lambda
-merge(
-  obsv.ltre %>% 
-    group_by(contrast, trt.phen) %>% 
-    summarise(csum = sum(contrib)),
-  phen.ltre %>% 
-    group_by(contrast = contrast.phen, trt.rate) %>% 
-    summarise(csum = sum(contrib)),
-  by = 'contrast'
-) %>%
-  # (want to have estimates that don't have the same treatment for phen and rate)
-  filter(trt.phen != trt.rate) %>%
-  mutate(csum = csum.x + csum.y) %>%
-  merge(
-    obsv.lambda %>% filter(trt == trt.phen) %>% select(-contains('phen')) %>%
-      pivot_wider(names_from = trt, values_from = lambda) %>% 
-      mutate(d.c = drought - control, i.c = irrigated - control) %>% 
-      select(-c(control, drought, irrigated)) %>% 
-      pivot_longer(c(d.c, i.c), names_to = 'contrast', values_to = 'd.lambda', values_drop_na = TRUE)
+# Combine LTRE summed contributions (first- and second order)
+# and observed (with IPMs) first- and second-order effects
+compare.ltre.with.true = complete.ltre %>%
+  # Separating out the first order effects 
+  group_by(contrast, type) %>%
+  summarise(
+    summed.contrib  = sum(contrib),
+    summed.contrib2 = sum(contrib) + sum(interaction.contrib)
   ) %>%
-  mutate(relerr = (csum - d.lambda) / d.lambda)
+  ungroup() %>%
+  # pivot_wider(names_from = type, values_from = contrib) %>%
+  # Merged in observed differences in lambda estimated above
+  merge(obsv.d.lambda.by.driver, by = c('contrast', 'type'), suffixes = c('ltre', 'obsv'))
 
-# Also has max error of 2.5%, everything else <1%
+compare.ltre.with.true %>%
+  mutate(
+    relerr.contrib1 = (summed.contrib - partial.dlambda) / summed.contrib,
+    relerr.contrib2 = (summed.contrib2 - partial.dlambda) / summed.contrib2
+  )
+
+# Sum of first-order contributions (summed.contrib) are
+# within 1.5% of estimates
+# Sum of first + second-order contributions (summed.contrib2)
+# are all within 1%
+
+# Comparison with overall estimate:
+
+compare.ltre.with.true %>%
+  group_by(contrast) %>%
+  summarise(across(c(summed.contrib, summed.contrib2), sum)) %>%
+  merge(obsv.d.lambda) %>%
+  mutate(
+    across(
+      c(summed.contrib, summed.contrib2), 
+      ~ (. - dlambda) / dlambda, 
+      .names = "{.col}.err"
+    )
+  )
+
+# First-order approximation is within 1.6%, second order within 0.5%
+
 
 # ------------------------------------------------------                  
 # ------ Combine contributions by rate (not param) -----
 # ------------------------------------------------------
 
-obsv.trt.ltre = obsv.ltre %>%
-  separate(param, into = c('rate', 'param'), sep = '\\.') %>%
-  select(-param) %>%
-  group_by(contrast, trt.phen, rate) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
-  
-boot.trt.ltre = boot.ltre %>%
-  separate(param, into = c('rate', 'param'), sep = '\\.') %>%
-  select(-param) %>%
-  group_by(contrast, trt.phen, samp, rate) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
+complete.ltre = complete.ltre %>%
+  mutate(
+    rate = gsub('^phen\\.', '', param),
+    rate = gsub('\\..+$', '', rate)
+  ) %>%
+  group_by(rate, type, contrast) %>%
+  summarise(across(c(contrib, interaction.contrib), sum))
 
-obsv.phen.ltre = phen.ltre %>%
-  mutate(rate = gsub('phen\\.', '', rate)) %>%
-  group_by(trt.rate, contrast.phen, rate) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
+complete.boot.ltre = complete.boot.ltre %>%
+  mutate(
+    rate = gsub('^phen\\.', '', param),
+    rate = gsub('\\..+$', '', rate)
+  ) %>%
+  group_by(rate, type, contrast, boot) %>%
+  summarise(across(c(contrib, interaction.contrib), sum))
 
-boot.phen.ltre = phen.boot.ltre %>%
-  mutate(rate = gsub('phen\\.', '', rate)) %>%
-  group_by(trt.rate, contrast.phen, samp, rate) %>%
-  summarise(contrib = sum(contrib)) %>%
-  ungroup()
+
+# obsv.trt.ltre = obsv.ltre %>%
+#   separate(param, into = c('rate', 'param'), sep = '\\.') %>%
+#   select(-param) %>%
+#   group_by(contrast, trt.phen, rate) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
+#   
+# boot.trt.ltre = boot.ltre %>%
+#   separate(param, into = c('rate', 'param'), sep = '\\.') %>%
+#   select(-param) %>%
+#   group_by(contrast, trt.phen, samp, rate) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
+# 
+# obsv.phen.ltre = phen.ltre %>%
+#   mutate(rate = gsub('phen\\.', '', rate)) %>%
+#   group_by(trt.rate, contrast.phen, rate) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
+# 
+# boot.phen.ltre = phen.boot.ltre %>%
+#   mutate(rate = gsub('phen\\.', '', rate)) %>%
+#   group_by(trt.rate, contrast.phen, samp, rate) %>%
+#   summarise(contrib = sum(contrib)) %>%
+#   ungroup()
 
 # ------------------------------------------------------                  
 # ------ Make plots ------------------------------------
@@ -1223,25 +1372,15 @@ boot.phen.ltre = phen.boot.ltre %>%
 #   file = '04_analysis/out/mirror_ltre_results.csv'
 # )
 
-# Four data frames with all LTRE contributions
+# Data frames with all LTRE contributions
 write.csv(
-  obsv.trt.ltre, row.names = FALSE, 
-  file = '04_analysis/out/trt_ltre_contribs.csv'
+  complete.ltre, row.names = FALSE, 
+  file = '04_analysis/out/ltre_contributions.csv'
 )
 
 write.csv(
-  obsv.phen.ltre, row.names = FALSE, 
-  file = '04_analysis/out/phen_ltre_contribs.csv'
-)
-
-write.csv(
-  boot.trt.ltre, row.names = FALSE, 
-  file = '04_analysis/out/boot_trt_ltre_contribs.csv'
-)
-
-write.csv(
-  boot.phen.ltre, row.names = FALSE, 
-  file = '04_analysis/out/boot_phen_ltre_contribs.csv'
+  complete.boot.ltre, row.names = FALSE, 
+  file = '04_analysis/out/boostrapped_ltre_contributions'
 )
 
 # Observed lambdas
